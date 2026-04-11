@@ -27,7 +27,7 @@ const SKILLS = [
   { name: 'Writing', icon: '✍️' }
 ];
 
-// --- 3. PREMIUM SOFT STYLES ---
+// --- 3. SOFT APP STYLES (FULLY UNIFIED TYPOGRAPHY) ---
 const styles: any = {
   page: { 
     fontFamily: '"Fredoka", sans-serif', 
@@ -39,7 +39,6 @@ const styles: any = {
   container: { maxWidth: '1050px', margin: '0 auto' },
   header: { textAlign: 'center', marginBottom: '60px' },
   
-  // Navigation Bar (Centered & Bold)
   nav: { display: 'inline-flex', backgroundColor: '#ffffff', padding: '8px', borderRadius: '9999px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.06)', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' },
   navButton: (a: boolean) => ({ 
     fontFamily: '"Fredoka", sans-serif',
@@ -57,11 +56,22 @@ const styles: any = {
   
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '36px' },
   
-  // Book Card Styling
   card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'hidden', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', transition: 'all 0.3s ease' },
-  levelCard: { backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', border: 'none', fontSize: '1.4rem', fontWeight: '600', color: '#0F172A', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', transition: 'all 0.3s ease' },
+  levelCard: { 
+    fontFamily: '"Fredoka", sans-serif',
+    backgroundColor: '#ffffff', 
+    borderRadius: '32px', 
+    padding: '40px 20px', 
+    textAlign: 'center', 
+    cursor: 'pointer', 
+    border: 'none', 
+    fontSize: '1.5rem', 
+    fontWeight: '600', 
+    color: '#0F172A', 
+    boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', 
+    transition: 'all 0.3s ease' 
+  },
   
-  // Secondary Controls
   subButton: (a: boolean) => ({ 
     fontFamily: '"Fredoka", sans-serif',
     display: 'flex', 
@@ -78,6 +88,7 @@ const styles: any = {
     boxShadow: a ? '0 10px 20px -5px rgba(79,70,229,0.4)' : '0 10px 25px -5px rgba(0,0,0,0.05)', 
     fontSize: '1.1rem' 
   }),
+
   badgeButton: (a: boolean) => ({ 
     fontFamily: '"Fredoka", sans-serif',
     padding: '10px 20px', 
@@ -128,6 +139,7 @@ const styles: any = {
   },
   
   clampText: { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', color: '#64748B', fontSize: '1.05rem', lineHeight: '1.7', margin: 0, fontWeight: '400', textAlign: 'center' },
+  
   readMoreBtn: { 
     fontFamily: '"Fredoka", sans-serif',
     background: '#F8FAFC', 
@@ -183,10 +195,9 @@ export default function App() {
 
   return (
     <>
-      {/* --- FONT IMPORT & DYNAMIC EFFECTS --- */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; font-family: 'Fredoka', sans-serif !important; }
         body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
         .soft-card:hover { transform: translateY(-8px); box-shadow: 0 40px 60px -15px rgba(15, 23, 42, 0.1) !important; }
         .read-btn:hover { background: #EEF2FF !important; }
@@ -262,8 +273,6 @@ export default function App() {
                 <div style={styles.grid}>
                   {displayedReviews.length > 0 ? displayedReviews.map(book => (
                     <div key={book._id} className="soft-card" style={styles.card}>
-                      
-                      {/* Padded Image Frame */}
                       <div style={{ padding: '16px 16px 0 16px' }}>
                         {book.coverImage ? (
                           <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px', boxShadow: '0 10px 20px -5px rgba(0,0,0,0.08)' }} />
@@ -273,31 +282,18 @@ export default function App() {
                       </div>
 
                       <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        
-                        {/* THE FIX: CENTERED CATEGORY BADGE */}
                         <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '16px' }}>
                           <span style={{ display: 'inline-block', background: '#EEF2FF', color: '#4F46E5', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             {book.subCategory || book.category}
                           </span>
                         </div>
-
                         <h3 style={{ margin: '0 0 16px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', letterSpacing: '-0.5px', textAlign: 'center' }}>{book.title}</h3>
-                        
                         <div style={styles.clampText}>
-                          {!book.content ? (
-                            <p style={{ color: '#94A3B8', margin: 0 }}>No review written yet.</p>
-                          ) : typeof book.content === 'string' ? (
-                            book.content
-                          ) : (
-                            <PortableText value={book.content} /> 
-                          )}
+                          {!book.content ? <p style={{ color: '#94A3B8', margin: 0 }}>No review written yet.</p> : typeof book.content === 'string' ? book.content : <PortableText value={book.content} />}
                         </div>
-
                         {book.content && (
                           <div style={{ width: '100%', marginTop: '24px' }}>
-                            <button className="read-btn" style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>
-                              Read Review
-                            </button>
+                            <button className="read-btn" style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button>
                           </div>
                         )}
                       </div>
@@ -305,14 +301,13 @@ export default function App() {
                   )) : (
                     <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px', color: '#94A3B8', background: '#ffffff', borderRadius: '32px', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }}>
                       <h3 style={{ fontWeight: '600', margin: 0, fontSize: '1.5rem' }}>No reviews found</h3>
-                      <p style={{marginTop: '10px', color: '#64748B'}}>Check back later for new content.</p>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* TAB 2: ENGLISH CORNER */}
+            {/* TAB 2: ENGLISH CORNER (FONT FIXED) */}
             {activeTab === 'English Corner' && (
               <div>
                 {!activeLevel && (
@@ -356,8 +351,8 @@ export default function App() {
                     <div style={styles.grid}>
                       {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => (
                         <div key={u} className="soft-card" style={{...styles.card, padding: '30px', cursor: 'pointer', textAlign: 'center'}} onClick={() => setActiveUnit(u)}>
-                          <h3 style={{ margin: '0 0 16px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A' }}>Unit {u}</h3>
-                          <span style={{ display: 'inline-block', background: '#F1F5F9', color: '#475569', padding: '8px 20px', borderRadius: '9999px', fontSize: '1rem', fontWeight: '500' }}>View Lessons</span>
+                          <h3 style={{ margin: '0 0 16px', fontSize: '1.8rem', fontWeight: '600', color: '#0F172A' }}>Unit {u}</h3>
+                          <span style={{ display: 'inline-block', background: '#F1F5F9', color: '#475569', padding: '8px 20px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '500' }}>View Lessons</span>
                         </div>
                       ))}
                     </div>
@@ -370,38 +365,30 @@ export default function App() {
                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                        Back to Units
                     </button>
-                    
                     <div style={{ ...styles.card, padding: '50px', textAlign: 'left' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '50px' }}>
                         <h2 style={{ margin: 0, fontWeight: '600', fontSize: '2.5rem', letterSpacing: '-1px', color: '#0F172A' }}>Unit {activeUnit}</h2>
                         <span style={{ background: '#EEF2FF', padding: '8px 20px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '500', color: '#4F46E5' }}>{activeSubLevel}</span>
                       </div>
-                      
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                         {SKILLS.map(skill => {
                           const skillPdfs = resources.filter(r => !r.isGeneral && r.level === activeLevel && r.subLevel === activeSubLevel && r.unit === activeUnit && r.category === skill.name);
-
                           return (
                             <div key={skill.name} style={{ display: 'flex', flexDirection: 'column', padding: '30px', background: '#F8FAFC', borderRadius: '28px', gap: '24px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                 <span style={{ fontSize: '2rem', background: '#ffffff', padding: '16px', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>{skill.icon}</span>
-                                <h4 style={{ margin: 0, color: '#0F172A', fontSize: '1.6rem', fontWeight: '600' }}>{skill.name}</h4>
+                                <h4 style={{ margin: 0, color: '#0F172A', fontSize: '1.8rem', fontWeight: '600' }}>{skill.name}</h4>
                               </div>
-                              
                               {skillPdfs.length > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '4px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                   {skillPdfs.map(pdf => (
                                     <div key={pdf._id} className="soft-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', padding: '20px 24px', borderRadius: '20px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.03)' }}>
-                                      <span style={{ fontWeight: '500', color: '#0F172A', fontSize: '1.2rem' }}>{pdf.title}</span>
+                                      <span style={{ fontWeight: '600', color: '#0F172A', fontSize: '1.3rem' }}>{pdf.title}</span>
                                       <a href={pdf.fileUrl} target="_blank" rel="noreferrer" style={styles.actionButton}>Download</a>
                                     </div>
                                   ))}
                                 </div>
-                              ) : (
-                                <div style={{ paddingLeft: '4px' }}>
-                                  <span style={{ display: 'inline-block', background: '#E2E8F0', color: '#64748B', padding: '10px 20px', borderRadius: '9999px', fontSize: '1rem', fontWeight: '500' }}>No lessons uploaded yet</span>
-                                </div>
-                              )}
+                              ) : ( <span style={{ background: '#E2E8F0', color: '#64748B', padding: '10px 20px', borderRadius: '9999px', fontSize: '1rem', fontWeight: '500', width: 'fit-content' }}>No lessons uploaded yet</span> )}
                             </div>
                           )
                         })}
@@ -412,7 +399,7 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 3: RESOURCES */}
+            {/* TAB 3: RESOURCES (FONT FIXED) */}
             {activeTab === 'Resources' && (
               <div>
                 <h2 style={{ textAlign: 'center', marginBottom: '50px', fontWeight: '600', fontSize: '2.5rem', color: '#0F172A', letterSpacing: '-1px' }}>General Resources</h2>
@@ -421,34 +408,30 @@ export default function App() {
                     <div key={res._id} className="soft-card" style={styles.card}>
                       <div style={{ padding: '40px', textAlign: 'center' }}>
                         <div style={{ fontSize: '4rem', marginBottom: '24px' }}>📄</div>
-                        <h3 style={{ margin: '0 0 30px', fontWeight: '600', color: '#0F172A', fontSize: '1.6rem' }}>{res.title}</h3>
-                        {res.fileUrl && (
-                          <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%', boxSizing: 'border-box', padding: '16px' }}>Download Guide</a>
-                        )}
+                        <h3 style={{ margin: '0 0 30px', fontWeight: '600', color: '#0F172A', fontSize: '1.8rem' }}>{res.title}</h3>
+                        {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%', boxSizing: 'border-box', padding: '16px' }}>Download Guide</a>}
                       </div>
                     </div>
-                  )) : (
-                    <p style={{ textAlign: 'center', gridColumn: '1 / -1', color: '#94A3B8', fontWeight: '500', fontSize: '1.2rem' }}>No general resources uploaded yet.</p>
-                  )}
+                  )) : <p style={{ textAlign: 'center', gridColumn: '1 / -1', color: '#94A3B8', fontWeight: '500', fontSize: '1.3rem' }}>No general resources uploaded yet.</p>}
                 </div>
               </div>
             )}
 
-            {/* TAB 4: ABOUT */}
+            {/* TAB 4: ABOUT (FONT FIXED) */}
             {activeTab === 'About' && (
-              <div style={{ ...styles.card, maxWidth: '700px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
-                <h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.5rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2>
-                <p style={{ lineHeight: '1.9', color: '#475569', fontSize: '1.2rem', fontWeight: '400' }}>Welcome to my classroom. I am passionate about blending literature with language learning to help you achieve absolute fluency.</p>
+              <div style={{ ...styles.card, maxWidth: '750px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
+                <h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2>
+                <p style={{ lineHeight: '2.2', color: '#475569', fontSize: '1.3rem', fontWeight: '400' }}>Welcome to my classroom. I am passionate about blending literature with language learning to help you achieve absolute fluency.</p>
               </div>
             )}
 
-            {/* TAB 5: CONTACT */}
+            {/* TAB 5: CONTACT (FONT FIXED) */}
             {activeTab === 'Contact' && (
-              <div style={{ ...styles.card, maxWidth: '600px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
-                <div style={{ fontSize: '4rem', marginBottom: '24px' }}>👋</div>
-                <h2 style={{ marginBottom: '20px', fontWeight: '600', fontSize: '2.5rem', color: '#0F172A', letterSpacing: '-1px' }}>Get in Touch</h2>
-                <p style={{ color: '#475569', marginBottom: '40px', fontSize: '1.2rem', fontWeight: '400' }}>Want to book a tutoring session or ask a question?</p>
-                <a href="mailto:teacher@litandlearn.com" style={{...styles.actionButton, padding: '16px 40px', fontSize: '1.2rem', width: 'auto', display: 'inline-block'}}>Email Me</a>
+              <div style={{ ...styles.card, maxWidth: '650px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
+                <div style={{ fontSize: '4.5rem', marginBottom: '24px' }}>👋</div>
+                <h2 style={{ marginBottom: '20px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>Get in Touch</h2>
+                <p style={{ color: '#475569', marginBottom: '40px', fontSize: '1.3rem', fontWeight: '400' }}>Want to book a tutoring session or ask a question?</p>
+                <a href="mailto:teacher@litandlearn.com" style={{...styles.actionButton, padding: '18px 48px', fontSize: '1.3rem', width: 'auto'}}>Email Me</a>
               </div>
             )}
 
@@ -459,12 +442,10 @@ export default function App() {
         <footer style={{ background: '#0F172A', color: '#94A3B8', marginTop: '100px', padding: '80px 20px', borderRadius: '40px 40px 0 0' }}>
           <div style={{ maxWidth: '1050px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '40px', textAlign: 'center' }}>
             <div>
-              <h3 style={{ color: '#ffffff', margin: '0 0 20px', fontSize: '2rem', fontWeight: '600', letterSpacing: '-1px' }}>Lit & Learn</h3>
-              <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.1rem' }}>Mastering English through global literature — one page at a time.</p>
+              <h3 style={{ color: '#ffffff', margin: '0 0 20px', fontSize: '2.2rem', fontWeight: '600', letterSpacing: '-1px' }}>Lit & Learn</h3>
+              <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.15rem' }}>Mastering English through global literature — one page at a time.</p>
             </div>
-            <div style={{ fontSize: '1rem', fontWeight: '500', paddingTop: '30px' }}>
-              © 2026 Lit & Learn. All rights reserved.
-            </div>
+            <div style={{ fontSize: '1.1rem', fontWeight: '500', paddingTop: '30px' }}>© 2026 Lit & Learn. All rights reserved.</div>
           </div>
         </footer>
       </div>
