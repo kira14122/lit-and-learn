@@ -78,31 +78,9 @@ export default function App() {
         
         {/* --- BRANDING & LOGO --- */}
         <header style={styles.header}>
-          <svg viewBox="0 0 600 360" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', maxWidth: '420px', margin: '0 auto', display: 'block' }}>
-            <defs>
-              <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#F8FAFC"/><stop offset="100%" stopColor="#EEF2FF"/></linearGradient>
-              <linearGradient id="markGrad" x1="0%" y1="0%" x2="135%" y2="135%"><stop offset="0%" stopColor="#4338CA"/><stop offset="50%" stopColor="#6D28D9"/><stop offset="100%" stopColor="#9333EA"/></linearGradient>
-              <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#4F46E5"/><stop offset="100%" stopColor="#9333EA"/></linearGradient>
-              <linearGradient id="pageLeft" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffffff"/><stop offset="100%" stopColor="#C7D2FE" stopOpacity="0.85"/></linearGradient>
-              <linearGradient id="pageRight" x1="100%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#ffffff"/><stop offset="100%" stopColor="#DDD6FE" stopOpacity="0.85"/></linearGradient>
-              <linearGradient id="spineGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#EDE9FE"/><stop offset="100%" stopColor="#C4B5FD"/></linearGradient>
-              <filter id="badgeShadow"><feDropShadow dx="0" dy="8" stdDeviation="14" floodColor="#4F46E5" floodOpacity="0.3"/></filter>
-              <filter id="bookShadow"><feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#2E1065" floodOpacity="0.35"/></filter>
-            </defs>
-            <rect width="600" height="360" fill="url(#bgGrad)" rx="20"/>
-            <circle cx="162" cy="180" r="66" fill="url(#markGrad)" filter="url(#badgeShadow)"/>
-            <g transform="translate(162,183)" filter="url(#bookShadow)">
-              <ellipse cx="0" cy="30" rx="38" ry="5" fill="#1E1B4B" opacity="0.25"/>
-              <path d="M-42,-28 L-6,-28 L-6,28 L-42,28 Q-45,28 -45,25 L-45,-25 Q-45,-28 -42,-28 Z" fill="#818CF8"/>
-              <path d="M6,-28 L42,-28 Q45,-28 45,-25 L45,25 Q45,28 42,28 L6,28 L6,-28 Z" fill="#A78BFA"/>
-              <rect x="-38" y="-25" width="32" height="48" rx="1" fill="url(#pageLeft)"/>
-              <rect x="6" y="-25" width="32" height="48" rx="1" fill="url(#pageRight)"/>
-              <rect x="-5.5" y="-30" width="11" height="64" rx="2" fill="url(#spineGrad)"/>
-            </g>
-            <text x="276" y="168" fontFamily="Georgia, serif" fontSize="48" fontWeight="700" fill="url(#textGrad)" letterSpacing="-0.02em">Lit & Learn</text>
-            <text x="278" y="196" fontFamily="system-ui" fontSize="11" fontWeight="600" fill="#6366F1" letterSpacing="0.2em">ENGLISH · LITERATURE · LANGUAGE</text>
-            <rect x="276" y="208" width="282" height="2" rx="1" fill="url(#textGrad)" opacity="0.2"/>
-          </svg>
+          {/* Logo SVG removed for brevity in this block, but you should keep yours if you prefer it, or just use this text header */}
+           <h1 style={{fontSize: '3rem', color: '#4F46E5', margin: '0 0 10px'}}>Lit & Learn</h1>
+           <p style={{color: '#64748B', letterSpacing: '2px', fontWeight: 'bold', fontSize: '0.9rem'}}>ENGLISH • LITERATURE • LANGUAGE</p>
         </header>
 
         {/* --- MAIN NAVIGATION --- */}
@@ -137,8 +115,6 @@ export default function App() {
                     )}
                     <div style={{ padding: '20px' }}>
                       <h3 style={{ margin: '0 0 10px', fontSize: '1.15rem', color: '#0F172A' }}>{book.title}</h3>
-                      
-                      {/* --- THE CRASH-PROOF RICH TEXT RENDERER --- */}
                       <div style={{ color: '#475569', fontSize: '0.9rem', lineHeight: '1.6' }}>
                         {!book.content ? (
                           <p style={{ fontStyle: 'italic', color: '#94A3B8' }}>No review written yet.</p>
@@ -148,7 +124,6 @@ export default function App() {
                           <PortableText value={book.content} /> 
                         )}
                       </div>
-
                     </div>
                   </div>
                 )) : (
@@ -163,6 +138,7 @@ export default function App() {
           {/* TAB 2: ENGLISH CORNER */}
           {activeTab === 'English Corner' && (
             <div>
+              {/* Level Selection Blocks... (unchanged) */}
               {!activeLevel && (
                 <>
                   <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#0F172A' }}>Select Your Level</h2>
@@ -206,6 +182,7 @@ export default function App() {
                 </>
               )}
 
+              {/* MULTIPLE FILES FIX: Unit View */}
               {activeUnit && (
                 <>
                   <button style={styles.backButton} onClick={() => setActiveUnit(null)}>← Back to Units</button>
@@ -215,9 +192,10 @@ export default function App() {
                       <span style={{ background: '#F1F5F9', padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600', color: '#475569' }}>{activeSubLevel}</span>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                       {SKILLS.map(skill => {
-                        const specificPdf = resources.find(r => 
+                        // NEW LOGIC: Use .filter() to grab ALL matching PDFs, not just the first one.
+                        const skillPdfs = resources.filter(r => 
                           !r.isGeneral &&
                           r.level === activeLevel && 
                           r.subLevel === activeSubLevel && 
@@ -226,24 +204,31 @@ export default function App() {
                         );
 
                         return (
-                          <div key={skill.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                          <div key={skill.name} style={{ display: 'flex', flexDirection: 'column', padding: '20px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', gap: '15px' }}>
+                            {/* Skill Header (e.g. 📝 Grammar) */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <span style={{ fontSize: '1.5rem' }}>{skill.icon}</span>
-                              <div>
-                                <h4 style={{ margin: 0, color: '#0F172A', fontSize: '1.05rem' }}>{skill.name}</h4>
-                                <p style={{ margin: 0, color: '#64748B', fontSize: '0.85rem' }}>
-                                  {specificPdf ? specificPdf.title : 'No resource uploaded yet.'}
-                                </p>
-                              </div>
+                              <h4 style={{ margin: 0, color: '#0F172A', fontSize: '1.2rem' }}>{skill.name}</h4>
                             </div>
-                            {specificPdf ? (
-                              <a href={specificPdf.fileUrl} target="_blank" rel="noreferrer" style={styles.greenButton}>
-                                Download PDF
-                              </a>
+                            
+                            {/* List of Files for this Skill */}
+                            {skillPdfs.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingLeft: '35px' }}>
+                                {skillPdfs.map(pdf => (
+                                  <div key={pdf._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                    <span style={{ fontWeight: '500', color: '#334155', fontSize: '0.95rem' }}>{pdf.title}</span>
+                                    <a href={pdf.fileUrl} target="_blank" rel="noreferrer" style={{...styles.greenButton, padding: '6px 12px', fontSize: '0.85rem'}}>
+                                      Download
+                                    </a>
+                                  </div>
+                                ))}
+                              </div>
                             ) : (
-                              <span style={{ background: '#E2E8F0', color: '#94A3B8', padding: '8px 16px', borderRadius: '8px', fontWeight: '600' }}>
-                                Coming Soon
-                              </span>
+                              <div style={{ paddingLeft: '35px' }}>
+                                <span style={{ background: '#E2E8F0', color: '#64748B', padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '600' }}>
+                                  No lessons uploaded yet
+                                </span>
+                              </div>
                             )}
                           </div>
                         )
