@@ -44,10 +44,22 @@ export default {
     { 
       name: 'file', 
       type: 'file', 
-      title: 'Upload PDF' 
+      title: 'Resource File (PDF)',
+      description: 'Upload the worksheet or reading material here.' 
+    },
+    // --- THE NEW AUDIO FIELD IS SAFELY INSIDE THE LIST NOW ---
+    {
+      name: 'audio',
+      title: 'Audio File (MP3/WAV)',
+      type: 'file',
+      options: {
+        accept: 'audio/*'
+      },
+      description: 'Optional: Upload a listening exercise, dictation, or pronunciation guide.'
     }
   ],
-  // --- THE NEW DASHBOARD PREVIEW UPGRADE ---
+  
+  // --- THE DASHBOARD PREVIEW UPGRADE ---
   preview: {
     select: {
       title: 'title',

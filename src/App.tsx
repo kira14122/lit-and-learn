@@ -97,7 +97,9 @@ export default function App() {
 
   useEffect(() => {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews);
-    client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url}').then(setResources);
+    // NEW FETCH QUERY: Now pulls both fileUrl AND audioUrl from Sanity
+    client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
+    
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {
       const dictMap: Record<string, any> = {};
       data.forEach((item: any) => { if (item.word) dictMap[item.word.toLowerCase()] = { pos: item.pos, def: item.definition, level: item.level }; });
@@ -210,10 +212,30 @@ export default function App() {
                    <div style={styles.grid}>
                      {searchResultsResources.map(res => (
                         <div key={res._id} className="soft-card" style={{...styles.card, padding: '30px', alignItems: 'center', textAlign: 'center'}}>
-                          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{res.isGeneral ? '📄' : '📚'}</div>
+                          {/* Search Icon changes if it's an audio file */}
+                          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{res.isGeneral ? '📄' : res.audioUrl ? '🎧' : '📚'}</div>
                           <span style={{ background: '#F1F5F9', color: '#475569', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '500', marginBottom: '12px', textTransform: 'uppercase' }}>{res.isGeneral ? 'General Resource' : `${res.subLevel} • Unit ${res.unit}`}</span>
                           <h3 style={{ margin: '0 0 24px', fontWeight: '600', color: '#0F172A', fontSize: '1.4rem' }}>{res.title}</h3>
-                          {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%'}}>Download</a>}
+                          
+                          {/* Search Results Audio Player */}
+                          {res.audioUrl && (
+                            <div style={{ width: '100%', marginBottom: '16px', padding: '8px', background: '#F8FAFC', borderRadius: '9999px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                              <audio controls style={{ width: '100%', height: '40px', outline: 'none' }}>
+                                <source src={res.audioUrl} type="audio/mpeg" />
+                                Your browser does not support the audio element.
+                              </audio>
+                            </div>
+                          )}
+                          
+                          {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{
+                            ...styles.actionButton, 
+                            width: '100%', 
+                            background: res.audioUrl ? '#EEF2FF' : '#4F46E5', 
+                            color: res.audioUrl ? '#4F46E5' : '#ffffff', 
+                            boxShadow: res.audioUrl ? 'none' : '0 10px 20px -5px rgba(79,70,229,0.4)'
+                          }}>
+                            {res.audioUrl ? 'Download Worksheet' : 'Download Lesson'}
+                          </a>}
                         </div>
                      ))}
                    </div>
@@ -259,7 +281,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* ENGLISH CORNER TAB (Clean, no checkmarks) */}
+              {/* ENGLISH CORNER TAB */}
               {activeTab === 'English Corner' && (
                 <div>
                   {!activeLevel && (
@@ -307,14 +329,41 @@ export default function App() {
                                 {skillPdfs.length > 0 ? ( 
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
                                     {skillPdfs.map(pdf => (
-                                        <div key={pdf._id} className="soft-card" style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', border: '2px solid #F1F5F9', padding: '24px', borderRadius: '24px', transition: 'all 0.2s ease' }}>
-                                          <span style={{ fontSize: '0.9rem', color: '#64748B', fontWeight: '500', textTransform: 'uppercase', marginBottom: '8px' }}>PDF Material</span>
-                                          <span style={{ fontWeight: '600', color: '#0F172A', fontSize: '1.2rem', marginBottom: '24px', lineHeight: '1.4' }}>{pdf.title}</span>
-                                          <div style={{ marginTop: 'auto' }}>
-                                            {pdf.fileUrl && ( <a href={pdf.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%'}}>Open Lesson</a> )}
-                                          </div>
+                                      <div key={pdf._id} className="soft-card" style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', border: '2px solid #F1F5F9', padding: '24px', borderRadius: '24px', transition: 'all 0.2s ease' }}>
+                                        
+                                        {/* Dynamic Header */}
+                                        <span style={{ fontSize: '0.9rem', color: '#64748B', fontWeight: '500', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                          {pdf.audioUrl ? '🎧 Audio Lesson' : '📄 PDF Material'}
+                                        </span>
+                                        
+                                        <span style={{ fontWeight: '600', color: '#0F172A', fontSize: '1.2rem', marginBottom: '24px', lineHeight: '1.4' }}>{pdf.title}</span>
+                                        
+                                        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                          {/* The Native Audio Player */}
+                                          {pdf.audioUrl && (
+                                            <div style={{ padding: '8px', background: '#F8FAFC', borderRadius: '9999px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                                              <audio controls style={{ width: '100%', height: '40px', outline: 'none' }}>
+                                                <source src={pdf.audioUrl} type="audio/mpeg" />
+                                                Your browser does not support the audio element.
+                                              </audio>
+                                            </div>
+                                          )}
+
+                                          {/* The Download Button */}
+                                          {pdf.fileUrl && (
+                                            <a href={pdf.fileUrl} target="_blank" rel="noreferrer" style={{
+                                              ...styles.actionButton, 
+                                              width: '100%', 
+                                              background: pdf.audioUrl ? '#EEF2FF' : '#4F46E5', 
+                                              color: pdf.audioUrl ? '#4F46E5' : '#ffffff',
+                                              boxShadow: pdf.audioUrl ? 'none' : '0 10px 20px -5px rgba(79,70,229,0.4)'
+                                            }}>
+                                              {pdf.audioUrl ? 'Download Worksheet' : 'Open Lesson'}
+                                            </a>
+                                          )}
                                         </div>
-                                      ))}
+                                      </div>
+                                    ))}
                                   </div> 
                                 ) : ( 
                                   <div style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '24px', padding: '32px', textAlign: 'center' }}>
