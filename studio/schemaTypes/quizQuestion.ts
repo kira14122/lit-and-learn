@@ -8,74 +8,84 @@ export default {
       title: 'The Question',
       type: 'text',
       rows: 3,
-      description: 'e.g., "Choose the correct tense to complete the sentence..."',
-      validation: (Rule: any) => Rule.required()
+      validation: Rule => Rule.required()
     },
-    // --- META TAGS (For the Balanced Shuffle) ---
+    {
+      name: 'questionFormat',
+      title: 'Question Format',
+      type: 'string',
+      options: {
+        list: ['Multiple Choice', 'True / False / Not Given'],
+        layout: 'radio'
+      },
+      initialValue: 'Multiple Choice',
+      validation: Rule => Rule.required()
+    },
+    {
+      name: 'audioSnippet',
+      title: '🎧 Listening Audio (Optional)',
+      type: 'file',
+      options: { accept: 'audio/*' }
+    },
     {
       name: 'level',
       title: 'Level',
       type: 'string',
       options: { list: ['Beginner', 'Intermediate', 'Advanced'] },
-      validation: (Rule: any) => Rule.required()
+      validation: Rule => Rule.required()
     },
     {
       name: 'unit',
       title: 'Unit Number',
       type: 'number',
-      description: 'Which unit does this belong to? (1-12)',
-      validation: (Rule: any) => Rule.required().min(1).max(12)
+      validation: Rule => Rule.required().min(1).max(12)
     },
     {
       name: 'skill',
       title: 'Target Skill',
       type: 'string',
       options: { list: ['Grammar', 'Vocabulary', 'Reading', 'Listening', 'Writing'] },
-      validation: (Rule: any) => Rule.required()
+      validation: Rule => Rule.required()
     },
-    // --- THE MULTIPLE CHOICE OPTIONS ---
-    { name: 'optionA', title: 'Option A', type: 'string', validation: (Rule: any) => Rule.required() },
-    { name: 'optionB', title: 'Option B', type: 'string', validation: (Rule: any) => Rule.required() },
-    { name: 'optionC', title: 'Option C', type: 'string', validation: (Rule: any) => Rule.required() },
-    { name: 'optionD', title: 'Option D', type: 'string', validation: (Rule: any) => Rule.required() },
+    // The A/B/C/D fields will hide if you select TFNG!
+    { name: 'optionA', title: 'Option A', type: 'string', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
+    { name: 'optionB', title: 'Option B', type: 'string', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
+    { name: 'optionC', title: 'Option C', type: 'string', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
+    { name: 'optionD', title: 'Option D', type: 'string', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
     {
       name: 'correctAnswer',
       title: 'Which option is correct?',
       type: 'string',
-      options: { list: ['A', 'B', 'C', 'D'], layout: 'radio' },
-      validation: (Rule: any) => Rule.required()
+      options: { list: ['A', 'B', 'C', 'D', 'True', 'False', 'Not Given'] },
+      validation: Rule => Rule.required()
     },
-    // --- THE DIAGNOSTIC LOOP ---
     {
       name: 'explanation',
       title: 'Diagnostic Explanation',
       type: 'text',
-      rows: 4,
-      description: 'Why is the correct answer right, and why are the others wrong? This shows up if the student fails the question.'
+      rows: 4
     },
     {
       name: 'relatedLesson',
       title: 'Related PDF/Audio Lesson (Optional)',
       type: 'reference',
-      to: [{ type: 'resource' }],
-      description: 'Link this question to a specific lesson. If the student gets it wrong, we will give them a button to review this exact material.'
+      to: [{ type: 'resource' }]
     }
   ],
-  
-  // Make it look clean in your dashboard list
   preview: {
     select: {
       title: 'question',
       level: 'level',
       unit: 'unit',
       skill: 'skill',
-      correct: 'correctAnswer'
+      correct: 'correctAnswer',
+      audio: 'audioSnippet'
     },
-    prepare(selection: any) {
-      const { title, level, unit, skill, correct } = selection;
+    prepare(selection) {
+      const { title, level, unit, skill, correct, audio } = selection;
       return {
         title: title,
-        subtitle: `${level} - Unit ${unit} (${skill}) | Answer: ${correct}`
+        subtitle: `${audio ? '🎧 ' : ''}${level} - Unit ${unit} (${skill}) | Answer: ${correct}`
       }
     }
   }

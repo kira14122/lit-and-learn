@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { client, urlFor } from './sanityClient';
-import { PortableText } from '@portabletext/react';
 
 // --- 1. ICONS ---
 const IconFiction = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
@@ -18,11 +17,11 @@ const SmartWord = ({ word, dictInfo }: { word: string, dictInfo: any }) => {
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <span onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }} style={{ color: '#4F46E5', fontWeight: '600', borderBottom: '2px dashed #A5B4FC', cursor: 'pointer', backgroundColor: isOpen ? '#EEF2FF' : 'transparent', padding: '2px 4px', borderRadius: '6px', transition: 'all 0.2s ease' }}>{word}</span>
       {isOpen && (
-        <div style={{ position: 'absolute', bottom: '130%', left: '0', backgroundColor: '#0F172A', color: '#ffffff', padding: '20px', borderRadius: '24px', width: '85vw', maxWidth: '320px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)', zIndex: 9999, textAlign: 'left', fontFamily: '"Fredoka", sans-serif' }}>
-          <div style={{ position: 'absolute', bottom: '-8px', left: '20px', borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '10px solid #0F172A' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}><span style={{ fontSize: '1.3rem', fontWeight: '600', color: '#818CF8' }}>{word.toLowerCase()}</span><span style={{ fontSize: '0.8rem', background: '#334155', padding: '4px 10px', borderRadius: '9999px', fontWeight: '600' }}>{dictInfo.level}</span></div>
+        <div style={{ position: 'absolute', bottom: '130%', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#0F172A', color: '#ffffff', padding: '20px', borderRadius: '24px', width: 'max-content', maxWidth: '320px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)', zIndex: 9999, textAlign: 'left', fontFamily: '"Fredoka", sans-serif' }}>
+          <div style={{ position: 'absolute', bottom: '-8px', left: '50%', transform: 'translateX(-50%)', borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '10px solid #0F172A' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', gap: '12px' }}><span style={{ fontSize: '1.3rem', fontWeight: '600', color: '#818CF8' }}>{word.toLowerCase()}</span><span style={{ fontSize: '0.8rem', background: '#334155', padding: '4px 10px', borderRadius: '9999px', fontWeight: '600', whiteSpace: 'nowrap' }}>{dictInfo.level}</span></div>
           <div style={{ color: '#94A3B8', fontSize: '0.9rem', fontStyle: 'italic', marginBottom: '8px' }}>{dictInfo.pos}</div>
-          <div style={{ fontSize: '1rem', lineHeight: '1.5', color: '#F8FAFC' }}>{dictInfo.def}</div>
+          <div style={{ fontSize: '1rem', lineHeight: '1.5', color: '#F8FAFC', whiteSpace: 'normal' }}>{dictInfo.def}</div>
         </div>
       )}
     </span>
@@ -30,8 +29,28 @@ const SmartWord = ({ word, dictInfo }: { word: string, dictInfo: any }) => {
 }
 
 const SmartText = ({ text, dictionary }: { text: string, dictionary: Record<string, any> }) => {
-  const parts = text.split(/(\b[a-zA-Z]+\b)/g);
-  return <>{parts.map((part, i) => dictionary[part.toLowerCase()] ? <SmartWord key={i} word={part} dictInfo={dictionary[part.toLowerCase()]} /> : <span key={i}>{part}</span>)}</>;
+  const dictKeys = Object.keys(dictionary).sort((a, b) => b.length - a.length);
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedKeys = dictKeys.map(escapeRegExp);
+  const regexPattern = escapedKeys.length > 0 ? new RegExp(`(\\b(?:${escapedKeys.join('|')})\\b)`, 'gi') : null;
+  const paragraphs = text.split(/\n+/);
+
+  return (
+    <>
+      {paragraphs.map((paragraph, pIndex) => {
+        const parts = regexPattern ? paragraph.split(regexPattern) : [paragraph];
+        return (
+          <p key={pIndex} style={{ marginBottom: '1.5em', marginTop: 0 }}>
+            {parts.map((part, i) => {
+              const lowerPart = part.toLowerCase();
+              if (dictionary[lowerPart]) { return <SmartWord key={i} word={part} dictInfo={dictionary[lowerPart]} />; }
+              return <span key={i}>{part}</span>;
+            })}
+          </p>
+        );
+      })}
+    </>
+  );
 };
 
 // --- 3. CONSTANTS & STYLES ---
@@ -50,13 +69,14 @@ const styles: any = {
   nav: { display: 'inline-flex', backgroundColor: '#ffffff', padding: '8px', borderRadius: '9999px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.06)', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' },
   navButton: (a: boolean) => ({ fontFamily: '"Fredoka", sans-serif', background: a ? '#4F46E5' : 'transparent', color: a ? '#ffffff' : '#64748B', border: 'none', fontSize: '17px', fontWeight: '600', padding: '14px 28px', borderRadius: '9999px', cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: a ? '0 10px 20px -5px rgba(79,70,229,0.4)' : 'none' }),
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 400px))', justifyContent: 'center', gap: '40px' },
-  card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'hidden', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', transition: 'all 0.3s ease' },
+  card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'visible', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', transition: 'all 0.3s ease' },
   levelCard: { fontFamily: '"Fredoka", sans-serif', backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', border: 'none', fontSize: '1.5rem', fontWeight: '600', color: '#0F172A', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' },
   subButton: (a: boolean) => ({ fontFamily: '"Fredoka", sans-serif', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', borderRadius: '9999px', border: 'none', backgroundColor: a ? '#4F46E5' : '#ffffff', color: a ? '#ffffff' : '#475569', fontWeight: '600', cursor: 'pointer', boxShadow: a ? '0 10px 20px -5px rgba(79,70,229,0.4)' : '0 10px 25px -5px rgba(0,0,0,0.05)', fontSize: '1.1rem' }),
   badgeButton: (a: boolean) => ({ fontFamily: '"Fredoka", sans-serif', padding: '10px 20px', borderRadius: '9999px', border: 'none', backgroundColor: a ? '#0F172A' : '#ffffff', color: a ? '#ffffff' : '#64748B', fontWeight: '500', cursor: 'pointer', fontSize: '1rem', boxShadow: '0 10px 20px -5px rgba(0,0,0,0.04)' }),
   backButton: { fontFamily: '"Fredoka", sans-serif', background: '#ffffff', border: 'none', color: '#0F172A', cursor: 'pointer', marginBottom: '40px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '14px 28px', borderRadius: '9999px', boxShadow: '0 15px 30px -10px rgba(0,0,0,0.08)', fontSize: '1.1rem' },
   actionButton: { fontFamily: '"Fredoka", sans-serif', background: '#4F46E5', color: '#ffffff', textDecoration: 'none', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', display: 'inline-block', textAlign: 'center', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(79,70,229,0.4)', fontSize: '1.1rem' },
   quizOptionBtn: (isSelected: boolean) => ({ display: 'block', width: '100%', textAlign: 'left', padding: '20px', margin: '12px 0', borderRadius: '16px', border: isSelected ? '2px solid #4F46E5' : '2px solid #E2E8F0', background: isSelected ? '#EEF2FF' : '#ffffff', color: '#0F172A', fontSize: '1.2rem', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s ease' }),
+  tfngBtn: (isSelected: boolean) => ({ display: 'block', width: '100%', textAlign: 'center', padding: '18px', margin: '10px 0', borderRadius: '16px', border: isSelected ? '2px solid #4F46E5' : '2px solid #E2E8F0', background: isSelected ? '#EEF2FF' : '#ffffff', color: isSelected ? '#4F46E5' : '#0F172A', fontSize: '1.3rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease' }),
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(12px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' },
   modalContent: { backgroundColor: '#ffffff', borderRadius: '40px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', position: 'relative', padding: '50px', boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.25)' },
   closeButton: { position: 'absolute', top: '24px', right: '24px', background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', color: '#0F172A', fontWeight: 'bold', fontSize: '1.4rem' },
@@ -80,9 +100,9 @@ export default function App() {
   // --- QUIZ ENGINE STATE ---
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [isLevelExam, setIsLevelExam] = useState(false);
-  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
-  const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  const [quizItems, setQuizItems] = useState<any[]>([]);
+  const [currentItemIndex, setCurrentItemIndex] = useState(0);
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [quizFinished, setQuizFinished] = useState(false);
 
   useEffect(() => {
@@ -96,62 +116,118 @@ export default function App() {
   }, []);
 
   const handleCategorySwitch = (category: string) => { setBookCategory(category); setActiveSubCategory(category === 'Fiction' ? 'American Literature' : 'Self Improvement'); };
-
   const displayedReviews = reviews.filter(rev => { return (rev.category || 'Fiction') === bookCategory && (rev.subCategory || 'American Literature') === activeSubCategory; });
   const searchResultsReviews = reviews.filter(rev => rev.title?.toLowerCase().includes(searchTerm.toLowerCase()) || (typeof rev.content === 'string' && rev.content.toLowerCase().includes(searchTerm.toLowerCase())) );
   const searchResultsResources = resources.filter(res => res.title?.toLowerCase().includes(searchTerm.toLowerCase()) || res.category?.toLowerCase().includes(searchTerm.toLowerCase()) || res.subLevel?.toLowerCase().includes(searchTerm.toLowerCase()) );
 
-  // --- UPGRADED QUIZ FUNCTIONS ---
   const startQuiz = async (runAsLevelExam: boolean = false) => {
-    const query = runAsLevelExam
-      ? `*[_type == "quizQuestion" && level == "${activeLevel}"]{..., "lessonUrl": relatedLesson->file.asset->url, "lessonAudio": relatedLesson->audio.asset->url, "lessonTitle": relatedLesson->title}`
-      : `*[_type == "quizQuestion" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "lessonUrl": relatedLesson->file.asset->url, "lessonAudio": relatedLesson->audio.asset->url, "lessonTitle": relatedLesson->title}`;
+    const singleQuery = runAsLevelExam
+      ? `*[_type == "quizQuestion" && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}`
+      : `*[_type == "quizQuestion" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}`;
     
-    const data = await client.fetch(query);
-    let finalShuffle: any[] = [];
+    const blockQuery = runAsLevelExam
+      ? `*[_type == "comprehensionBlock" && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}`
+      : `*[_type == "comprehensionBlock" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}`;
+
+    const [singleData, blockData] = await Promise.all([client.fetch(singleQuery), client.fetch(blockQuery)]);
+    let allItems = [...singleData, ...blockData];
+    const finalShuffle = allItems.sort(() => 0.5 - Math.random()).slice(0, 15);
     
-    if (runAsLevelExam) {
-      const groupedByUnit: Record<number, any[]> = {};
-      data.forEach((q: any) => { if (!groupedByUnit[q.unit]) groupedByUnit[q.unit] = []; groupedByUnit[q.unit].push(q); });
-      
-      let balancedList: any[] = [];
-      Object.values(groupedByUnit).forEach(unitArray => {
-        const shuffledUnit = unitArray.sort(() => 0.5 - Math.random()).slice(0, 3);
-        balancedList = [...balancedList, ...shuffledUnit];
-      });
-      finalShuffle = balancedList.sort(() => 0.5 - Math.random()).slice(0, 30);
-    } else {
-      const groupedBySkill: Record<string, any[]> = {};
-      data.forEach((q: any) => { if (!groupedBySkill[q.skill]) groupedBySkill[q.skill] = []; groupedBySkill[q.skill].push(q); });
-      
-      let balancedList: any[] = [];
-      Object.values(groupedBySkill).forEach(skillArray => {
-        const shuffledSkill = skillArray.sort(() => 0.5 - Math.random()).slice(0, 4);
-        balancedList = [...balancedList, ...shuffledSkill];
-      });
-      finalShuffle = balancedList.sort(() => 0.5 - Math.random()).slice(0, 15);
-    }
-    
-    setQuizQuestions(finalShuffle);
-    setCurrentQIndex(0);
+    setQuizItems(finalShuffle);
+    setCurrentItemIndex(0);
     setUserAnswers({});
     setQuizFinished(false);
     setIsLevelExam(runAsLevelExam);
     setIsQuizMode(true);
   };
 
-  const handleSelectAnswer = (optionLabel: string) => setUserAnswers({ ...userAnswers, [currentQIndex]: optionLabel });
+  const handleSelectAnswer = (itemIndex: number, optionLabel: string, subQuestionId?: string) => {
+    const key = subQuestionId ? `${itemIndex}-${subQuestionId}` : `${itemIndex}`;
+    setUserAnswers({ ...userAnswers, [key]: optionLabel });
+  };
+  
   const submitQuiz = () => setQuizFinished(true);
 
+  // --- UPGRADED DIAGNOSTIC LOGIC (Handles TFNG formatting) ---
   const skillScores: Record<string, { correct: number, total: number }> = {};
-  quizQuestions.forEach((q, idx) => {
-    if (!skillScores[q.skill]) skillScores[q.skill] = { correct: 0, total: 0 };
-    skillScores[q.skill].total += 1;
-    if (userAnswers[idx] === q.correctAnswer) skillScores[q.skill].correct += 1;
+  const wrongAnswers: any[] = [];
+  let totalCorrect = 0;
+  let totalQuestions = 0;
+
+  quizItems.forEach((item, idx) => {
+    if (item._type === 'quizQuestion') {
+      const skill = item.skill || 'General';
+      if (!skillScores[skill]) skillScores[skill] = { correct: 0, total: 0 };
+      skillScores[skill].total += 1;
+      totalQuestions += 1;
+
+      const isCorrect = userAnswers[`${idx}`] === item.correctAnswer;
+      if (isCorrect) {
+        skillScores[skill].correct += 1;
+        totalCorrect += 1;
+      } else {
+        // TFNG Check for Single Questions
+        let uAns = 'Missed Question';
+        let cAns = 'Unknown';
+        if (item.questionFormat === 'True / False / Not Given') {
+          uAns = userAnswers[`${idx}`] || 'Missed Question';
+          cAns = item.correctAnswer;
+        } else {
+          uAns = userAnswers[`${idx}`] ? item[`option${userAnswers[`${idx}`]}`] : 'Missed Question';
+          cAns = item[`option${item.correctAnswer}`];
+        }
+
+        wrongAnswers.push({
+          question: item.question,
+          skill: skill,
+          userAnsText: uAns,
+          correctAnsText: cAns,
+          explanation: item.explanation,
+          lessonUrl: item.lessonUrl,
+          lessonTitle: item.lessonTitle
+        });
+      }
+    } 
+    else if (item._type === 'comprehensionBlock' && item.questions) {
+      const skill = item.contentType.split(' ')[0]; 
+      if (!skillScores[skill]) skillScores[skill] = { correct: 0, total: 0 };
+
+      item.questions.forEach((q: any) => {
+        skillScores[skill].total += 1;
+        totalQuestions += 1;
+
+        const ansKey = `${idx}-${q._key}`;
+        const isCorrect = userAnswers[ansKey] === q.correctAnswer;
+        if (isCorrect) {
+          skillScores[skill].correct += 1;
+          totalCorrect += 1;
+        } else {
+          // TFNG Check for Block Questions
+          let uAns = 'Missed Question';
+          let cAns = 'Unknown';
+          if (q.questionFormat === 'True / False / Not Given') {
+            uAns = userAnswers[ansKey] || 'Missed Question';
+            cAns = q.correctAnswer;
+          } else {
+            uAns = userAnswers[ansKey] ? q[`option${userAnswers[ansKey]}`] : 'Missed Question';
+            cAns = q[`option${q.correctAnswer}`];
+          }
+
+          wrongAnswers.push({
+            question: q.questionText,
+            skill: skill,
+            contextTitle: item.title,
+            userAnsText: uAns,
+            correctAnsText: cAns,
+            explanation: q.explanation
+          });
+        }
+      });
+    }
   });
 
-  const totalCorrect = Object.values(skillScores).reduce((acc, curr) => acc + curr.correct, 0);
-  const totalPercentage = quizQuestions.length > 0 ? Math.round((totalCorrect / quizQuestions.length) * 100) : 0;return (
+  const totalPercentage = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+  const currentItem = quizItems[currentItemIndex];return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
@@ -177,7 +253,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ color: '#475569', fontSize: '1.3rem', lineHeight: '2', fontWeight: '400', maxWidth: '650px', textAlign: 'left' }}>
-                  {!selectedBook.content ? ( <p style={{ color: '#94A3B8', textAlign: 'center' }}>No review written yet.</p> ) : typeof selectedBook.content === 'string' ? ( <p><SmartText text={selectedBook.content} dictionary={dictionary} /></p> ) : ( <p><SmartText text={selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n')} dictionary={dictionary} /></p> )}
+                  {!selectedBook.content ? ( <p style={{ color: '#94A3B8', textAlign: 'center' }}>No review written yet.</p> ) : typeof selectedBook.content === 'string' ? ( <SmartText text={selectedBook.content} dictionary={dictionary} /> ) : ( <SmartText text={selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n')} dictionary={dictionary} /> )}
                 </div>
               </div>
             </div>
@@ -242,7 +318,6 @@ export default function App() {
                 <>
                   <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '60px' }}>
                     <nav style={styles.nav}>
-                      {/* CONTACT IS BACK IN THE MENU */}
                       {['Book Reviews', 'English Corner', 'Resources', 'About', 'Contact'].map(tab => (
                         <button key={tab} style={styles.navButton(activeTab === tab)} onClick={() => { setActiveTab(tab); setActiveLevel(null); setActiveSubLevel(null); setActiveUnit(null); }}>{tab}</button>
                       ))}
@@ -285,18 +360,13 @@ export default function App() {
                         </>
                       )}
                       
-                      {/* THE LEVEL EXAM BUTTON LIVES HERE */}
                       {activeSubLevel && !activeUnit && (
                         <>
                           <button style={styles.backButton} onClick={() => setActiveSubLevel(null)}>Back to {activeLevel}</button>
-                          
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', flexWrap: 'wrap', gap: '20px' }}>
                             <h2 style={{ margin: 0, color: '#0F172A', fontWeight: '600', fontSize: '2.5rem', letterSpacing: '-1px' }}>{activeSubLevel} Curriculum</h2>
-                            <button onClick={() => startQuiz(true)} style={{ ...styles.actionButton, background: '#F59E0B', boxShadow: '0 10px 20px -5px rgba(245, 158, 11, 0.4)', padding: '16px 32px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              🌟 Take Final Exam
-                            </button>
+                            <button onClick={() => startQuiz(true)} style={{ ...styles.actionButton, background: '#F59E0B', boxShadow: '0 10px 20px -5px rgba(245, 158, 11, 0.4)', padding: '16px 32px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>🌟 Take Final Exam</button>
                           </div>
-
                           <div style={styles.grid}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(u => ( <div key={u} className="soft-card" style={{...styles.card, padding: '30px', cursor: 'pointer', textAlign: 'center'}} onClick={() => setActiveUnit(u)}><h3 style={{ margin: '0 0 16px', fontSize: '1.8rem', fontWeight: '600', color: '#0F172A' }}>Unit {u}</h3><span style={{ display: 'inline-block', background: '#F1F5F9', color: '#475569', padding: '8px 20px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '500' }}>Enter Syllabus</span></div> ))}</div>
                         </>
                       )}
@@ -356,7 +426,6 @@ export default function App() {
                     <div style={{ ...styles.card, maxWidth: '750px', margin: '0 auto', padding: '60px', textAlign: 'center' }}><h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2><p style={{ lineHeight: '2.2', color: '#475569', fontSize: '1.3rem', fontWeight: '400' }}>Welcome to my classroom. I am passionate about blending literature with language learning to help you achieve absolute fluency.</p></div>
                   )}
 
-                  {/* RESTORED CONTACT TAB PAGE */}
                   {activeTab === 'Contact' && (
                     <div style={{ ...styles.card, maxWidth: '650px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
                       <div style={{ fontSize: '4.5rem', marginBottom: '24px' }}>👋</div>
@@ -371,27 +440,107 @@ export default function App() {
           ) : (
             /* --- THE QUIZ OVERLAY VIEW --- */
             <div>
-              {!quizFinished && quizQuestions.length > 0 && (
-                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+              {!quizFinished && quizItems.length > 0 && currentItem && (
+                <div style={{ maxWidth: currentItem._type === 'comprehensionBlock' ? '900px' : '800px', margin: '0 auto' }}>
                   <button style={styles.backButton} onClick={() => { setIsQuizMode(false); setIsLevelExam(false); }}>{isLevelExam ? 'Exit Final Exam' : 'Exit Quiz'}</button>
                   <div style={{ ...styles.card, padding: '50px' }}>
+                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', color: '#64748B', fontWeight: '600' }}>
-                      <span>Question {currentQIndex + 1} of {quizQuestions.length}</span>
+                      <span>Part {currentItemIndex + 1} of {quizItems.length}</span>
                       <span style={{ background: isLevelExam ? '#FEF3C7' : '#EEF2FF', color: isLevelExam ? '#D97706' : '#4F46E5', padding: '4px 12px', borderRadius: '9999px' }}>
-                        {isLevelExam ? `Unit ${quizQuestions[currentQIndex].unit} Review` : quizQuestions[currentQIndex].skill}
+                        {currentItem._type === 'comprehensionBlock' ? currentItem.contentType : currentItem.skill}
                       </span>
                     </div>
-                    <h3 style={{ fontSize: '2rem', color: '#0F172A', fontWeight: '600', marginBottom: '40px', lineHeight: '1.4' }}>{quizQuestions[currentQIndex].question}</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '40px' }}>
-                      {['A', 'B', 'C', 'D'].map(opt => (
-                        <button key={opt} onClick={() => handleSelectAnswer(opt)} style={styles.quizOptionBtn(userAnswers[currentQIndex] === opt)}>
-                          <span style={{ display: 'inline-block', background: userAnswers[currentQIndex] === opt ? '#4F46E5' : '#F1F5F9', color: userAnswers[currentQIndex] === opt ? '#ffffff' : '#475569', width: '30px', height: '30px', textAlign: 'center', lineHeight: '30px', borderRadius: '50%', marginRight: '16px' }}>{opt}</span>
-                          {quizQuestions[currentQIndex][`option${opt}`]}
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      {currentQIndex < quizQuestions.length - 1 ? ( <button onClick={() => setCurrentQIndex(prev => prev + 1)} disabled={!userAnswers[currentQIndex]} style={{ ...styles.actionButton, opacity: !userAnswers[currentQIndex] ? 0.5 : 1 }}>Next Question</button> ) : ( <button onClick={submitQuiz} disabled={!userAnswers[currentQIndex]} style={{ ...styles.actionButton, background: '#10B981', boxShadow: '0 10px 20px -5px rgba(16, 185, 129, 0.4)', opacity: !userAnswers[currentQIndex] ? 0.5 : 1 }}>Submit Test</button> )}
+
+                    {/* SCENARIO A: COMPREHENSION BLOCK RENDER */}
+                    {currentItem._type === 'comprehensionBlock' ? (
+                      <div>
+                        <div style={{ marginBottom: '40px', paddingBottom: '40px', borderBottom: '2px dashed #E2E8F0' }}>
+                          <h2 style={{ fontSize: '2.2rem', color: '#0F172A', fontWeight: '600', marginBottom: '16px' }}>{currentItem.title}</h2>
+                          <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '24px', fontWeight: '500' }}>{currentItem.instruction}</p>
+                          
+                          {currentItem.contentType === 'Listening (Audio)' && currentItem.blockAudioUrl && (
+                            <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
+                              <audio controls style={{ width: '100%', height: '40px', outline: 'none' }}><source src={currentItem.blockAudioUrl} type="audio/mpeg" /></audio>
+                            </div>
+                          )}
+                          
+                          {currentItem.contentType === 'Reading (Text)' && currentItem.readingPassage && (
+                            <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', color: '#334155', fontSize: '1.2rem', lineHeight: '1.8', border: '1px solid #E2E8F0' }}>
+                              <SmartText text={currentItem.readingPassage} dictionary={dictionary} />
+                            </div>
+                          )}
+                        </div>
+
+                        {currentItem.questions && currentItem.questions.map((q: any, qIndex: number) => (
+                          <div key={q._key} style={{ marginBottom: '40px' }}>
+                            <h3 style={{ fontSize: '1.5rem', color: '#0F172A', fontWeight: '600', marginBottom: '20px' }}>{qIndex + 1}. {q.questionText}</h3>
+                            
+                            {/* --- TFNG LOGIC FOR BLOCKS --- */}
+                            {q.questionFormat === 'True / False / Not Given' ? (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' }}>
+                                {['True', 'False', 'Not Given'].map(opt => (
+                                  <button key={opt} onClick={() => handleSelectAnswer(currentItemIndex, opt, q._key)} style={styles.tfngBtn(userAnswers[`${currentItemIndex}-${q._key}`] === opt)}>
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                {['A', 'B', 'C', 'D'].map(opt => {
+                                  const isSelected = userAnswers[`${currentItemIndex}-${q._key}`] === opt;
+                                  return (
+                                    <button key={opt} onClick={() => handleSelectAnswer(currentItemIndex, opt, q._key)} style={{ display: 'flex', alignItems: 'center', padding: '16px', borderRadius: '16px', border: isSelected ? '2px solid #4F46E5' : '2px solid #E2E8F0', background: isSelected ? '#EEF2FF' : '#ffffff', color: '#0F172A', fontSize: '1.1rem', fontWeight: '500', cursor: 'pointer', textAlign: 'left' }}>
+                                      <span style={{ background: isSelected ? '#4F46E5' : '#F1F5F9', color: isSelected ? '#ffffff' : '#475569', width: '28px', height: '28px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '50%', marginRight: '12px', fontSize: '0.9rem', flexShrink: 0 }}>{opt}</span>
+                                      {q[`option${opt}`]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      /* SCENARIO B: SINGLE QUESTION RENDER */
+                      <div>
+                        <h3 style={{ fontSize: '2rem', color: '#0F172A', fontWeight: '600', marginBottom: '30px', lineHeight: '1.4' }}>{currentItem.question}</h3>
+                        
+                        {currentItem.questionAudioUrl && (
+                          <div style={{ width: '100%', marginBottom: '40px', padding: '16px', background: '#F8FAFC', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
+                            <span style={{ display: 'block', marginBottom: '12px', color: '#4F46E5', fontSize: '0.9rem', fontWeight: '600', textTransform: 'uppercase', textAlign: 'center', letterSpacing: '1px' }}>🎧 Listen to the Audio</span>
+                            <audio controls style={{ width: '100%', height: '40px', outline: 'none' }}><source src={currentItem.questionAudioUrl} type="audio/mpeg" /></audio>
+                          </div>
+                        )}
+
+                        {/* --- TFNG LOGIC FOR SINGLE QUESTIONS --- */}
+                        {currentItem.questionFormat === 'True / False / Not Given' ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '40px' }}>
+                            {['True', 'False', 'Not Given'].map(opt => (
+                              <button key={opt} onClick={() => handleSelectAnswer(currentItemIndex, opt)} style={styles.tfngBtn(userAnswers[`${currentItemIndex}`] === opt)}>
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '40px' }}>
+                            {['A', 'B', 'C', 'D'].map(opt => (
+                              <button key={opt} onClick={() => handleSelectAnswer(currentItemIndex, opt)} style={styles.quizOptionBtn(userAnswers[`${currentItemIndex}`] === opt)}>
+                                <span style={{ display: 'inline-block', background: userAnswers[`${currentItemIndex}`] === opt ? '#4F46E5' : '#F1F5F9', color: userAnswers[`${currentItemIndex}`] === opt ? '#ffffff' : '#475569', width: '30px', height: '30px', textAlign: 'center', lineHeight: '30px', borderRadius: '50%', marginRight: '16px' }}>{opt}</span>
+                                {currentItem[`option${opt}`]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '30px', borderTop: currentItem._type === 'comprehensionBlock' ? '2px solid #F1F5F9' : 'none' }}>
+                      {currentItemIndex < quizItems.length - 1 ? ( 
+                        <button onClick={() => setCurrentItemIndex(prev => prev + 1)} style={styles.actionButton}>Next Part</button> 
+                      ) : ( 
+                        <button onClick={submitQuiz} style={{ ...styles.actionButton, background: '#10B981', boxShadow: '0 10px 20px -5px rgba(16, 185, 129, 0.4)' }}>Submit Test</button> 
+                      )}
                     </div>
                   </div>
                 </div>
@@ -400,9 +549,11 @@ export default function App() {
               {quizFinished && (
                 <div style={{ maxWidth: '900px', margin: '0 auto' }}>
                   <button style={styles.backButton} onClick={() => { setIsQuizMode(false); setIsLevelExam(false); }}>{isLevelExam ? 'Return to Curriculum' : 'Return to Syllabus'}</button>
+                  
                   <div style={{ ...styles.card, padding: '50px', textAlign: 'center', marginBottom: '40px', background: totalPercentage >= 80 ? '#ECFDF5' : '#ffffff', border: totalPercentage >= 80 ? '2px solid #10B981' : 'none' }}>
                     <h2 style={{ fontSize: '2.5rem', fontWeight: '600', color: '#0F172A', margin: '0 0 16px' }}>{isLevelExam ? 'Final Exam Results' : 'Diagnostic Results'}</h2>
                     <div style={{ fontSize: '5rem', fontWeight: '700', color: totalPercentage >= 80 ? '#10B981' : '#F59E0B', marginBottom: '30px' }}>{totalPercentage}%</div>
+                    
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
                       {Object.entries(skillScores).map(([skill, score]) => (
                         <div key={skill} style={{ background: '#F8FAFC', padding: '12px 24px', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
@@ -412,37 +563,56 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  {quizQuestions.filter((q, idx) => userAnswers[idx] !== q.correctAnswer).length > 0 ? (
+
+                  {wrongAnswers.length > 0 ? (
                     <>
                       <h3 style={{ fontSize: '2rem', color: '#0F172A', fontWeight: '600', marginBottom: '24px' }}>Targeted Review Needed</h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        {quizQuestions.map((q, idx) => {
-                          if (userAnswers[idx] === q.correctAnswer) return null;
-                          return (
-                            <div key={idx} style={{ ...styles.card, padding: '30px', borderLeft: '6px solid #EF4444' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                                <span style={{ background: '#FEE2E2', color: '#EF4444', padding: '4px 12px', borderRadius: '9999px', fontWeight: '600', fontSize: '0.9rem' }}>{q.skill} Match Error</span>
-                                {isLevelExam && <span style={{ color: '#64748B', fontWeight: '600', fontSize: '0.9rem' }}>From Unit {q.unit}</span>}
-                              </div>
-                              <p style={{ fontSize: '1.3rem', color: '#0F172A', fontWeight: '500', marginBottom: '24px' }}>{q.question}</p>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px' }}><span style={{ display: 'block', color: '#64748B', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>Your Answer</span><span style={{ color: '#EF4444', fontWeight: '500', fontSize: '1.1rem' }}>{q[`option${userAnswers[idx]}`]}</span></div>
-                                <div style={{ background: '#ECFDF5', padding: '16px', borderRadius: '12px' }}><span style={{ display: 'block', color: '#10B981', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>Correct Answer</span><span style={{ color: '#059669', fontWeight: '500', fontSize: '1.1rem' }}>{q[`option${q.correctAnswer}`]}</span></div>
-                              </div>
-                              {q.explanation && <div style={{ background: '#FFFBEB', color: '#B45309', padding: '20px', borderRadius: '12px', marginBottom: '24px', lineHeight: '1.6' }}><strong>Why it's wrong:</strong> {q.explanation}</div>}
-                              {q.lessonUrl && <a href={q.lessonUrl} target="_blank" rel="noreferrer" style={{ ...styles.actionButton, background: '#F8FAFC', color: '#4F46E5', boxShadow: 'none', border: '2px solid #E2E8F0', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>📄 Review Lesson: {q.lessonTitle}</a>}
+                        {wrongAnswers.map((wa, idx) => (
+                          <div key={idx} style={{ ...styles.card, padding: '30px', borderLeft: '6px solid #EF4444' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                              <span style={{ background: '#FEE2E2', color: '#EF4444', padding: '4px 12px', borderRadius: '9999px', fontWeight: '600', fontSize: '0.9rem' }}>{wa.skill} Match Error</span>
+                              {wa.contextTitle && <span style={{ color: '#64748B', fontWeight: '600', fontSize: '0.9rem', paddingRight: '10px' }}>From: {wa.contextTitle}</span>}
                             </div>
-                          )
-                        })}
+                            <p style={{ fontSize: '1.3rem', color: '#0F172A', fontWeight: '500', marginBottom: '24px' }}>{wa.question}</p>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                              <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px' }}>
+                                <span style={{ display: 'block', color: '#64748B', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>Your Answer</span>
+                                <span style={{ color: '#EF4444', fontWeight: '500', fontSize: '1.1rem' }}>{wa.userAnsText}</span>
+                              </div>
+                              <div style={{ background: '#ECFDF5', padding: '16px', borderRadius: '12px' }}>
+                                <span style={{ display: 'block', color: '#10B981', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase', marginBottom: '8px' }}>Correct Answer</span>
+                                <span style={{ color: '#059669', fontWeight: '500', fontSize: '1.1rem' }}>{wa.correctAnsText}</span>
+                              </div>
+                            </div>
+
+                            {wa.explanation && (
+                              <div style={{ background: '#FFFBEB', color: '#B45309', padding: '20px', borderRadius: '12px', marginBottom: '24px', lineHeight: '1.6' }}>
+                                <strong>Why it's wrong:</strong> {wa.explanation}
+                              </div>
+                            )}
+
+                            {wa.lessonUrl && (
+                              <a href={wa.lessonUrl} target="_blank" rel="noreferrer" style={{ ...styles.actionButton, background: '#F8FAFC', color: '#4F46E5', boxShadow: 'none', border: '2px solid #E2E8F0', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                📄 Review Lesson: {wa.lessonTitle}
+                              </a>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </>
-                  ) : ( <div style={{ textAlign: 'center', color: '#10B981', fontSize: '1.5rem', fontWeight: '600', padding: '40px' }}>🎉 Flawless! You mastered every concept.</div> )}
+                  ) : (
+                    <div style={{ textAlign: 'center', color: '#10B981', fontSize: '1.5rem', fontWeight: '600', padding: '40px' }}>
+                      🎉 Flawless! You mastered every concept.
+                    </div>
+                  )}
                 </div>
               )}
 
-              {!quizFinished && quizQuestions.length === 0 && (
+              {!quizFinished && quizItems.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '60px' }}>
-                  <h3 style={{ color: '#0F172A', fontWeight: '600', fontSize: '1.5rem' }}>No questions available yet.</h3>
+                  <h3 style={{ color: '#0F172A', fontWeight: '600', fontSize: '1.5rem' }}>No test material available yet.</h3>
                   <button onClick={() => { setIsQuizMode(false); setIsLevelExam(false); }} style={{ ...styles.actionButton, marginTop: '24px' }}>Go Back</button>
                 </div>
               )}
