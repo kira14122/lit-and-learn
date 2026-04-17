@@ -54,6 +54,8 @@ export default {
         { type: 'readingBlock' },
         { type: 'vocabBlock' },
         { type: 'grammarBlock' },
+        { type: 'pronunciationBlock' },
+        { type: 'comprehensionBlock' },
         { type: 'inductiveGrammarBlock' }
       ]
     }

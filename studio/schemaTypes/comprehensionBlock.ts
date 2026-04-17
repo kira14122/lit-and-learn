@@ -1,96 +1,84 @@
 export default {
   name: 'comprehensionBlock',
-  type: 'document',
-  title: 'Comprehension Blocks (Multi-Question)',
+  title: 'Comprehension Block',
+  type: 'object',
   fields: [
     {
       name: 'title',
       title: 'Block Title',
       type: 'string',
-      validation: Rule => Rule.required()
+      initialValue: 'Check Your Understanding',
     },
     {
       name: 'instruction',
-      title: 'Student Instructions',
-      type: 'string',
-      validation: Rule => Rule.required()
-    },
-    {
-      name: 'contentType',
-      title: 'Content Type',
-      type: 'string',
-      options: { list: ['Listening (Audio)', 'Reading (Text)'] },
-      validation: Rule => Rule.required()
-    },
-    {
-      name: 'audioFile',
-      title: 'Audio File',
-      type: 'file',
-      options: { accept: 'audio/*' },
-      hidden: ({ document }) => document?.contentType !== 'Listening (Audio)'
-    },
-    {
-      name: 'readingPassage',
-      title: 'Reading Text',
+      title: 'Instructions',
       type: 'text',
-      rows: 10,
-      hidden: ({ document }) => document?.contentType !== 'Reading (Text)'
-    },
-    {
-      name: 'level',
-      title: 'Level',
-      type: 'string',
-      options: { list: ['Beginner', 'Intermediate', 'Advanced'] },
-      validation: Rule => Rule.required()
-    },
-    {
-      name: 'unit',
-      title: 'Unit Number',
-      type: 'number',
-      validation: Rule => Rule.required().min(1).max(12)
+      initialValue: 'Answer the following questions based on the reading text.',
     },
     {
       name: 'questions',
-      title: 'Questions for this Block',
+      title: 'Questions',
       type: 'array',
+      description: 'Add a mix of True/False and Multiple Choice questions here to match the chronological flow of the text.',
       of: [
+        // QUESTION TYPE 1: MULTIPLE CHOICE
         {
+          name: 'mcq',
+          title: 'Multiple Choice Question',
           type: 'object',
-          name: 'blockQuestion',
           fields: [
-            { name: 'questionText', type: 'string', title: 'Question', validation: Rule => Rule.required() },
-            {
-              name: 'questionFormat',
-              title: 'Question Format',
-              type: 'string',
-              options: { list: ['Multiple Choice', 'True / False / Not Given'], layout: 'radio' },
-              initialValue: 'Multiple Choice'
+            { 
+              name: 'questionText', 
+              title: 'Question', 
+              type: 'string' 
             },
-            { name: 'optionA', type: 'string', title: 'Option A', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
-            { name: 'optionB', type: 'string', title: 'Option B', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
-            { name: 'optionC', type: 'string', title: 'Option C', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
-            { name: 'optionD', type: 'string', title: 'Option D', hidden: ({parent}) => parent?.questionFormat === 'True / False / Not Given' },
             {
-              name: 'correctAnswer',
-              title: 'Correct Answer',
-              type: 'string',
-              options: { list: ['A', 'B', 'C', 'D', 'True', 'False', 'Not Given'] },
-              validation: Rule => Rule.required()
+              name: 'options',
+              title: 'Options (Add 4 choices)',
+              type: 'array',
+              of: [{ type: 'string' }]
             },
-            { name: 'explanation', title: 'Explanation', type: 'text', rows: 2 }
-          ]
+            { 
+              name: 'correctAnswer', 
+              title: 'Correct Answer', 
+              type: 'string', 
+              description: 'MUST exactly match one of the options you typed above.' 
+            }
+          ],
+          preview: {
+            select: { title: 'questionText' },
+            prepare(selection: any) { 
+              return { title: `🔵 [Multiple Choice] ${selection.title || 'New Question'}` } 
+            }
+          }
+        },
+        // QUESTION TYPE 2: TRUE/FALSE
+        {
+          name: 'tfq',
+          title: 'True/False Statement',
+          type: 'object',
+          fields: [
+            { 
+              name: 'statement', 
+              title: 'Statement', 
+              type: 'string' 
+            },
+            { 
+              name: 'isTrue', 
+              title: 'Is this statement True?', 
+              type: 'boolean', 
+              initialValue: false,
+              description: 'Toggle ON for True, leave OFF for False.'
+            }
+          ],
+          preview: {
+            select: { title: 'statement', isTrue: 'isTrue' },
+            prepare(selection: any) { 
+              return { title: `🟢 [True/False] ${selection.title || 'New Statement'} (Answer: ${selection.isTrue ? 'True' : 'False'})` } 
+            }
+          }
         }
-      ],
-      validation: Rule => Rule.min(1).max(10)
+      ]
     }
-  ],
-  preview: {
-    select: { title: 'title', level: 'level', unit: 'unit', type: 'contentType' },
-    prepare({ title, level, unit, type }) {
-      return {
-        title: title,
-        subtitle: `${type} | ${level} - Unit ${unit}`
-      }
-    }
-  }
-}
+  ]
+};

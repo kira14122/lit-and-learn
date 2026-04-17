@@ -7,75 +7,58 @@ export default {
       name: 'title',
       title: 'Block Title',
       type: 'string',
-      initialValue: 'Warm-Up: Before We Read',
-      description: 'The heading the student will see.',
+      initialValue: 'Warm-Up: Before You Read',
     },
     {
       name: 'instruction',
       title: 'Instructions',
       type: 'text',
-      rows: 2,
-      initialValue: 'Choose the best answer before reading the text. Don\'t worry about being right—just guess!',
-      description: 'Tell the students what to do.',
+      initialValue: 'Look at the image and answer the questions to activate your background knowledge.',
     },
+    // NEW VISUAL HOOK UPDATE
+    {
+      name: 'visualHook',
+      title: 'Visual Hook (Upload Image)',
+      type: 'image',
+      options: {
+        hotspot: true, // This allows you to crop the image directly inside Sanity!
+      },
+      description: 'Upload an engaging photo to activate schema before they read. (Optional)',
+    },
+    // WARM-UP QUESTIONS
     {
       name: 'questions',
       title: 'Warm-Up Questions',
       type: 'array',
-      description: 'Add your multiple choice questions here.',
       of: [
         {
           type: 'object',
           fields: [
-            {
-              name: 'questionText',
-              title: 'Question',
-              type: 'string',
-              description: 'Example: What kind of animal do you think a mongoose is?',
-              validation: (Rule) => Rule.required(),
+            { 
+              name: 'questionText', 
+              title: 'Question', 
+              type: 'string' 
             },
             {
               name: 'options',
-              title: 'Multiple Choice Options',
+              title: 'Options',
               type: 'array',
               of: [{ type: 'string' }],
-              description: 'Add the choices (e.g., A large bird, A small mammal, etc.)',
-              validation: (Rule) => Rule.required().min(2).max(4),
+            },
+            { 
+              name: 'correctAnswer', 
+              title: 'Correct Answer', 
+              type: 'string' 
             },
             {
-              name: 'correctAnswer',
-              title: 'Correct Answer',
-              type: 'string',
-              description: 'IMPORTANT: This must exactly match one of the options you typed above.',
-              validation: (Rule) => Rule.required(),
-            },
-          ],
-          preview: {
-            select: {
-              title: 'questionText',
+              name: 'extraContext',
+              title: 'Extra Context (The Reveal)',
+              type: 'text',
+              description: 'This paragraph appears after they guess the answer to build more background knowledge.'
             }
-          }
+          ]
         }
       ]
-    },
-    {
-      name: 'postQuizReveal',
-      title: 'Post-Quiz Extra Information (The Reveal Window)',
-      type: 'text',
-      rows: 4,
-      description: 'This is the text that pops up in the new window AFTER they answer, giving them the correct answers and extra context BEFORE they start reading the main text.',
-      validation: (Rule) => Rule.required(),
     }
-  ],
-  preview: {
-    select: {
-      title: 'title',
-    },
-    prepare(selection) {
-      return {
-        title: selection.title || 'Warm-Up Block',
-        subtitle: 'Pre-reading questions with information reveal'
-      }
-    }
-  }
+  ]
 };

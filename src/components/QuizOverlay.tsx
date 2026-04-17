@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SmartText } from './SmartReader'; // Re-use our dictionary parser!
+import TextHighlighter from './TextHighlighter'; // <--- THE UPGRADED ENGINE IS HERE!
 
 export const QuizOverlay = ({ 
   quizItems, 
@@ -107,7 +107,12 @@ export const QuizOverlay = ({
 
                   {quizItems[currentItemIndex]?.readingPassage && (
                     <div className="reading-box" style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', color: '#334155', fontSize: '1.2rem', lineHeight: '1.8', border: '1px solid #E2E8F0' }}>
-                      <SmartText text={quizItems[currentItemIndex].readingPassage} dictionary={dictionary} savedWords={savedWords} onSaveWord={toggleSaveWord} />
+                      {/* THE MAGIC HAPPENS HERE: Using TextHighlighter instead of SmartText */}
+                      <TextHighlighter 
+                        text={quizItems[currentItemIndex].readingPassage} 
+                        savedWords={savedWords} 
+                        onSaveWord={toggleSaveWord} 
+                      />
                     </div>
                   )}
                 </div>

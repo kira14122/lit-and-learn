@@ -5,6 +5,7 @@ import { VocabVault } from './components/VocabVault';
 import { QuizOverlay } from './components/QuizOverlay';
 import { ResourceLibrary } from './components/ResourceLibrary';
 import { InteractiveLesson } from './components/InteractiveLesson';
+import TextHighlighter from './components/TextHighlighter';
 
 // --- 1. ICONS ---
 const IconFiction = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
@@ -39,7 +40,6 @@ const styles: any = {
   closeButton: { position: 'absolute', top: '24px', right: '24px', background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', color: '#0F172A', fontWeight: 'bold', fontSize: '1.4rem' },
 };
 
-// --- 3. MAIN APP COMPONENT ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('English Corner');
   const [bookCategory, setBookCategory] = useState('Fiction');
@@ -47,7 +47,6 @@ export default function App() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
   
-  // Store Interactive Lessons from Sanity
   const [interactiveLessons, setInteractiveLessons] = useState<any[]>([]);
   
   const [dictionary, setDictionary] = useState<Record<string, any>>({});
@@ -58,20 +57,17 @@ export default function App() {
   const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // OVERLAY STATES
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [isLevelExam, setIsLevelExam] = useState(false);
   const [quizItems, setQuizItems] = useState<any[]>([]);
   const [isInteractiveLesson, setIsInteractiveLesson] = useState(false);
   
-  // Track exactly which lesson they clicked on
   const [activeLessonData, setActiveLessonData] = useState<any | null>(null);
 
   useEffect(() => {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     
-    // FETCH INTERACTIVE LESSONS (Resolving nested audio URLs)
     client.fetch(`*[_type == "interactiveLesson"] | order(lessonOrder asc) {
       ...,
       lessonBlocks[]{
@@ -92,15 +88,27 @@ export default function App() {
     }
   }, []);
 
+  // --- THE BULLETPROOF SAVE FUNCTION ---
   const toggleSaveWord = (word: string, info: any) => {
-    let updatedVault;
-    if (savedWords.some(w => w.word.toLowerCase() === word.toLowerCase())) {
-      updatedVault = savedWords.filter(w => w.word.toLowerCase() !== word.toLowerCase());
-    } else {
-      updatedVault = [...savedWords, { word, ...info }];
-    }
-    setSavedWords(updatedVault);
-    localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
+    if (!word) return;
+    
+    // Using a functional update strictly links the toggle to the LIVE vault
+    setSavedWords((prevVault) => {
+      const cleanWord = word.trim().toLowerCase();
+      const exists = prevVault.some(w => w?.word?.trim().toLowerCase() === cleanWord);
+      
+      let updatedVault;
+      if (exists) {
+        // If it exists, remove it
+        updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
+      } else {
+        // If it doesn't exist, add it
+        updatedVault = [...prevVault, { word: word.trim(), ...info }];
+      }
+      
+      localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
+      return updatedVault; // Returns the fresh array back into state
+    });
   };
 
   const handleCategorySwitch = (category: string) => { 
@@ -112,7 +120,6 @@ export default function App() {
   const searchResultsReviews = reviews.filter(rev => rev.title?.toLowerCase().includes(searchTerm.toLowerCase()) || (typeof rev.content === 'string' && rev.content.toLowerCase().includes(searchTerm.toLowerCase())) );
   const searchResultsResources = resources.filter(res => res.title?.toLowerCase().includes(searchTerm.toLowerCase()) || res.category?.toLowerCase().includes(searchTerm.toLowerCase()) || res.subLevel?.toLowerCase().includes(searchTerm.toLowerCase()) );
 
-  // --- THE UPDATED QUIZ LAUNCHER (WITH SAFETY NET) ---
   const startQuiz = async (runAsLevelExam: boolean = false) => {
     const singleQuery = runAsLevelExam ? `*[_type == "quizQuestion" && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}` : `*[_type == "quizQuestion" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}`;
     const blockQuery = runAsLevelExam ? `*[_type == "comprehensionBlock" && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}` : `*[_type == "comprehensionBlock" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}`;
@@ -120,7 +127,6 @@ export default function App() {
     const [singleData, blockData] = await Promise.all([client.fetch(singleQuery), client.fetch(blockQuery)]);
     let allItems = [...singleData, ...blockData].sort(() => 0.5 - Math.random()).slice(0, 15);
     
-    // SAFETY NET: If the database returns 0 questions, alert the user and stop the function
     if (allItems.length === 0) {
       alert("⚠️ No quiz questions have been published for this unit yet! Please add them in Sanity.");
       return; 
@@ -289,7 +295,6 @@ export default function App() {
                           <button onClick={() => startQuiz(false)} style={{ ...styles.actionButton, background: '#10B981', boxShadow: '0 10px 20px -5px rgba(16, 185, 129, 0.4)', display: 'flex', alignItems: 'center', gap: '8px' }}><IconQuiz /> Test Your Knowledge</button>
                         </div>
 
-                        {/* --- DYNAMIC INTERACTIVE LESSONS PIPELINE --- */}
                         <div style={{ marginBottom: '40px' }}>
                           <h3 style={{ fontSize: '1.8rem', color: '#0F172A', fontWeight: '600', marginBottom: '20px' }}>Interactive Modules</h3>
                           
@@ -315,7 +320,6 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* --- STATIC PDF RESOURCES --- */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                           {SKILLS.map(skill => {
                             const skillPdfs = resources.filter(r => !r.isGeneral && r.level === activeLevel && r.subLevel === activeSubLevel && r.unit === activeUnit && r.category === skill.name);
@@ -417,9 +421,9 @@ export default function App() {
                 {!selectedBook.content ? ( 
                   <p style={{ color: '#94A3B8', textAlign: 'center' }}>No review written yet.</p> 
                 ) : typeof selectedBook.content === 'string' ? ( 
-                  <SmartText text={selectedBook.content} dictionary={dictionary} savedWords={savedWords} onSaveWord={toggleSaveWord} /> 
+                  <TextHighlighter text={selectedBook.content} onSaveWord={toggleSaveWord} savedWords={savedWords} /> 
                 ) : ( 
-                  <SmartText text={selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n')} dictionary={dictionary} savedWords={savedWords} onSaveWord={toggleSaveWord} /> 
+                  <TextHighlighter text={selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n')} onSaveWord={toggleSaveWord} savedWords={savedWords} /> 
                 )}
               </div>
             </div>

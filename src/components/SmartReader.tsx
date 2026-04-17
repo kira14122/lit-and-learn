@@ -1,130 +1,166 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { PortableText } from '@portabletext/react';
+import { client } from '../sanityClient'; // <--- The Engine now fetches its own fuel!
 
-// 1. The Star Icon
-export const IconStar = (a: boolean) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill={a ? "#F59E0B" : "none"} stroke={a ? "#F59E0B" : "currentColor"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-  </svg>
-);
+// --- 1. THE AUTONOMOUS HIGHLIGHTER ---
+const HighlightString = (text: string, dictionary: any[]) => {
+  if (!text || typeof text !== 'string') return <>{text}</>;
+  if (!dictionary || dictionary.length === 0) return <>{text}</>;
 
-// 2. The Smart Word (Now with Edge-Detection!)
-export const SmartWord = ({ word, dictInfo, onSave, isSaved }: { word: string, dictInfo: any, onSave: any, isSaved: boolean }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+  // Check for the word under any name your Sanity schema might use
+  const dictWords = dictionary.map(item => ({
+    ...item,
+    lookupWord: (item.word || item.title || item.term || item.name || '').trim()
+  })).filter(item => item.lookupWord);
 
-  // EDGE DETECTION LOGIC: Prevents tooltip from clipping off the screen
-  useEffect(() => {
-    if (isOpen && tooltipRef.current) {
-      // Reset position first
-      tooltipRef.current.style.left = '50%';
-      tooltipRef.current.style.right = 'auto';
-      tooltipRef.current.style.transform = 'translateX(-50%)';
-      
-      const rect = tooltipRef.current.getBoundingClientRect();
-      const isMobile = window.innerWidth <= 768; // Mobile handles itself via CSS fixed position
+  if (dictWords.length === 0) return <>{text}</>;
 
-      if (!isMobile) {
-        if (rect.left < 20) {
-          // If too close to the left edge, flush it left
-          tooltipRef.current.style.left = '0';
-          tooltipRef.current.style.transform = 'translateX(0)';
-        } else if (rect.right > window.innerWidth - 20) {
-          // If too close to the right edge, flush it right
-          tooltipRef.current.style.left = 'auto';
-          tooltipRef.current.style.right = '0';
-          tooltipRef.current.style.transform = 'translateX(0)';
+  const wordsToFind = dictWords.map(w => w.lookupWord.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
+  const regex = new RegExp(`\\b(${wordsToFind})\\b`, 'gi');
+
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const match = dictWords.find((item: any) => item.lookupWord.toLowerCase() === part.toLowerCase());
+        if (match) {
+          return (
+            <span 
+              key={i} 
+              className="text-purple-600 font-bold border-b-2 border-purple-200 cursor-pointer hover:bg-purple-100 transition-colors px-1 rounded"
+              title={match.definition || 'Click to save to Vault!'}
+              onClick={() => alert(`⭐ Saved '${match.lookupWord}' to your Personal Vault!`)}
+            >
+              {part}
+            </span>
+          );
         }
-      }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+// Generates the rules to highlight words even if they are inside complex Sanity Arrays
+const getCustomComponents = (dictionary: any[]) => ({
+  block: {
+    normal: ({children}: any) => {
+      const processed = React.Children.map(children, child => {
+        if (typeof child === 'string') return HighlightString(child, dictionary);
+        return child;
+      });
+      return <p className="mb-4 leading-relaxed">{processed}</p>;
     }
-  }, [isOpen]);
+  }
+});
+
+
+// --- 2. MAIN LESSON COMPONENT ---
+export default function SmartReader(props: any) {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [dictionary, setDictionary] = useState<any[]>(props.dictionary || []);
+
+  // Fetch dictionary automatically if the parent page forgot to send it!
+  useEffect(() => {
+    if (!props.dictionary || props.dictionary.length === 0) {
+      client.fetch(`*[_type == "dictionaryWord"]`).then(setDictionary).catch(console.error);
+    }
+  }, [props.dictionary]);
+
+  const title = props.readingTitle || props.title || "Untitled Lesson";
+  const content = props.readingContent || props.content || props.body || props.text;
+  const audio = props.audioUrl || props.audio;
 
   return (
-    <span style={{ position: 'relative', display: 'inline-block' }}>
-      <span onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }} style={{ color: '#4F46E5', fontWeight: '600', borderBottom: '2px dashed #A5B4FC', cursor: 'pointer', backgroundColor: isOpen ? '#EEF2FF' : 'transparent', padding: '2px 4px', borderRadius: '6px' }}>{word}</span>
-      {isOpen && (
-        <div ref={tooltipRef} className="dict-tooltip">
-          <div className="dict-arrow" />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', gap: '12px' }}>
-            <span style={{ fontSize: '1.4rem', fontWeight: '700', color: '#818CF8' }}>{word.toLowerCase()}</span>
-            <button onClick={(e) => { e.stopPropagation(); onSave(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ffffff', padding: 0 }}>{IconStar(isSaved)}</button>
+    <div className="flex flex-col md:flex-row min-h-screen bg-white text-slate-900">
+      <div className="w-full md:w-1/2 p-8 md:p-12 border-r border-slate-200 overflow-y-auto">
+        <h1 className="text-4xl font-bold mb-6 text-slate-800 tracking-tight">{title}</h1>
+        
+        {audio && (
+          <div className="mb-8 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+            <audio controls className="w-full h-10" src={audio} />
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-             <span style={{ fontSize: '0.75rem', background: '#334155', padding: '4px 10px', borderRadius: '9999px', fontWeight: '700' }}>{dictInfo.level}</span>
-             <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontStyle: 'italic', paddingTop: '4px' }}>{dictInfo.pos}</span>
-          </div>
-          <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#F8FAFC', whiteSpace: 'normal', wordBreak: 'break-word' }}>{dictInfo.def}</div>
+        )}
+
+        <div className="prose prose-lg prose-slate max-w-none mb-12">
+          {content ? (
+            Array.isArray(content) ? (
+              <PortableText value={content} components={getCustomComponents(dictionary)} />
+            ) : (
+              <p>{HighlightString(content, dictionary)}</p>
+            )
+          ) : (
+            <p className="text-slate-400 italic">Reading content area.</p>
+          )}
         </div>
-      )}
-    </span>
+
+        {!isUnlocked && (
+          <div className="mt-10 pt-10 border-t border-slate-100 text-center">
+            <button 
+              onClick={() => setIsUnlocked(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-2xl shadow-lg transition-all"
+            >
+              I'm Ready for the Questions
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="w-full md:w-1/2 p-8 md:p-12 bg-slate-50 overflow-y-auto">
+        {isUnlocked ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+             {props.children}
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+            <span className="text-7xl mb-6 text-indigo-200">📖</span>
+            <p className="text-center max-w-xs">Read the text on the left to unlock exercises.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-// 3. The Text Parser (Now carries its own CSS backpack!)
-export const SmartText = ({ text, dictionary, savedWords, onSaveWord }: { text: string, dictionary: Record<string, any>, savedWords: any[], onSaveWord: any }) => {
-  const dictKeys = Object.keys(dictionary).sort((a, b) => b.length - a.length);
-  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const escapedKeys = dictKeys.map(escapeRegExp);
-  const regexPattern = escapedKeys.length > 0 ? new RegExp(`(\\b(?:${escapedKeys.join('|')})\\b)`, 'gi') : null;
-  const paragraphs = text.split(/\n+/);
+// --- 3. EXPORTS FOR OTHER FILES ---
+
+export const IconStar = ({ className = "w-6 h-6 text-yellow-500" }: any) => (
+  <svg fill="currentColor" viewBox="0 0 24 24" className={className} style={{display: 'inline-block'}}><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" /></svg>
+);
+
+// THE GATSBY REVIEW COMPONENT
+export const SmartText = (props: any) => {
+  const [dictionary, setDictionary] = useState<any[]>([]);
+
+  // Automatically fetch the dictionary for Gatsby Reviews!
+  useEffect(() => {
+    client.fetch(`*[_type == "dictionaryWord"]`).then(setDictionary).catch(console.error);
+  }, []);
+
+  let data = props.value || props.review || props.content || props.description || props.children || props.word || props.text;
+  
+  if (!data) {
+    for (const key in props) {
+      if (key === 'className') continue;
+      if ((Array.isArray(props[key]) && props[key].length > 0) || (typeof props[key] === 'string' && props[key].trim().length > 0)) {
+        data = props[key]; break;
+      }
+    }
+  }
+
+  if (!data) return null;
+
+  if (props.className && props.className.includes('purple')) {
+    return <span className={props.className}>{data}</span>;
+  }
 
   return (
-    <>
-      {/* CSS injected directly so it NEVER gets lost again */}
-      <style>{`
-        .dict-tooltip {
-          position: absolute;
-          bottom: calc(100% + 10px);
-          left: 50%;
-          transform: translateX(-50%);
-          background-color: #0F172A;
-          color: #ffffff;
-          padding: 24px;
-          border-radius: 24px;
-          width: max-content;
-          max-width: 320px;
-          min-width: 250px;
-          box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3);
-          z-index: 99999;
-          text-align: left;
-        }
-        .dict-arrow {
-          position: absolute;
-          bottom: -8px;
-          left: 50%;
-          transform: translateX(-50%);
-          border-left: 10px solid transparent;
-          border-right: 10px solid transparent;
-          border-top: 10px solid #0F172A;
-        }
-        @media (max-width: 768px) {
-          .dict-tooltip {
-            position: fixed !important;
-            bottom: 24px !important;
-            left: 50% !important;
-            right: auto !important;
-            transform: translateX(-50%) !important;
-            width: calc(100vw - 32px) !important;
-            max-width: 450px !important;
-            box-shadow: 0 0 50px rgba(0,0,0,0.5) !important;
-          }
-          .dict-arrow { display: none !important; }
-        }
-      `}</style>
-      
-      {paragraphs.map((paragraph, pIndex) => {
-        const parts = regexPattern ? paragraph.split(regexPattern) : [paragraph];
-        return (
-          <p key={pIndex} style={{ marginBottom: '1.5em', marginTop: 0 }}>
-            {parts.map((part, i) => {
-              const lowerPart = part.toLowerCase();
-              if (dictionary[lowerPart]) {
-                return <SmartWord key={i} word={part} dictInfo={dictionary[lowerPart]} isSaved={savedWords.some(w => w.word.toLowerCase() === lowerPart)} onSave={() => onSaveWord(part, dictionary[lowerPart])} />;
-              }
-              return <span key={i}>{part}</span>;
-            })}
-          </p>
-        );
-      })}
-    </>
+    <div className={`prose prose-slate max-w-none ${props.className || ''}`}>
+      {Array.isArray(data) ? (
+        <PortableText value={data} components={getCustomComponents(dictionary)} />
+      ) : (
+        <p>{HighlightString(data, dictionary)}</p>
+      )}
+    </div>
   );
 };
