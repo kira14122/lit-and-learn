@@ -68,11 +68,18 @@ export default function App() {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     
+    // UPDATED QUERY: Notice the new visualHook section that specifically asks for the URL!
     client.fetch(`*[_type == "interactiveLesson"] | order(lessonOrder asc) {
       ...,
       lessonBlocks[]{
         ...,
-        "audioUrl": audio.asset->url
+        "audioUrl": audio.asset->url,
+        visualHook{
+          ...,
+          asset->{
+            url
+          }
+        }
       }
     }`).then(setInteractiveLessons);
 

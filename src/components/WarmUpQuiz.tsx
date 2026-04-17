@@ -1,134 +1,134 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 
-interface WarmUpProps {
-  block: any;
-  onComplete: () => void;
-}
+export default function WarmUpQuiz({ block, onComplete }: { block: any, onComplete: () => void }) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [hasRevealed, setHasRevealed] = useState(false);
 
-export default function WarmUpQuiz({ block, onComplete }: WarmUpProps) {
-  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: number]: string }>({});
-  const [isRevealed, setIsRevealed] = useState(false);
+  if (!block) return null;
 
   const questions = block.questions || [];
-  const answeredCount = Object.keys(selectedAnswers).length;
-  const allAnswered = answeredCount === questions.length;
+  const currentQuestion = questions[currentStep];
 
-  const handleSelect = (qIndex: number, option: string) => {
-    if (isRevealed) return;
-    setSelectedAnswers(prev => ({ ...prev, [qIndex]: option }));
+  // Helper to safely grab the Sanity image URL
+  const getImageUrl = (imageField: any) => {
+    if (imageField?.asset?.url) return imageField.asset.url;
+    if (typeof imageField === 'string') return imageField;
+    return null;
+  };
+
+  const imageUrl = getImageUrl(block.visualHook);
+
+  const handleSelect = (option: string) => {
+    // Lock the answer once they click so they can read the reveal!
+    if (hasRevealed) return; 
+    setSelectedAnswer(option);
+    setHasRevealed(true);
+  };
+
+  const handleNext = () => {
+    if (currentStep < questions.length - 1) {
+      // Move to the next slide and reset the state
+      setCurrentStep(prev => prev + 1);
+      setSelectedAnswer(null);
+      setHasRevealed(false);
+    } else {
+      // They finished the warm-up! Unlock the reading text.
+      onComplete(); 
+    }
   };
 
   return (
-    <div style={{ 
-      backgroundColor: 'white', 
-      padding: '40px', 
-      borderRadius: '16px', 
-      boxShadow: '0 10px 30px rgba(0,0,0,0.08)', 
-      maxWidth: '600px', 
-      width: '100%' 
-    }}>
-      <h2 style={{ fontSize: '1.8rem', color: '#2563eb', marginBottom: '8px' }}>{block.title}</h2>
-      <p style={{ color: '#64748b', marginBottom: '30px', fontSize: '1.1rem' }}>{block.instruction}</p>
+    <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto', backgroundColor: 'white', borderRadius: '32px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.1)' }}>
+      
+      {/* THE VISUAL HOOK (Cover Image) */}
+      {imageUrl && (
+        <div style={{ width: '100%', height: '350px', backgroundImage: `url(${imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#E2E8F0' }} />
+      )}
 
-      {questions.map((q: any, qIdx: number) => (
-        <div key={qIdx} style={{ marginBottom: '25px' }}>
-          <p style={{ fontWeight: '600', marginBottom: '12px', fontSize: '1.05rem' }}>{q.questionText}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {q.options?.map((option: string, i: number) => {
-              const isSelected = selectedAnswers[qIdx] === option;
-              const isCorrect = option === q.correctAnswer;
-              
-              let bgColor = 'white';
-              let borderColor = '#e2e8f0';
+      <div style={{ padding: '50px 40px' }}>
+        
+        {/* HEADER & INSTRUCTIONS */}
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          {questions.length > 0 && (
+            <span style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', padding: '8px 16px', borderRadius: '999px', fontWeight: 'bold', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              Slide {currentStep + 1} of {questions.length}
+            </span>
+          )}
+          <h1 style={{ fontSize: '2.5rem', color: '#0F172A', marginTop: '24px', marginBottom: '12px' }}>{block.title}</h1>
+          <p style={{ fontSize: '1.2rem', color: '#64748B', maxWidth: '600px', margin: '0 auto' }}>{block.instruction}</p>
+        </div>
 
-              if (isRevealed) {
-                if (isCorrect) {
-                  bgColor = '#dcfce7'; // Green
-                  borderColor = '#22c55e';
-                } else if (isSelected) {
-                  bgColor = '#fee2e2'; // Red
-                  borderColor = '#ef4444';
-                }
-              } else if (isSelected) {
-                bgColor = '#eff6ff'; // Blue
-                borderColor = '#3b82f6';
-              }
+        {/* THE SLIDESHOW */}
+        {currentQuestion ? (
+          <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <h2 style={{ fontSize: '1.5rem', color: '#1E293B', marginBottom: '24px', lineHeight: '1.5', textAlign: 'center' }}>
+              {currentQuestion.questionText}
+            </h2>
 
-              return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {currentQuestion.options?.map((opt: string, idx: number) => {
+                const isSelected = selectedAnswer === opt;
+                const isCorrect = opt === currentQuestion.correctAnswer;
+
+                let bg = '#F8FAFC'; let border = '2px solid #E2E8F0'; let color = '#334155';
+
+                // Post-Click Feedback
+                if (hasRevealed) {
+                  if (isCorrect) {
+                    bg = '#D1FAE5'; border = '2px solid #10B981'; color = '#065F46'; // Correct highlights Green
+                  } else if (isSelected) {
+                    bg = '#FEE2E2'; border = '2px solid #EF4444'; color = '#991B1B'; // Wrong highlights Red
+                  } else {
+                    bg = '#FFFFFF'; border = '2px solid #F1F5F9'; color = '#CBD5E1'; // Others fade out
+                  }
+                } 
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelect(opt)}
+                    disabled={hasRevealed}
+                    style={{ padding: '20px', borderRadius: '16px', border, backgroundColor: bg, color, fontSize: '1.15rem', fontWeight: '600', cursor: hasRevealed ? 'default' : 'pointer', transition: 'all 0.2s', textAlign: 'left', outline: 'none' }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* THE REVEAL & PROGRESSION BUTTON */}
+            {hasRevealed && (
+              <div style={{ marginTop: '30px', animation: 'fadeIn 0.5s' }}>
+                {currentQuestion.extraContext && (
+                  <div style={{ backgroundColor: '#F8FAFC', padding: '24px', borderRadius: '16px', borderLeft: '4px solid #4F46E5', marginBottom: '24px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#0F172A', fontSize: '1.1rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>The Full Story:</h4>
+                    <p style={{ margin: 0, color: '#475569', lineHeight: '1.6', fontSize: '1.1rem' }}>
+                      {currentQuestion.extraContext}
+                    </p>
+                  </div>
+                )}
+
                 <button
-                  key={i}
-                  onClick={() => handleSelect(qIdx, option)}
-                  disabled={isRevealed}
-                  style={{
-                    padding: '14px',
-                    textAlign: 'left',
-                    borderRadius: '8px',
-                    border: `2px solid ${borderColor}`,
-                    backgroundColor: bgColor,
-                    cursor: isRevealed ? 'default' : 'pointer',
-                    transition: 'all 0.2s ease',
-                    fontSize: '1rem'
-                  }}
+                  onClick={handleNext}
+                  style={{ width: '100%', padding: '20px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.25rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(79, 70, 229, 0.4)', transition: 'transform 0.2s' }}
                 >
-                  {option}
+                  {currentStep < questions.length - 1 ? 'Next Question ➡️' : 'Start Reading Lesson 📖'}
                 </button>
-              );
-            })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
-
-      {!isRevealed && allAnswered && (
-        <button
-          onClick={() => setIsRevealed(true)}
-          style={{
-            width: '100%',
-            padding: '16px',
-            backgroundColor: '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: '10px',
-            fontSize: '1.1rem',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            marginTop: '10px'
-          }}
-        >
-          Check My Guesses
-        </button>
-      )}
-
-      {isRevealed && (
-        <div style={{ marginTop: '30px', animation: 'fadeIn 0.5s ease-in' }}>
-          <div style={{ 
-            padding: '20px', 
-            backgroundColor: '#f8fafc', 
-            borderLeft: '4px solid #2563eb', 
-            borderRadius: '4px',
-            marginBottom: '25px'
-          }}>
-            <h4 style={{ margin: '0 0 8px 0', color: '#1e40af' }}>The Truth...</h4>
-            <p style={{ margin: 0, lineHeight: '1.6', color: '#334155' }}>{block.postQuizReveal}</p>
+        ) : (
+          /* Fallback if they add a block with no questions */
+          <div style={{ textAlign: 'center' }}>
+            <button onClick={onComplete} style={{ padding: '20px 40px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.25rem', fontWeight: 'bold', cursor: 'pointer' }}>
+              Start Reading Lesson 📖
+            </button>
           </div>
+        )}
 
-          <button
-            onClick={onComplete}
-            style={{
-              width: '100%',
-              padding: '16px',
-              backgroundColor: '#059669',
-              color: 'white',
-              border: 'none',
-              borderRadius: '10px',
-              fontSize: '1.1rem',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >
-            I'm Ready to Read! →
-          </button>
-        </div>
-      )}
+      </div>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }

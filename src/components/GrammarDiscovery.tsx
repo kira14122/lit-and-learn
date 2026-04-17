@@ -1,52 +1,123 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 export default function GrammarDiscovery({ block }: { block: any }) {
   const [showRule, setShowRule] = useState(false);
 
   if (!block) return null;
 
+  // Helper function: Turns *asterisks* from Sanity into highlighted purple text
+  const highlightTargetGrammar = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(\*[^*]+\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return (
+          <span key={i} style={{ color: '#6366f1', fontWeight: '700', backgroundColor: '#eef2ff', padding: '2px 6px', borderRadius: '6px' }}>
+            {part.slice(1, -1)}
+          </span>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  // --- THE FIX: This safely extracts the text if Sanity sends an object instead of a string ---
+  const extractText = (item: any, keyName: string) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+      return item[keyName] || item.text || item.sentence || item.question || "";
+    }
+    return "";
+  };
+
   return (
-    <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-      <h2 style={{ fontSize: '1.4rem', color: '#1e293b', marginBottom: '20px', borderBottom: '2px solid #f1f5f9', paddingBottom: '10px' }}>
-        Grammar Focus: {block.title}
-      </h2>
+    <div className="soft-card" style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '32px', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }}>
+      
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '30px', borderBottom: '2px solid #F1F5F9', paddingBottom: '20px' }}>
+        <div style={{ background: '#EEF2FF', padding: '12px', borderRadius: '16px', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+        </div>
+        <h2 style={{ fontSize: '1.8rem', color: '#0F172A', fontWeight: '600', margin: 0 }}>
+          Grammar Discovery: <span style={{ color: '#4F46E5' }}>{block.title}</span>
+        </h2>
+      </div>
 
       {/* PHASE 1: Contextual Sentences */}
-      <div style={{ marginBottom: '25px' }}>
-        <h4 style={{ fontSize: '0.9rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '10px' }}>From the text:</h4>
-        {block.noticingSentences?.map((s: string, i: number) => (
-          <p key={i} style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: '4px solid #6366f1', fontStyle: 'italic', marginBottom: '10px' }}>
-            "{s}"
-          </p>
-        ))}
+      <div style={{ marginBottom: '40px' }}>
+        <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
+          1. Analyze the Text
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {block.noticingSentences?.map((s: any, i: number) => {
+            // Unpack the sentence object
+            const sentenceText = extractText(s, 'sentenceText');
+            return (
+              <p key={i} style={{ margin: 0, padding: '16px 20px', backgroundColor: '#F8FAFC', borderRadius: '16px', borderLeft: '4px solid #4F46E5', fontSize: '1.2rem', color: '#334155', lineHeight: '1.6' }}>
+                {highlightTargetGrammar(sentenceText)}
+              </p>
+            );
+          })}
+        </div>
       </div>
 
       {/* PHASE 2: Noticing Questions */}
-      <div style={{ marginBottom: '25px' }}>
-        <h4 style={{ fontSize: '0.9rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '10px' }}>Observe & Think:</h4>
-        {block.noticingQuestions?.map((q: string, i: number) => (
-          <p key={i} style={{ fontWeight: '500', color: '#334155', marginBottom: '8px' }}>• {q}</p>
-        ))}
+      <div style={{ marginBottom: '40px' }}>
+        <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
+          2. Observe & Think
+        </h4>
+        <div style={{ padding: '24px', backgroundColor: '#FFFBEB', borderRadius: '16px', border: '1px solid #FEF3C7' }}>
+          {block.noticingQuestions?.map((q: any, i: number) => {
+            // Unpack the question object using the exact key from your error message
+            const qText = extractText(q, 'questionText');
+            return (
+              <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: i === (block.noticingQuestions?.length || 1) - 1 ? '0' : '16px' }}>
+                <span style={{ color: '#D97706', fontSize: '1.2rem', marginTop: '2px' }}>💡</span>
+                <p style={{ margin: 0, fontWeight: '500', color: '#92400E', fontSize: '1.15rem', lineHeight: '1.5' }}>{qText}</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* PHASE 3: The Reveal */}
-      {!showRule ? (
-        <button 
-          onClick={() => setShowRule(true)}
-          style={{ width: '100%', padding: '12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-        >
-          Check the Rule
-        </button>
-      ) : (
-        <div style={{ animation: 'fadeIn 0.5s ease' }}>
-          <div style={{ padding: '20px', backgroundColor: '#eef2ff', borderRadius: '8px', border: '1px solid #c7d2fe' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#4338ca' }}>The Rule:</h4>
-            <p style={{ margin: 0, lineHeight: '1.6', color: '#312e81' }}>{block.grammarRule}</p>
+      <div style={{ marginTop: '20px' }}>
+        {!showRule ? (
+          <button 
+            onClick={() => setShowRule(true)}
+            style={{ width: '100%', padding: '18px', background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '9999px', cursor: 'pointer', fontWeight: '600', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', transition: 'all 0.2s ease', boxShadow: '0 10px 20px -5px rgba(79,70,229,0.4)' }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
+            Unlock the Rule
+          </button>
+        ) : (
+          <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+            <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
+              3. The Core Concept
+            </h4>
+            <div style={{ padding: '30px', backgroundColor: '#EEF2FF', borderRadius: '24px', border: '2px solid #C7D2FE', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-20px', right: '-20px', opacity: 0.1, transform: 'rotate(15deg)' }}>
+                <svg width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+              <p style={{ margin: 0, lineHeight: '1.8', color: '#312E81', fontSize: '1.25rem', fontWeight: '500', position: 'relative', zIndex: 1 }}>
+                {block.grammarRule}
+              </p>
+            </div>
           </div>
-          
-          {/* We'll add Phase 4: Quick Check Quiz here later! */}
-        </div>
-      )}
+        )}
+      </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
