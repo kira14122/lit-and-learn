@@ -10,6 +10,7 @@ import readingBlock from './readingBlock'
 import vocabBlock from './vocabBlock'
 import grammarBlock from './grammarBlock'
 import pronunciationBlock from './pronunciationBlock'
+import grammarPracticeBlock from './grammarPracticeBlock'
 
 export const schemaTypes = [
   review,
@@ -24,4 +25,5 @@ export const schemaTypes = [
   vocabBlock,
   grammarBlock,
   pronunciationBlock,
+  grammarPracticeBlock,
 ]

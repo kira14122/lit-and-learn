@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 export default function VocabBlock({ block }: { block: any }) {
   const [huntAnswers, setHuntAnswers] = useState<Record<number, string>>({});
@@ -15,6 +15,13 @@ export default function VocabBlock({ block }: { block: any }) {
   const answeredHunt = Object.values(huntAnswers).filter(val => val.trim() !== '').length;
   const answeredBlanks = Object.keys(blankAnswers).length;
   const allAnswered = (answeredHunt + answeredBlanks) === totalQuestions;
+
+  // THE FIX: Memorize a shuffled version of the word bank so it doesn't give away the answers!
+  const shuffledWordBank = useMemo(() => {
+    if (!block.wordBank) return [];
+    // The .sort() with Math.random() acts like shuffling a deck of cards
+    return [...block.wordBank].sort(() => 0.5 - Math.random());
+  }, [block.wordBank]);
 
   useEffect(() => {
     if (isSubmitted) { setActiveBlank(null); return; }
@@ -57,7 +64,6 @@ export default function VocabBlock({ block }: { block: any }) {
   return (
     <div className="soft-card" style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '32px', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', marginBottom: '30px' }}>
       
-      {/* HEADER (Now matching the app's primary Indigo theme) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '20px' }}>
         <div style={{ background: '#EEF2FF', padding: '12px', borderRadius: '16px', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
@@ -83,9 +89,8 @@ export default function VocabBlock({ block }: { block: any }) {
               const userAnswer = huntAnswers[i] || '';
               const isCorrect = userAnswer.trim().toLowerCase() === q.targetWord?.trim().toLowerCase();
               
-              // Only turns red or green AFTER submission
               let borderColor = '#CBD5E1'; let bgColor = '#ffffff'; let textColor = '#0F172A';
-              if (userAnswer.length > 0 && !isSubmitted) { borderColor = '#6366F1'; } // Highlights active input
+              if (userAnswer.length > 0 && !isSubmitted) { borderColor = '#6366F1'; } 
               if (isSubmitted) { 
                 borderColor = isCorrect ? '#10B981' : '#EF4444'; 
                 bgColor = isCorrect ? '#D1FAE5' : '#FEE2E2'; 
@@ -96,7 +101,7 @@ export default function VocabBlock({ block }: { block: any }) {
                 <div key={i} style={{ backgroundColor: '#F8FAFC', padding: '20px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <p style={{ margin: 0, fontSize: '1.15rem', color: '#334155', fontWeight: '500' }}>"{q.definition}"</p>
                   <div>
-                    <input type="text" value={userAnswer} onChange={(e) => !isSubmitted && setHuntAnswers(prev => ({ ...prev, [i]: e.target.value }))} disabled={isSubmitted} placeholder="Type the word here..." style={{ width: '100%', maxWidth: '300px', padding: '12px 16px', borderRadius: '8px', border: `2px solid ${borderColor}`, backgroundColor: bgColor, fontSize: '1.1rem', color: textColor, outline: 'none', transition: 'all 0.2s', fontWeight: '500' }} />
+                    <input type="text" value={userAnswer} onChange={(e) => !isSubmitted && setHuntAnswers(prev => ({ ...prev, [i]: e.target.value }))} disabled={isSubmitted} placeholder="Type the word here..." style={{ width: '100%', maxWidth: '300px', padding: '12px 16px', borderRadius: '8px', border: `2px solid ${borderColor}`, backgroundColor: bgColor, fontSize: '1.1rem', color: textColor, textAlign: 'center', outline: 'none', transition: 'all 0.2s', fontWeight: '500' }} />
                     {isSubmitted && !isCorrect && <div style={{ marginTop: '8px', color: '#B91C1C', fontSize: '0.95rem', fontWeight: '600' }}>Correct answer: {q.targetWord}</div>}
                   </div>
                 </div>
@@ -114,12 +119,12 @@ export default function VocabBlock({ block }: { block: any }) {
             Fill in the Blanks
           </h3>
 
-          {/* THE INTERACTIVE WORD BANK */}
-          {block.wordBank && block.wordBank.length > 0 && (
+          {/* THE INTERACTIVE WORD BANK (Now mapped to the shuffled version!) */}
+          {shuffledWordBank.length > 0 && (
             <div style={{ padding: '20px', backgroundColor: '#F8FAFC', borderRadius: '16px', border: '2px dashed #CBD5E1', marginBottom: '30px', minHeight: '80px' }}>
               <p style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Tap a word to place it:</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                {block.wordBank.map((word: string, idx: number) => {
+                {shuffledWordBank.map((word: string, idx: number) => {
                   const isUsed = usedWords.includes(word);
                   return (
                     <button 
@@ -129,9 +134,9 @@ export default function VocabBlock({ block }: { block: any }) {
                       style={{ 
                         padding: '10px 20px', 
                         borderRadius: '12px', 
-                        border: isUsed ? '2px solid #E2E8F0' : '2px solid #6366F1', // Changed to Indigo
+                        border: isUsed ? '2px solid #E2E8F0' : '2px solid #6366F1', 
                         backgroundColor: isUsed ? '#F1F5F9' : 'white', 
-                        color: isUsed ? '#CBD5E1' : '#4F46E5', // Changed to Indigo
+                        color: isUsed ? '#CBD5E1' : '#4F46E5', 
                         fontWeight: 'bold', 
                         fontSize: '1.1rem', 
                         cursor: isUsed || isSubmitted ? 'default' : 'pointer',
@@ -155,18 +160,15 @@ export default function VocabBlock({ block }: { block: any }) {
               const currentWord = blankAnswers[i];
               const isCorrect = currentWord === q.correctWord;
               
-              // Default Drop Zone Style
               let btnBg = '#F1F5F9';
-              let btnBorder = activeBlank === i ? '2px solid #6366F1' : '2px dashed #CBD5E1'; // Indigo for active
+              let btnBorder = activeBlank === i ? '2px solid #6366F1' : '2px dashed #CBD5E1'; 
               let btnColor = '#94A3B8';
               let btnShadow = activeBlank === i && !currentWord ? '0 0 0 4px rgba(99, 102, 241, 0.15)' : 'none';
 
-              // Filled Style
               if (currentWord) {
                 btnBg = 'white'; btnBorder = '2px solid #6366F1'; btnColor = '#4F46E5'; btnShadow = 'none';
               }
               
-              // Submitted Style
               if (isSubmitted) {
                 btnShadow = 'none';
                 btnBorder = isCorrect ? '2px solid #10B981' : '2px solid #EF4444';
@@ -178,7 +180,6 @@ export default function VocabBlock({ block }: { block: any }) {
                 <div key={i} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #E2E8F0', fontSize: '1.2rem', color: '#334155', lineHeight: '2' }}>
                   {parts[0]}
                   
-                  {/* THE DROP ZONE BUTTON */}
                   <button 
                     onClick={() => handleBlankClick(i)}
                     style={{ 
@@ -214,7 +215,6 @@ export default function VocabBlock({ block }: { block: any }) {
         </div>
       )}
 
-      {/* SUBMISSION BUTTON */}
       {!isSubmitted ? (
         <button onClick={() => setIsSubmitted(true)} disabled={!allAnswered} style={{ width: '100%', padding: '20px', backgroundColor: allAnswered ? '#4F46E5' : '#CBD5E1', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.25rem', fontWeight: 'bold', cursor: allAnswered ? 'pointer' : 'not-allowed', transition: 'background-color 0.3s' }}>
           {allAnswered ? 'Check Vocabulary' : `Complete all fields to submit (${answeredHunt + answeredBlanks}/${totalQuestions})`}

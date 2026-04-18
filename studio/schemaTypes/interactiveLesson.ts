@@ -56,7 +56,8 @@ export default {
         { type: 'grammarBlock' },
         { type: 'pronunciationBlock' },
         { type: 'comprehensionBlock' },
-        { type: 'inductiveGrammarBlock' }
+        { type: 'inductiveGrammarBlock' },
+        { type: 'grammarPracticeBlock' }
       ]
     }
   ],

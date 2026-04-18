@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import WarmUpQuiz from './WarmUpQuiz';
 import GrammarDiscovery from './GrammarDiscovery';
+import GrammarPracticeBlock from './GrammarPracticeBlock'; // NEW IMPORT!
 import TextHighlighter from './TextHighlighter';
 import ComprehensionBlock from './ComprehensionBlock';
 import VocabBlock from './VocabBlock';
@@ -11,12 +12,13 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
   const warmUpBlock = lessonData?.lessonBlocks?.find((b: any) => b._type === 'warmUpBlock');
 
   const [showReading, setShowReading] = useState(!warmUpBlock);
-  const [isReadingFinished, setIsReadingFinished] = useState(false); 
-  
-  // Mobile uses 3 tabs to control the whole screen
-  const [activeMobileTab, setActiveMobileTab] = useState<'reading' | 'activities' | 'grammar'>('reading');
-  // Desktop uses this to toggle the right-hand panel
+  const [isReadingFinished, setIsReadingFinished] = useState(false);
+  const [isGrammarUnlocked, setIsGrammarUnlocked] = useState(false);
+  const [isTextModalOpen, setIsTextModalOpen] = useState(false);
   const [activeRightTab, setActiveRightTab] = useState<'activities' | 'grammar'>('activities');
+
+  const activitiesRef = useRef<HTMLDivElement>(null);
+  const rightColumnRef = useRef<HTMLDivElement>(null);
 
   if (!lessonData) return <div style={{ padding: '50px', textAlign: 'center' }}>No lesson data found.</div>;
 
@@ -28,225 +30,224 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
     }
   }
 
-  const handleFinishReading = () => {
-    setIsReadingFinished(true);
-    setActiveMobileTab('activities');
-    setActiveRightTab('activities');
-    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  const handleStartReading = () => {
+    setShowReading(true);
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
   };
 
-  // Helper function to render the correct blocks based on the active tab
-  const renderBlocks = (type: 'activities' | 'grammar') => {
-    const targetTypes = type === 'grammar' 
-      ? ['inductiveGrammarBlock', 'grammarBlock'] 
-      : ['comprehensionBlock', 'vocabBlock', 'pronunciationBlock'];
+  const handleFinishReading = () => {
+    setIsReadingFinished(true);
+    setActiveRightTab('activities');
+    setTimeout(() => { activitiesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+  };
 
-    const blocks = lessonData.lessonBlocks?.filter((b: any) => targetTypes.includes(b._type)) || [];
+  const handleUnlockGrammar = () => {
+    setIsGrammarUnlocked(true);
+    setActiveRightTab('grammar');
+    setTimeout(() => { rightColumnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+  };
 
-    if (blocks.length === 0) {
+  const renderBlocks = (tabFilter: 'activities' | 'grammar') => {
+    const blocksToRender = lessonData.lessonBlocks?.filter((block: any) => {
+      if (tabFilter === 'activities') {
+        return ['comprehensionBlock', 'vocabBlock', 'pronunciationBlock'].includes(block._type);
+      }
+      if (tabFilter === 'grammar') {
+        // ADDED grammarPracticeBlock here!
+        return ['grammarBlock', 'inductiveGrammarBlock', 'grammarPracticeBlock'].includes(block._type);
+      }
+      return false;
+    }) || [];
+
+    if (blocksToRender.length === 0) {
       return (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8', backgroundColor: 'white', borderRadius: '24px', border: '2px dashed #e2e8f0' }}>
-          <p style={{ fontSize: '1.1rem', fontWeight: '500' }}>No {type} added to this lesson yet.</p>
+        <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#F8FAFC', borderRadius: '24px', border: '2px dashed #CBD5E1', color: '#94A3B8' }}>
+          No {tabFilter === 'grammar' ? 'grammar modules' : 'activities'} have been added to this lesson yet.
         </div>
       );
     }
 
-    return blocks.map((block: any, idx: number) => {
-      if (block._type === 'inductiveGrammarBlock') return <GrammarDiscovery key={idx} block={block} />;
-      // Placeholders for the components we will build next!
-      if (block._type === 'comprehensionBlock') return <ComprehensionBlock key={idx} block={block} />;
-      if (block._type === 'vocabBlock') return <VocabBlock key={idx} block={block} />;
-      if (block._type === 'pronunciationBlock') return <PronunciationBlock key={idx} block={block} />;
-      return null;
-    });
+    return (
+      <div>
+        {blocksToRender.map((block: any, idx: number) => {
+          const isLastBlock = idx === blocksToRender.length - 1;
+
+          return (
+            <React.Fragment key={block._key || idx}>
+              {block._type === 'comprehensionBlock' && <ComprehensionBlock block={block} />}
+              {block._type === 'vocabBlock' && <VocabBlock block={block} />}
+              {block._type === 'pronunciationBlock' && <PronunciationBlock block={block} />}
+              {(block._type === 'grammarBlock' || block._type === 'inductiveGrammarBlock') && <GrammarDiscovery block={block} />}
+              
+              {/* RENDER THE NEW PRACTICE BLOCK */}
+              {block._type === 'grammarPracticeBlock' && <GrammarPracticeBlock block={block} />}
+
+              {!isLastBlock && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0 40px 0', opacity: 0.5 }}>
+                  <div style={{ height: '2px', width: '60px', background: '#CBD5E1', borderRadius: '2px' }} />
+                  <div style={{ display: 'flex', gap: '8px', margin: '0 20px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94A3B8' }} />
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94A3B8' }} />
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94A3B8' }} />
+                  </div>
+                  <div style={{ height: '2px', width: '60px', background: '#CBD5E1', borderRadius: '2px' }} />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+
+        {/* SEQUENTIAL LOCK (Only on Activities Tab) */}
+        {tabFilter === 'activities' && !isGrammarUnlocked && blocksToRender.length > 0 && (
+          <div style={{ marginTop: '40px', textAlign: 'center', borderTop: '2px dashed #E2E8F0', paddingTop: '40px', paddingBottom: '20px' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🧠</div>
+            <h3 style={{ color: '#0F172A', fontSize: '1.4rem', marginBottom: '8px' }}>Activities Completed?</h3>
+            <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '24px' }}>Once you truly understand the meaning of the text, you are ready to analyze its form.</p>
+            <button 
+              onClick={handleUnlockGrammar} 
+              style={{ padding: '18px 40px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.25rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)', transition: 'transform 0.2s' }}
+            >
+              Unlock Grammar Lab 🔓
+            </button>
+          </div>
+        )}
+
+        {/* GRAND FINALE BUTTON (Only on Grammar Tab) */}
+        {tabFilter === 'grammar' && blocksToRender.length > 0 && (
+          <div style={{ marginTop: '50px', textAlign: 'center', borderTop: '2px dashed #E2E8F0', paddingTop: '40px', paddingBottom: '20px' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🎓</div>
+            <h3 style={{ color: '#0F172A', fontSize: '1.6rem', marginBottom: '8px' }}>Lesson Complete!</h3>
+            <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '24px' }}>You have mastered the meaning and the form. Ready for the next challenge?</p>
+            <button 
+              onClick={onClose} 
+              style={{ padding: '18px 40px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.25rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.3)', transition: 'transform 0.2s' }}
+            >
+              Proceed to Next Lesson ➡️
+            </button>
+          </div>
+        )}
+
+      </div>
+    );
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc', fontFamily: 'system-ui, sans-serif', paddingBottom: isReadingFinished ? '70px' : '0' }}>
+    <div style={{ backgroundColor: '#F3F6F8', minHeight: '100vh', position: 'relative' }}>
       
-      <style>{`
-        .lesson-header { height: 70px; padding: 0 40px; display: flex; align-items: center; justify-content: space-between; background-color: white; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 100; }
-        .header-title-group { display: flex; align-items: center; gap: 20px; }
-        .lesson-workspace { display: flex; height: calc(100vh - 70px); overflow: hidden; }
-        .panel-left { width: 55%; background-color: white; padding: 60px 80px; overflow-y: auto; border-right: 1px solid #e2e8f0; }
-        .panel-right { width: 45%; background-color: #f1f5f9; padding: 40px; overflow-y: auto; }
-        
-        .mobile-only { display: none !important; }
-
-        @media (max-width: 900px) {
-          .lesson-header { height: auto; flex-direction: column; padding: 15px 20px; gap: 15px; text-align: center; }
-          .header-title-group { flex-direction: column; gap: 10px; }
-          .lesson-workspace { flex-direction: column; height: auto; overflow: visible; }
-          
-          .panel-left { width: 100%; padding: 30px 20px; border-right: none; overflow-y: visible; }
-          .panel-right { width: 100%; padding: 30px 20px; overflow-y: visible; }
-          
-          .mobile-only { display: flex !important; }
-          .hide-on-mobile { display: none !important; }
-          .hide-on-mobile-flex { display: none !important; }
-
-          /* THE 3-PILLAR BOTTOM BAR */
-          .bottom-nav-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 70px;
-            background-color: white;
-            border-top: 1px solid #e2e8f0;
-            display: flex;
-            z-index: 1000;
-            box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
-          }
-          
-          .nav-tab {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 4px;
-            background: transparent;
-            border: none;
-            color: #94a3b8;
-            font-weight: 600;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: color 0.2s;
-          }
-          
-          .nav-tab.active {
-            color: #4F46E5;
-          }
-        }
-      `}</style>
-
-      {/* HEADER */}
-      <header className="lesson-header">
-        <div style={{ fontWeight: '900', fontSize: '1.5rem', color: '#0f172a' }}>Lit <span style={{ color: '#6366f1' }}>&</span> Learn</div>
-        <div style={{ fontWeight: '600', color: '#475569', textAlign: 'center' }}>{lessonData.title}</div>
-        <div className="header-title-group">
-          <div style={{ fontSize: '0.85rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{lessonData.level} • Unit {lessonData.unit}</div>
-          <button onClick={onClose} style={{ background: '#F1F5F9', color: '#0F172A', border: 'none', padding: '8px 16px', borderRadius: '9999px', fontWeight: 'bold', cursor: 'pointer' }}>✕ Close</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 40px', backgroundColor: '#ffffff', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 100 }}>
+        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          Lit <span style={{ color: '#4F46E5' }}>&</span> Learn
+        </h2>
+        <div style={{ fontSize: '1.1rem', color: '#64748B', fontWeight: '500', display: 'none' }} className="desktop-only-title">
+          {lessonData.title}
         </div>
-      </header>
+        <button onClick={onClose} style={{ padding: '10px 24px', backgroundColor: '#F1F5F9', color: '#0F172A', border: 'none', borderRadius: '999px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}>
+          ✕ Close
+        </button>
+      </div>
 
-      <main style={{ flex: 1, position: 'relative' }}>
-        {!showReading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px 20px', minHeight: 'calc(100vh - 70px)' }}>
-            {warmUpBlock && <WarmUpQuiz block={warmUpBlock} onComplete={() => setShowReading(true)} />}
-          </div>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '40px 20px 120px 20px' }}>
+        
+        {!showReading && warmUpBlock ? (
+          <WarmUpQuiz block={warmUpBlock} onComplete={handleStartReading} />
         ) : (
-          <div className="lesson-workspace">
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '40px', alignItems: 'start' }}>
             
-            {/* LEFT PANEL: READING TEXT */}
-            <div className={`panel-left ${activeMobileTab !== 'reading' ? 'hide-on-mobile' : ''}`}>
-              <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', color: '#0f172a' }}>{lessonData.title}</h1>
-              <div style={{ height: '4px', width: '60px', backgroundColor: '#6366f1', marginBottom: '40px' }}></div>
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '50px', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }} className={`responsive-card reading-container ${isReadingFinished ? 'hide-reading-on-mobile' : ''}`}>
+              <h1 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '16px', lineHeight: '1.2' }}>{lessonData.title}</h1>
+              <div style={{ height: '4px', width: '60px', backgroundColor: '#4F46E5', borderRadius: '2px', marginBottom: '40px' }} />
               
-              {readingBlock && (
-                <article style={{ fontSize: '1.35rem', lineHeight: '2', color: '#334155' }}>
-                  <TextHighlighter text={rawText} onSaveWord={toggleSaveWord} savedWords={savedWords} />
-                </article>
-              )}
+              <div style={{ fontSize: '1.25rem', lineHeight: '2.2', color: '#334155' }}>
+                <TextHighlighter text={rawText} onSaveWord={toggleSaveWord} savedWords={savedWords} />
+              </div>
 
-              {/* MOBILE ONLY: The "Finished Reading" button */}
               {!isReadingFinished && (
-                <div className="mobile-only" style={{ marginTop: '40px', justifyContent: 'center', width: '100%' }}>
-                  <button 
-                    onClick={handleFinishReading}
-                    style={{ width: '100%', padding: '18px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.2rem', fontWeight: 'bold' }}
-                  >
-                    I have finished reading ✓
+                <div style={{ marginTop: '50px', textAlign: 'center', borderTop: '2px dashed #E2E8F0', paddingTop: '40px' }}>
+                  <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '20px' }}>Finished reading? Let's check your understanding.</p>
+                  <button onClick={handleFinishReading} style={{ padding: '18px 40px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '16px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px rgba(79,70,229,0.3)' }}>
+                    Start Activities ➡️
                   </button>
                 </div>
               )}
             </div>
 
-            {/* RIGHT PANEL: INTERACTIVE WORKSPACE */}
-            <div className={`panel-right ${activeMobileTab === 'reading' ? 'hide-on-mobile' : ''}`}>
-              {!isReadingFinished ? (
-                /* DESKTOP FOCUS MODE (Phase 2) */
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
-                  <div style={{ width: '80px', height: '80px', backgroundColor: '#EEF2FF', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: '24px', color: '#4F46E5' }}>
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                  </div>
-                  <h3 style={{ fontSize: '1.8rem', color: '#0F172A', marginBottom: '16px' }}>Focus Mode Active</h3>
-                  <p style={{ fontSize: '1.2rem', color: '#64748b', maxWidth: '400px', marginBottom: '40px', lineHeight: '1.6' }}>
-                    Read the text carefully. Use your highlighter tool to save any words you don't know.
-                  </p>
-                  <button 
-                    onClick={handleFinishReading}
-                    style={{ padding: '16px 32px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '9999px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px -5px rgba(16,185,129,0.4)', transition: 'transform 0.2s' }}
-                  >
-                    I have finished reading ✓
-                  </button>
-                </div>
-              ) : (
-                /* DESKTOP / TABLET TOGGLE BAR (Phase 3) */
-                <div>
-                  {/* This Segmented Control hides on mobile, where the bottom bar takes over */}
-                  <div className="hide-on-mobile-flex" style={{ display: 'flex', backgroundColor: '#E2E8F0', padding: '6px', borderRadius: '16px', marginBottom: '30px' }}>
-                    <button
-                      onClick={() => { setActiveRightTab('activities'); setActiveMobileTab('activities'); }}
-                      style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', backgroundColor: activeRightTab === 'activities' ? 'white' : 'transparent', color: activeRightTab === 'activities' ? '#0F172A' : '#64748B', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: activeRightTab === 'activities' ? '0 2px 8px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                    >
-                      📝 Activities
-                    </button>
-                    <button
-                      onClick={() => { setActiveRightTab('grammar'); setActiveMobileTab('grammar'); }}
-                      style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', backgroundColor: activeRightTab === 'grammar' ? 'white' : 'transparent', color: activeRightTab === 'grammar' ? '#0F172A' : '#64748B', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: activeRightTab === 'grammar' ? '0 2px 8px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                    >
-                      🧠 Grammar Lab
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                    {renderBlocks(activeRightTab)}
-                  </div>
-
-                  <footer style={{ marginTop: '50px', padding: '30px 0', borderTop: '1px solid #cbd5e1', textAlign: 'center' }}>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '20px' }}>Finished with this section?</p>
-                    <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ padding: '12px 24px', backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Back to Top</button>
-                  </footer>
-                </div>
-              )}
-            </div>
-
-            {/* THE NEW NATIVE-FEELING 3-PILLAR BOTTOM TAB BAR (Mobile Only) */}
-            {isReadingFinished && (
-              <div className="mobile-only bottom-nav-bar">
+            <div ref={activitiesRef} style={{ display: isReadingFinished ? 'block' : 'none', scrollMarginTop: '100px' }}>
+              
+              <div ref={rightColumnRef} style={{ display: 'flex', gap: '12px', marginBottom: '20px', backgroundColor: '#ffffff', padding: '10px', borderRadius: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.03)', scrollMarginTop: '100px' }}>
                 <button 
-                  className={`nav-tab ${activeMobileTab === 'reading' ? 'active' : ''}`}
-                  onClick={() => { setActiveMobileTab('reading'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  onClick={() => setActiveRightTab('activities')} 
+                  style={{ flex: 1, padding: '16px', borderRadius: '14px', border: 'none', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: activeRightTab === 'activities' ? '#EEF2FF' : 'transparent', color: activeRightTab === 'activities' ? '#4F46E5' : '#64748B' }}
                 >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                  Text
+                  📝 Activities
                 </button>
-                
                 <button 
-                  className={`nav-tab ${activeMobileTab === 'activities' ? 'active' : ''}`}
-                  onClick={() => { setActiveMobileTab('activities'); setActiveRightTab('activities'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  onClick={() => {
+                    if (isGrammarUnlocked) setActiveRightTab('grammar');
+                  }} 
+                  style={{ 
+                    flex: 1, padding: '16px', borderRadius: '14px', border: 'none', fontWeight: 'bold', fontSize: '1.1rem', 
+                    cursor: isGrammarUnlocked ? 'pointer' : 'not-allowed', transition: 'all 0.2s', 
+                    backgroundColor: activeRightTab === 'grammar' ? '#EEF2FF' : 'transparent', 
+                    color: activeRightTab === 'grammar' ? '#4F46E5' : (isGrammarUnlocked ? '#64748B' : '#94A3B8'),
+                    opacity: isGrammarUnlocked ? 1 : 0.6
+                  }}
+                  title={isGrammarUnlocked ? "Go to Grammar Lab" : "Finish Activities first to unlock!"}
                 >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                  Activities
-                </button>
-
-                <button 
-                  className={`nav-tab ${activeMobileTab === 'grammar' ? 'active' : ''}`}
-                  onClick={() => { setActiveMobileTab('grammar'); setActiveRightTab('grammar'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
-                  Grammar
+                  {isGrammarUnlocked ? '🔍 Grammar Lab' : '🔒 Grammar Lab'}
                 </button>
               </div>
-            )}
+
+              {isReadingFinished && (
+                <button 
+                  className="mobile-only-btn" 
+                  onClick={() => setIsTextModalOpen(true)} 
+                  style={{ 
+                    position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', zIndex: 900,
+                    width: '90%', maxWidth: '350px', padding: '18px', backgroundColor: '#4F46E5', color: '#ffffff', 
+                    border: 'none', borderRadius: '999px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                    boxShadow: '0 10px 25px rgba(79, 70, 229, 0.4)'
+                  }}
+                >
+                  📖 Peek at Reading Text
+                </button>
+              )}
+
+              <div>
+                {renderBlocks(activeRightTab)}
+              </div>
+
+            </div>
 
           </div>
         )}
-      </main>
+      </div>
+
+      {isTextModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' }} onClick={() => setIsTextModalOpen(false)}>
+           <div style={{ backgroundColor: 'white', width: '100%', maxWidth: '800px', height: '85vh', borderRadius: '32px 32px 0 0', padding: '40px 30px', overflowY: 'auto', position: 'relative', animation: 'slideUp 0.3s ease-out' }} onClick={e => e.stopPropagation()}>
+              <button onClick={() => setIsTextModalOpen(false)} style={{ position: 'sticky', top: '0', left: '100%', background: '#F1F5F9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1.2rem', cursor: 'pointer', float: 'right', marginBottom: '20px' }}>✕</button>
+              <h2 style={{ fontSize: '2rem', marginTop: 0, color: '#0F172A', paddingRight: '40px' }}>{lessonData.title}</h2>
+              <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginBottom: '30px' }} />
+              <div style={{ fontSize: '1.15rem', lineHeight: '2.2', color: '#334155' }}>
+                 <TextHighlighter text={rawText} onSaveWord={toggleSaveWord} savedWords={savedWords} />
+              </div>
+           </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @media (max-width: 1024px) {
+          .desktop-only-title { display: none !important; }
+          .reading-container { padding: 30px !important; }
+          .hide-reading-on-mobile { display: none !important; }
+        }
+        @media (min-width: 1025px) {
+          .mobile-only-btn { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
