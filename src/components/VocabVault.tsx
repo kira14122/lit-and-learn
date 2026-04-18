@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { DiscardWordModal } from './DiscardWordModal';
 
-// Simplified SuperMemo-2 Algorithm Interfaces
-interface SRSData {
-  interval: number;
-  ease: number;
-  nextReview: number;
+interface MasteryData {
+  correctStreak: number;
+  lastTested: number;
 }
 
 interface VaultProps {
@@ -13,82 +12,111 @@ interface VaultProps {
 }
 
 export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
-  const [srsDatabase, setSrsDatabase] = useState<Record<string, SRSData>>({});
-  const [isFlashcardMode, setIsFlashcardMode] = useState(false);
+  const [masteryData, setMasteryData] = useState<Record<string, MasteryData>>({});
+  const [isQuizMode, setIsQuizMode] = useState(false);
   
-  // THE FIX: We added a sessionQueue to "freeze" the words while studying
-  const [sessionQueue, setSessionQueue] = useState<any[]>([]); 
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
+  // Quiz State
+  const [quizQueue, setQuizQueue] = useState<any[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [currentOptions, setCurrentOptions] = useState<string[]>([]);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
-  // Load SRS history from local storage on mount
+  // Modal State
+  const [isDiscardModalOpen, setIsDiscardModalOpen] = useState(false);
+  const [wordToDiscard, setWordToDiscard] = useState<string>("");
+  const [wordInfoToDiscard, setWordInfoToDiscard] = useState<any>(null);
+
+  // Load Mastery history from local storage on mount
   useEffect(() => {
-    const localSRS = localStorage.getItem('litAndLearnSRS');
-    if (localSRS) {
-      setSrsDatabase(JSON.parse(localSRS));
+    const localMastery = localStorage.getItem('litAndLearnMastery');
+    if (localMastery) {
+      setMasteryData(JSON.parse(localMastery));
     }
   }, []);
 
-  // Determine which words are due for review today
-  const reviewQueue = useMemo(() => {
-    const now = Date.now();
-    return savedWords.filter(item => {
-      const wordData = srsDatabase[item.word.toLowerCase()];
-      // If it's a new word (no data) or the nextReview timestamp has passed, it's due!
-      if (!wordData) return true;
-      return wordData.nextReview <= now;
+  // Determine Mastery Levels for Organization
+  const categorizedWords = useMemo(() => {
+    const categories = { needsReview: [] as any[], inProgress: [] as any[], mastered: [] as any[] };
+    savedWords.forEach(item => {
+      const streak = masteryData[item.word.toLowerCase()]?.correctStreak || 0;
+      if (streak >= 3) categories.mastered.push(item);
+      else if (streak > 0) categories.inProgress.push(item);
+      else categories.needsReview.push(item);
     });
-  }, [savedWords, srsDatabase]);
+    return categories;
+  }, [savedWords, masteryData]);
 
-  // The Spaced Repetition Brain
-  const handleRateCard = (rating: 'hard' | 'good' | 'easy') => {
-    // We now use sessionQueue instead of reviewQueue so the array doesn't shrink mid-session
-    const currentWord = sessionQueue[currentCardIndex].word.toLowerCase();
-    const existingData = srsDatabase[currentWord] || { interval: 0, ease: 2.5, nextReview: 0 };
+  // Generate 4 random options (1 correct, 3 distractors from their own vault)
+  const generateOptions = (correctWord: string) => {
+    const distractors = savedWords
+      .map(w => w.word)
+      .filter(w => w.toLowerCase() !== correctWord.toLowerCase())
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
     
-    let { interval, ease } = existingData;
-
-    // SRS Math Logic
-    if (rating === 'hard') {
-      interval = 1; // Try again tomorrow
-      ease = Math.max(1.3, ease - 0.2); // Decrease ease slightly
-    } else if (rating === 'good') {
-      interval = interval === 0 ? 1 : Math.round(interval * ease);
-    } else if (rating === 'easy') {
-      interval = interval === 0 ? 4 : Math.round(interval * ease * 1.3);
-      ease += 0.15; // Increase ease so we see it less often
+    // Fallbacks if they don't have enough words saved
+    const fallbacks = ["metaphor", "syntax", "nuance", "paradigm", "rhetoric", "allegory"];
+    while (distractors.length < 3) {
+      const fallback = fallbacks.pop()!;
+      if (!distractors.includes(fallback) && fallback !== correctWord) distractors.push(fallback);
     }
 
-    // Calculate next review date (interval in days converted to milliseconds)
-    const nextReview = Date.now() + (interval * 24 * 60 * 60 * 1000);
+    return [correctWord, ...distractors].sort(() => 0.5 - Math.random());
+  };
 
-    const updatedDatabase = {
-      ...srsDatabase,
-      [currentWord]: { interval, ease, nextReview }
-    };
-
-    setSrsDatabase(updatedDatabase);
-    localStorage.setItem('litAndLearnSRS', JSON.stringify(updatedDatabase));
-
-    // Move to next card or finish the session cleanly
-    if (currentCardIndex + 1 < sessionQueue.length) {
-      setCurrentCardIndex(prev => prev + 1);
-      setIsFlipped(false);
-    } else {
-      setIsFlashcardMode(false);
-      setCurrentCardIndex(0);
-      setIsFlipped(false);
-      setSessionQueue([]); // Empty the session queue when done
+  const startQuizSession = () => {
+    const queue = [...savedWords].sort(() => 0.5 - Math.random()).slice(0, 10);
+    if (queue.length > 0) {
+      setQuizQueue(queue);
+      setCurrentQuestionIndex(0);
+      setCurrentOptions(generateOptions(queue[0].word));
+      setSelectedAnswer(null);
+      setIsQuizMode(true);
     }
   };
 
-  const startReviewSession = () => {
-    if (reviewQueue.length > 0) {
-      setSessionQueue(reviewQueue); // FREEZE the queue right when they hit start
-      setCurrentCardIndex(0);
-      setIsFlipped(false);
-      setIsFlashcardMode(true);
+  const handleAnswerClick = (answer: string) => {
+    if (selectedAnswer) return;
+    setSelectedAnswer(answer);
+
+    const currentItem = quizQueue[currentQuestionIndex];
+    const isCorrect = answer === currentItem.word;
+    const wordKey = currentItem.word.toLowerCase();
+    
+    const existingData = masteryData[wordKey] || { correctStreak: 0, lastTested: 0 };
+    const newStreak = isCorrect ? existingData.correctStreak + 1 : 0; 
+
+    const updatedData = {
+      ...masteryData,
+      [wordKey]: { correctStreak: newStreak, lastTested: Date.now() }
+    };
+
+    setMasteryData(updatedData);
+    localStorage.setItem('litAndLearnMastery', JSON.stringify(updatedData));
+
+    setTimeout(() => {
+      if (currentQuestionIndex + 1 < quizQueue.length) {
+        setCurrentQuestionIndex(prev => prev + 1);
+        setCurrentOptions(generateOptions(quizQueue[currentQuestionIndex + 1].word));
+        setSelectedAnswer(null);
+      } else {
+        setIsQuizMode(false);
+      }
+    }, 1500);
+  };
+
+  // Modal handlers
+  const handleModalClose = () => {
+    setIsDiscardModalOpen(false);
+    setWordToDiscard("");
+    setWordInfoToDiscard(null);
+  };
+
+  const handleModalConfirm = () => {
+    if (wordToDiscard && wordInfoToDiscard) {
+      toggleSaveWord(wordToDiscard, wordInfoToDiscard);
     }
+    handleModalClose();
   };
 
   // --- RENDER EMPTY STATE ---
@@ -96,7 +124,7 @@ export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
     return (
       <div className="soft-card" style={{ backgroundColor: '#ffffff', padding: '60px 40px', borderRadius: '32px', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }}>
         <div style={{ fontSize: '4rem', marginBottom: '20px' }}>📭</div>
-        <h2 style={{ fontSize: '2rem', color: '#0F172A', marginBottom: '16px' }}>Your Vault is Empty</h2>
+        <h2 style={{ fontSize: '2rem', color: '#0F172A', marginBottom: '16px' }}>Your Word Bank is Empty</h2>
         <p style={{ fontSize: '1.2rem', color: '#64748B', maxWidth: '500px', margin: '0 auto' }}>
           Highlight words while reading any text or listening to an audio lesson to save them here for active recall training.
         </p>
@@ -104,136 +132,171 @@ export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
     );
   }
 
-  // --- RENDER FLASHCARD MODE ---
-  if (isFlashcardMode && sessionQueue.length > 0) {
-    const currentItem = sessionQueue[currentCardIndex];
-    // Safety fallback just in case
-    if (!currentItem) return null; 
-
-    const progress = ((currentCardIndex) / sessionQueue.length) * 100;
+  // --- RENDER QUIZ MODE ---
+  if (isQuizMode && quizQueue.length > 0) {
+    const currentItem = quizQueue[currentQuestionIndex];
+    const progress = (currentQuestionIndex / quizQueue.length) * 100;
 
     return (
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-        {/* Progress Bar */}
         <div style={{ marginBottom: '30px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B', fontWeight: 'bold', marginBottom: '8px' }}>
-            <span>Reviewing...</span>
-            <span>{currentCardIndex + 1} of {sessionQueue.length}</span>
+            <span>Active Recall Quiz</span>
+            <span>{currentQuestionIndex + 1} of {quizQueue.length}</span>
           </div>
           <div style={{ width: '100%', height: '8px', backgroundColor: '#E2E8F0', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{ width: `${progress}%`, height: '100%', backgroundColor: '#4F46E5', transition: 'width 0.3s ease' }} />
           </div>
         </div>
 
-        {/* The Flashcard */}
-        <div 
-          onClick={() => setIsFlipped(!isFlipped)}
-          style={{ 
-            backgroundColor: '#ffffff', minHeight: '400px', borderRadius: '32px', padding: '40px', 
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 25px 50px -12px rgba(15,23,42,0.1)', cursor: 'pointer', position: 'relative',
-            border: isFlipped ? '2px solid #4F46E5' : '2px solid transparent', transition: 'all 0.3s ease'
-          }}
-        >
-          {!isFlipped ? (
-            <div style={{ textAlign: 'center' }}>
-              <span style={{ display: 'block', fontSize: '1.2rem', color: '#94A3B8', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '20px' }}>What does this mean?</span>
-              <h1 style={{ fontSize: '4rem', color: '#0F172A', margin: 0 }}>{currentItem.word}</h1>
-              <span style={{ display: 'inline-block', marginTop: '40px', padding: '10px 24px', backgroundColor: '#F1F5F9', color: '#64748B', borderRadius: '999px', fontWeight: '600' }}>Tap card to flip</span>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', width: '100%' }}>
-              <span style={{ display: 'inline-block', backgroundColor: '#EEF2FF', color: '#4F46E5', padding: '6px 16px', borderRadius: '8px', fontSize: '1rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '20px' }}>
-                {currentItem.pos || 'Vocabulary'}
-              </span>
-              <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginTop: 0, marginBottom: '20px' }}>{currentItem.word}</h2>
-              <div style={{ height: '2px', width: '60px', backgroundColor: '#E2E8F0', margin: '0 auto 30px auto' }} />
-              <p style={{ fontSize: '1.5rem', color: '#334155', lineHeight: '1.6', maxWidth: '600px', margin: '0 auto' }}>
-                {currentItem.def}
-              </p>
-            </div>
-          )}
-        </div>
+        <div style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.1)', textAlign: 'center' }}>
+          <span style={{ display: 'inline-block', backgroundColor: '#EEF2FF', color: '#4F46E5', padding: '6px 16px', borderRadius: '8px', fontSize: '1rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '20px' }}>
+            Find the match for:
+          </span>
+          <p style={{ fontSize: '1.6rem', color: '#0F172A', lineHeight: '1.6', maxWidth: '600px', margin: '0 auto 40px auto', fontWeight: '500' }}>
+            "{currentItem.def}"
+          </p>
 
-        {/* Action Buttons (Only visible when flipped) */}
-        {isFlipped && (
-          <div style={{ display: 'flex', gap: '16px', marginTop: '40px', animation: 'slideUp 0.3s ease-out' }}>
-            <button onClick={(e) => { e.stopPropagation(); handleRateCard('hard'); }} style={{ flex: 1, padding: '20px', backgroundColor: '#FEF2F2', border: '2px solid #FCA5A5', color: '#DC2626', borderRadius: '16px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}>
-              Hard <span style={{ display: 'block', fontSize: '0.9rem', color: '#EF4444', marginTop: '4px', fontWeight: '500' }}>Review Tomorrow</span>
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleRateCard('good'); }} style={{ flex: 1, padding: '20px', backgroundColor: '#EEF2FF', border: '2px solid #A5B4FC', color: '#4F46E5', borderRadius: '16px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}>
-              Good <span style={{ display: 'block', fontSize: '0.9rem', color: '#6366F1', marginTop: '4px', fontWeight: '500' }}>Perfect Pace</span>
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleRateCard('easy'); }} style={{ flex: 1, padding: '20px', backgroundColor: '#ECFDF5', border: '2px solid #6EE7B7', color: '#059669', borderRadius: '16px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}>
-              Easy <span style={{ display: 'block', fontSize: '0.9rem', color: '#10B981', marginTop: '4px', fontWeight: '500' }}>Push Further Out</span>
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {currentOptions.map((opt, idx) => {
+              let bg = '#F8FAFC'; let border = '2px solid #E2E8F0'; let color = '#334155';
+              
+              if (selectedAnswer) {
+                if (opt === currentItem.word) { bg = '#D1FAE5'; border = '2px solid #10B981'; color = '#065F46'; }
+                else if (opt === selectedAnswer) { bg = '#FEE2E2'; border = '2px solid #EF4444'; color = '#991B1B'; }
+              }
+
+              return (
+                <button 
+                  key={idx} 
+                  onClick={() => handleAnswerClick(opt)}
+                  disabled={!!selectedAnswer}
+                  style={{ padding: '20px', borderRadius: '16px', border, backgroundColor: bg, color, fontSize: '1.2rem', fontWeight: 'bold', cursor: selectedAnswer ? 'default' : 'pointer', transition: 'all 0.2s', opacity: selectedAnswer && opt !== currentItem.word && opt !== selectedAnswer ? 0.5 : 1 }}
+                >
+                  {opt}
+                </button>
+              );
+            })}
           </div>
-        )}
-
-        <style>{`
-          @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        `}</style>
+        </div>
       </div>
     );
   }
 
-  // --- RENDER DASHBOARD ---
+  // --- RENDER VAULT DASHBOARD ---
+  const WordCard = ({ item }: { item: any }) => {
+    const streak = masteryData[item.word.toLowerCase()]?.correctStreak || 0;
+    
+    const handleDiscardRequest = () => {
+      setWordToDiscard(item.word);
+      setWordInfoToDiscard(item);
+      setIsDiscardModalOpen(true);
+    };
+
+    return (
+      <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '24px', border: '1px solid #E2E8F0', position: 'relative' }}>
+        <button 
+          onClick={handleDiscardRequest}
+          title="Discard word"
+          style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEE2E2', color: '#EF4444', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontWeight: 'bold' }}
+        >✕</button>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingRight: '30px', flexWrap: 'wrap' }}>
+          <h4 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>{item.word}</h4>
+          <span style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {item.pos || 'Vocab'}
+          </span>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+          {[1, 2, 3].map(dot => (
+            <div key={dot} style={{ width: '12px', height: '6px', borderRadius: '3px', backgroundColor: streak >= dot ? '#10B981' : '#E2E8F0' }} />
+          ))}
+        </div>
+        <p style={{ margin: 0, color: '#475569', fontSize: '1rem', lineHeight: '1.5' }}>{item.def}</p>
+      </div>
+    );
+  };
+
   return (
     <div>
-      {/* Dashboard Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', marginBottom: '50px' }}>
+      {/* RESPONSIVE HEADER FIX */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <div style={{ flex: '1 1 250px' }}>
+          <h2 style={{ fontSize: 'clamp(2rem, 6vw, 2.8rem)', color: '#0F172A', margin: '0 0 8px 0', lineHeight: '1.1' }}>Word Bank</h2>
+          <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>
+            You have {savedWords.length} word{savedWords.length !== 1 ? 's' : ''} saved.
+          </p>
+        </div>
         
-        <div className="soft-card" style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }}>
-          <div>
-            <h3 style={{ margin: '0 0 8px 0', color: '#64748B', fontSize: '1.2rem', fontWeight: '600' }}>Total Saved</h3>
-            <div style={{ fontSize: '3rem', fontWeight: 'bold', color: '#0F172A', lineHeight: '1' }}>{savedWords.length}</div>
-          </div>
-          <div style={{ fontSize: '4rem', opacity: 0.8 }}>📚</div>
+        {/* NEW BUTTON WRAPPER */}
+        <div style={{ flex: '1 1 250px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button 
+            onClick={startQuizSession} 
+            disabled={savedWords.length < 4}
+            style={{ 
+              width: '100%', 
+              maxWidth: '280px', /* Caps the width on desktop */
+              padding: '16px 24px', 
+              backgroundColor: savedWords.length >= 4 ? '#4F46E5' : '#CBD5E1', 
+              color: '#ffffff', 
+              border: 'none', 
+              borderRadius: '16px', 
+              fontSize: '1.1rem', 
+              fontWeight: 'bold', 
+              cursor: savedWords.length >= 4 ? 'pointer' : 'not-allowed', 
+              boxShadow: savedWords.length >= 4 ? '0 10px 20px rgba(79,70,229,0.2)' : 'none', 
+              whiteSpace: 'nowrap' 
+            }}
+          >
+            {savedWords.length >= 4 ? 'Quiz Me ⚡' : 'Save 4 words to unlock Quizzes'}
+          </button>
         </div>
-
-        <div className="soft-card" style={{ backgroundColor: reviewQueue.length > 0 ? '#4F46E5' : '#10B981', color: 'white', padding: '40px', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: reviewQueue.length > 0 ? '0 25px 50px -12px rgba(79,70,229,0.3)' : '0 25px 50px -12px rgba(16,185,129,0.3)' }}>
-          <div>
-            <h3 style={{ margin: '0 0 8px 0', color: 'rgba(255,255,255,0.8)', fontSize: '1.2rem', fontWeight: '600' }}>Due for Review</h3>
-            <div style={{ fontSize: '3rem', fontWeight: 'bold', lineHeight: '1' }}>{reviewQueue.length}</div>
-          </div>
-          {reviewQueue.length > 0 ? (
-            <button onClick={startReviewSession} style={{ padding: '16px 32px', backgroundColor: '#ffffff', color: '#4F46E5', border: 'none', borderRadius: '999px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>
-              Start Session ⚡
-            </button>
-          ) : (
-             <div style={{ fontSize: '4rem' }}>🎉</div>
-          )}
-        </div>
-
       </div>
 
-      {/* Dictionary List */}
-      <h3 style={{ fontSize: '1.5rem', color: '#0F172A', marginBottom: '24px', paddingLeft: '10px' }}>Full Dictionary List</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-        {savedWords.map((item, idx) => {
-          const srsInfo = srsDatabase[item.word.toLowerCase()];
-          const isDue = srsInfo ? srsInfo.nextReview <= Date.now() : true;
+      {/* TIER 3: MASTERED */}
+      {categorizedWords.mastered.length > 0 && (
+        <div style={{ marginBottom: '40px' }}>
+          <h3 style={{ fontSize: '1.1rem', color: '#10B981', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10B981' }}></span> Mastered
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
+            {categorizedWords.mastered.map((item, idx) => <WordCard key={idx} item={item} />)}
+          </div>
+        </div>
+      )}
 
-          return (
-            <div key={idx} style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '24px', border: '1px solid #E2E8F0', position: 'relative' }}>
-              <button 
-                onClick={() => toggleSaveWord(item.word, item)}
-                style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEE2E2', color: '#EF4444', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem' }}
-                title="Remove from Vault"
-              >✕</button>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                <h4 style={{ margin: 0, fontSize: '1.5rem', color: '#0F172A' }}>{item.word}</h4>
-                {isDue && <span style={{ width: '10px', height: '10px', backgroundColor: '#EF4444', borderRadius: '50%' }} title="Due for review" />}
-              </div>
-              <span style={{ display: 'inline-block', backgroundColor: '#F1F5F9', color: '#64748B', padding: '4px 12px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
-                {item.pos || 'Vocab'}
-              </span>
-              <p style={{ margin: 0, color: '#475569', fontSize: '1.05rem', lineHeight: '1.5' }}>{item.def}</p>
-            </div>
-          );
-        })}
-      </div>
+      {/* TIER 2: IN PROGRESS */}
+      {categorizedWords.inProgress.length > 0 && (
+        <div style={{ marginBottom: '40px' }}>
+          <h3 style={{ fontSize: '1.1rem', color: '#F59E0B', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#F59E0B' }}></span> In Progress
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
+            {categorizedWords.inProgress.map((item, idx) => <WordCard key={idx} item={item} />)}
+          </div>
+        </div>
+      )}
+
+      {/* TIER 1: NEEDS REVIEW */}
+      {categorizedWords.needsReview.length > 0 && (
+        <div style={{ marginBottom: '40px' }}>
+          <h3 style={{ fontSize: '1.1rem', color: '#64748B', margin: '0 0 16px 0', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#64748B' }}></span> Needs Review
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
+            {categorizedWords.needsReview.map((item, idx) => <WordCard key={idx} item={item} />)}
+          </div>
+        </div>
+      )}
+
+      {/* RENDER THE MODAL */}
+      <DiscardWordModal 
+        isOpen={isDiscardModalOpen} 
+        onClose={handleModalClose} 
+        onConfirm={handleModalConfirm}
+        wordToDiscard={wordToDiscard}
+      />
     </div>
   );
 }
