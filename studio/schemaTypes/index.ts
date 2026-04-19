@@ -11,6 +11,7 @@ import vocabBlock from './vocabBlock'
 import grammarBlock from './grammarBlock'
 import pronunciationBlock from './pronunciationBlock'
 import grammarPracticeBlock from './grammarPracticeBlock'
+import unitMetadata from './unitMetadata'
 
 export const schemaTypes = [
   review,
@@ -26,4 +27,5 @@ export const schemaTypes = [
   grammarBlock,
   pronunciationBlock,
   grammarPracticeBlock,
+  unitMetadata,
 ]

@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DiscardWordModal } from './DiscardWordModal';
 
+// --- Premium SVGs ---
+const IconEmptyVault = () => (<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>);
+const IconLightning = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>);
+const IconClose = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>);
+
 interface MasteryData {
   correctStreak: number;
   lastTested: number;
@@ -123,7 +128,9 @@ export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
   if (!savedWords || savedWords.length === 0) {
     return (
       <div className="soft-card" style={{ backgroundColor: '#ffffff', padding: '60px 40px', borderRadius: '32px', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '20px' }}>📭</div>
+        <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center' }}>
+          <IconEmptyVault />
+        </div>
         <h2 style={{ fontSize: '2rem', color: '#0F172A', marginBottom: '16px' }}>Your Word Bank is Empty</h2>
         <p style={{ fontSize: '1.2rem', color: '#64748B', maxWidth: '500px', margin: '0 auto' }}>
           Highlight words while reading any text or listening to an audio lesson to save them here for active recall training.
@@ -198,8 +205,10 @@ export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
         <button 
           onClick={handleDiscardRequest}
           title="Discard word"
-          style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEE2E2', color: '#EF4444', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontWeight: 'bold' }}
-        >✕</button>
+          style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEE2E2', color: '#EF4444', border: 'none', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+        >
+          <IconClose />
+        </button>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingRight: '30px', flexWrap: 'wrap' }}>
           <h4 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>{item.word}</h4>
@@ -246,10 +255,14 @@ export function VocabVault({ savedWords, toggleSaveWord }: VaultProps) {
               fontWeight: 'bold', 
               cursor: savedWords.length >= 4 ? 'pointer' : 'not-allowed', 
               boxShadow: savedWords.length >= 4 ? '0 10px 20px rgba(79,70,229,0.2)' : 'none', 
-              whiteSpace: 'nowrap' 
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
             }}
           >
-            {savedWords.length >= 4 ? 'Quiz Me ⚡' : 'Save 4 words to unlock Quizzes'}
+            {savedWords.length >= 4 ? <>Quiz Me <IconLightning /></> : 'Save 4 words to unlock Quizzes'}
           </button>
         </div>
       </div>
