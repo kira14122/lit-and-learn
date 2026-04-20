@@ -1,12 +1,12 @@
-import { createClient } from '@sanity/client'
-import imageUrlBuilder from '@sanity/image-url'
+import { createClient } from '@sanity/client';
+import imageUrlBuilder from '@sanity/image-url';
 
 export const client = createClient({
-  projectId: 'ols5q948', // Your unique Sanity ID
+  projectId: 'ols5q948', // Hardcoded directly to your database!
   dataset: 'production',
-  useCdn: true,          
-  apiVersion: '2024-03-20', 
-})
+  useCdn: true,
+  apiVersion: '2024-01-01',
+});
 
-const builder = imageUrlBuilder(client)
-export const urlFor = (source: any) => builder.image(source)
+const builder = imageUrlBuilder(client);
+export const urlFor = (source: any) => builder.image(source);

@@ -6,8 +6,10 @@ import { ResourceLibrary } from './components/ResourceLibrary';
 import { InteractiveLesson } from './components/InteractiveLesson';
 import { CustomAudioPlayer } from './components/CustomAudioPlayer';
 import TextHighlighter from './components/TextHighlighter';
+import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/clerk-react'; 
+import { getSupabaseClient } from './supabaseClient'; // <-- SECURED SUPABASE CLIENT
 
-// --- 1. SLEEK SVG ICONS (No native emojis) ---
+// --- 1. SLEEK SVG ICONS ---
 const IconFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
 const IconNonFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>);
 const IconBeginner = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" strokeOpacity="0.2"/><rect x="16" y="6" width="4" height="14" rx="2" strokeOpacity="0.2"/></svg>);
@@ -52,6 +54,9 @@ const styles: any = {
 };
 
 export default function App() {
+  // CLERK AUTHENTICATION HOOK
+  const { userId, getToken } = useAuth(); // <-- Added getToken here!
+
   const [activeTab, setActiveTab] = useState('English Corner');
   
   const [bookCategory, setBookCategory] = useState<string | null>(null);
@@ -80,18 +85,15 @@ export default function App() {
   
   const [showNoQuizModal, setShowNoQuizModal] = useState(false);
 
+  // FETCH SANITY DATA ONCE
   useEffect(() => {
-    client.fetch('*[_type == "review"] | order(title asc)').then(setReviews);
+    client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     client.fetch('*[_type == "unitMetadata"]').then(setUnitMetadataList);
 
     client.fetch(`*[_type == "interactiveLesson"] | order(lessonOrder asc) {
       ...,
-      lessonBlocks[]{
-        ...,
-        "audioUrl": audio.asset->url,
-        visualHook{ ..., asset->{ url } }
-      }
+      lessonBlocks[]{ ..., "audioUrl": audio.asset->url, visualHook{ ..., asset->{ url } } }
     }`).then(setInteractiveLessons);
 
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {
@@ -99,62 +101,95 @@ export default function App() {
       data.forEach((item: any) => { if (item.word) dictMap[item.word.toLowerCase()] = { pos: item.pos, def: item.definition, level: item.level }; });
       setDictionary(dictMap);
     });
-
-    const localVault = localStorage.getItem('vocabVault');
-    if (localVault) setSavedWords(JSON.parse(localVault));
-
-    const localProgress = localStorage.getItem('litAndLearnProgress');
-    if (localProgress) setCompletedLessons(JSON.parse(localProgress));
   }, []);
 
-  const toggleSaveWord = (word: string, info: any) => {
-    if (!word) return;
-    setSavedWords((prevVault) => {
-      const cleanWord = word.trim().toLowerCase();
-      const exists = prevVault.some(w => w?.word?.trim().toLowerCase() === cleanWord);
-      let updatedVault;
-      if (exists) {
-        updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
+  // SMART CLOUD SYNC
+  useEffect(() => {
+    const loadPersonalData = async () => {
+      if (userId) {
+        // Securely fetch token and connect to Supabase
+        const token = await getToken({ template: 'supabase' });
+        const supabase = getSupabaseClient(token || '');
+
+        const { data: vocabData } = await supabase.from('vocab_vault').select('*').eq('user_id', userId);
+        if (vocabData) setSavedWords(vocabData);
+
+        const { data: lessonData } = await supabase.from('completed_lessons').select('lesson_id').eq('user_id', userId);
+        if (lessonData) setCompletedLessons(lessonData.map(l => l.lesson_id));
       } else {
-        updatedVault = [...prevVault, { word: word.trim(), ...info }];
+        const localVault = localStorage.getItem('vocabVault');
+        if (localVault) setSavedWords(JSON.parse(localVault));
+
+        const localProgress = localStorage.getItem('litAndLearnProgress');
+        if (localProgress) setCompletedLessons(JSON.parse(localProgress));
       }
-      localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
-      return updatedVault;
-    });
+    };
+    loadPersonalData();
+  }, [userId, getToken]); 
+
+  // SMART SAVING
+  const toggleSaveWord = async (word: string, info: any) => {
+    if (!word) return;
+    const cleanWord = word.trim().toLowerCase();
+    const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
+
+    if (userId) {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+
+      if (exists) {
+        await supabase.from('vocab_vault').delete().eq('user_id', userId).eq('word', cleanWord);
+        setSavedWords(prev => prev.filter(w => w?.word?.trim().toLowerCase() !== cleanWord));
+      } else {
+        const newWord = { user_id: userId, word: cleanWord, pos: info.pos, definition: info.definition || info.def, level: info.level };
+        await supabase.from('vocab_vault').insert([newWord]);
+        setSavedWords(prev => [...prev, newWord]);
+      }
+    } else {
+      setSavedWords((prevVault) => {
+        let updatedVault;
+        if (exists) {
+          updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
+        } else {
+          updatedVault = [...prevVault, { word: word.trim(), ...info }];
+        }
+        localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
+        return updatedVault;
+      });
+    }
   };
 
-  const handleMarkLessonComplete = (lessonId: string) => {
-    setCompletedLessons(prev => {
-      if (prev.includes(lessonId)) return prev;
-      const newProgress = [...prev, lessonId];
-      localStorage.setItem('litAndLearnProgress', JSON.stringify(newProgress));
-      return newProgress;
-    });
+  // SMART COMPLETION
+  const handleMarkLessonComplete = async (lessonId: string) => {
+    if (completedLessons.includes(lessonId)) return;
+
+    if (userId) {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+
+      await supabase.from('completed_lessons').insert([{ user_id: userId, lesson_id: lessonId }]);
+      setCompletedLessons(prev => [...prev, lessonId]);
+    } else {
+      setCompletedLessons(prev => {
+        const newProgress = [...prev, lessonId];
+        localStorage.setItem('litAndLearnProgress', JSON.stringify(newProgress));
+        return newProgress;
+      });
+    }
   };
 
   const getUnitMeta = (u: number) => {
     const meta = unitMetadataList.find(m => m.level === activeLevel && m.subLevel === activeSubLevel && m.unitNumber === u);
-    
-    if (meta) {
-      return {
-        title: meta.title,
-        desc: meta.description,
-        objectives: meta.objectives || []
-      };
-    }
-
-    return { 
-      title: `Curriculum Syllabus`, 
-      desc: "Learning objectives and details will be published soon.", 
-      objectives: ["Complete all reading assignments", "Finish interactive grammar labs"] 
-    };
+    if (meta) return { title: meta.title, desc: meta.description, objectives: meta.objectives || [] };
+    return { title: `Curriculum Syllabus`, desc: "Learning objectives and details will be published soon.", objectives: ["Complete all reading assignments", "Finish interactive grammar labs"] };
   };
 
   const displayedReviews = reviews.filter(rev => {
     if (!bookCategory || !activeSubCategory) return false;
-    const mainCat = rev.mainCategory || rev.category || 'Fiction';
-    const subCat = rev.subCategory || ''; 
-    return mainCat === bookCategory && subCat === activeSubCategory;
+    const safeLower = (val: any) => typeof val === 'string' ? val.toLowerCase().trim() : '';
+    const mainCat = safeLower(rev.mainCategory) || safeLower(rev.category) || 'fiction';
+    const subCat = safeLower(rev.subCategory) || safeLower(rev.genre) || '';
+    return mainCat === bookCategory.toLowerCase().trim() && subCat === activeSubCategory.toLowerCase().trim();
   });
 
   const searchResultsReviews = reviews.filter(rev => rev.title?.toLowerCase().includes(searchTerm.toLowerCase()) || (typeof rev.content === 'string' && rev.content.toLowerCase().includes(searchTerm.toLowerCase())) );
@@ -171,7 +206,6 @@ export default function App() {
       setShowNoQuizModal(true);
       return; 
     }
-
     setQuizItems(allItems); 
     setIsLevelExam(runAsLevelExam); 
     setIsQuizMode(true);
@@ -191,11 +225,8 @@ export default function App() {
   };
 
   const isOverlayActive = isQuizMode || isInteractiveLesson;
-
   const unitLessons = interactiveLessons.filter(l => l.unit === activeUnit && l.subLevel === activeSubLevel).sort((a, b) => a.lessonOrder - b.lessonOrder);
-  const allLessonsCompleted = unitLessons.length > 0 && unitLessons.every(l => completedLessons.includes(l._id));
-
-  return (
+  const allLessonsCompleted = unitLessons.length > 0 && unitLessons.every(l => completedLessons.includes(l._id));return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
@@ -232,6 +263,18 @@ export default function App() {
                 {['Book Reviews', 'English Corner', 'Resources', 'Word Bank', 'About', 'Contact'].map(tab => (
                   <button key={tab} style={styles.navButton(activeTab === tab)} onClick={() => handleNavigation(tab)}>{tab}</button>
                 ))}
+                
+                {/* CLERK BUTTONS */}
+                <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', paddingLeft: '16px', borderLeft: '2px solid #E2E8F0' }}>
+                  <SignedOut>
+                    <SignInButton mode="modal">
+                      <button style={{ ...styles.navButton(false), background: '#10B981', color: '#ffffff' }}>Sign In</button>
+                    </SignInButton>
+                  </SignedOut>
+                  <SignedIn>
+                    <UserButton afterSignOutUrl="/" />
+                  </SignedIn>
+                </div>
               </nav>
             )}
           </div>
@@ -299,14 +342,11 @@ export default function App() {
                                {res.isGeneral ? 'General Guide' : `${res.subLevel} • Unit ${res.unit}`}
                              </span>
                              <h3 style={{ margin: '0 0 24px', fontWeight: '600', color: '#0F172A', fontSize: '1.4rem' }}>{res.title}</h3>
-                             
-                             {/* THE INJECTED CUSTOM PLAYER FOR SEARCH RESULTS */}
                              {res.audioUrl && ( 
                                <div style={{ width: '100%', marginBottom: '24px' }}>
                                  <CustomAudioPlayer src={res.audioUrl} title="Listen to Track" />
                                </div> 
                              )}
-                             
                              {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%', background: res.audioUrl ? '#EEF2FF' : '#4F46E5', color: res.audioUrl ? '#4F46E5' : '#ffffff', boxShadow: res.audioUrl ? 'none' : '0 10px 20px -5px rgba(79,70,229,0.4)', textDecoration: 'none'}}>{res.audioUrl ? 'Download Worksheet' : 'Download Lesson'}</a>}
                            </div>
                         ))}
@@ -317,7 +357,6 @@ export default function App() {
               ) : (
                 /* --- TABS --- */
                 <>
-                  {/* BOOK REVIEWS FLOW */}
                   {activeTab === 'Book Reviews' && (
                     <div>
                       {!bookCategory ? (
@@ -345,7 +384,6 @@ export default function App() {
                               <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{bookCategory}</p>
                             </div>
                           </div>
-                          
                           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
                             {(bookCategory === 'Fiction' ? fictionCategories : nonFictionCategories).map(cat => ( 
                               <button key={cat} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubCategory(cat)}>{cat}</button> 
@@ -359,7 +397,6 @@ export default function App() {
                             <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeSubCategory}</h3>
                             <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{bookCategory}</span>
                           </div>
-
                           <div style={styles.grid}>
                             {displayedReviews.length > 0 ? displayedReviews.map(book => (
                               <div key={book._id} className="soft-card" style={styles.card}>
@@ -381,7 +418,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* ===================== ENGLISH CORNER FLOW ===================== */}
                   {activeTab === 'English Corner' && !activeLevel && (
                     <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
@@ -407,7 +443,6 @@ export default function App() {
                           <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{activeLevel} Curriculum</p>
                         </div>
                       </div>
-                      
                       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
                         {LEVELS.find(l => l.name === activeLevel)?.subLevels.map(sub => (
                           <button key={sub} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubLevel(sub)}>
@@ -430,7 +465,6 @@ export default function App() {
                           <IconStar /> Level Placement Test
                         </button>
                       </div>
-                      
                       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
                         {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => {
                           const meta = getUnitMeta(u);
@@ -449,15 +483,12 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* ===================== THE UNIT LEARNING PATH ===================== */}
                   {activeTab === 'English Corner' && activeUnit && (
                     <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
                       <div style={{ marginBottom: '30px' }}>
                         <BackButton onClick={() => setActiveUnit(null)} text="Back to Units" />
                       </div>
-
                       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                        
                         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
                           <span style={{ display: 'inline-block', background: '#EEF2FF', color: '#4F46E5', padding: '8px 20px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px' }}>
                             {activeLevel} • {activeSubLevel}
@@ -483,7 +514,6 @@ export default function App() {
                         </div>
 
                         <div style={{ position: 'relative', paddingLeft: '0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                          
                           {unitLessons.length > 0 ? unitLessons.map((lesson, index) => {
                             const isCompleted = completedLessons.includes(lesson._id);
                             const isLocked = index > 0 && !completedLessons.includes(unitLessons[index - 1]._id);
@@ -494,14 +524,12 @@ export default function App() {
 
                             return (
                               <div key={lesson._id} className="timeline-row" style={{ display: 'flex', alignItems: 'stretch', gap: '24px', opacity: isLocked ? 0.6 : 1, pointerEvents: isLocked ? 'none' : 'auto', transition: 'all 0.3s' }}>
-                                
                                 <div className="timeline-icon-col" style={{ width: '64px', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                   <div className="timeline-icon" style={{ width: '48px', height: '48px', borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, boxShadow: isLocked ? 'none' : '0 4px 10px rgba(0,0,0,0.05)' }}>
                                     {isCompleted ? <IconCheck /> : isLocked ? <IconLock /> : <span style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>{index + 1}</span>}
                                   </div>
                                   {index < unitLessons.length - 1 && <div style={{ width: '4px', flexGrow: 1, background: isCompleted ? '#10B981' : '#E2E8F0', margin: '8px 0', borderRadius: '2px' }} />}
                                 </div>
-
                                 <div className="timeline-card soft-card" style={{ flexGrow: 1, background: cardBg, border, borderRadius: '24px', padding: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', marginBottom: index === unitLessons.length - 1 ? '40px' : '0' }}>
                                   <div>
                                     <span style={{ color: isCompleted ? '#10B981' : '#64748B', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>
@@ -509,7 +537,6 @@ export default function App() {
                                     </span>
                                     <h3 style={{ margin: '8px 0 0 0', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A' }}>{lesson.title}</h3>
                                   </div>
-                                  
                                   <button 
                                     onClick={() => {
                                       handleMarkLessonComplete(lesson._id);
@@ -535,7 +562,6 @@ export default function App() {
                                 {allLessonsCompleted ? <IconStar /> : <IconLock />}
                               </div>
                             </div>
-                            
                             <div className="timeline-final-card soft-card" style={{ flexGrow: 1, background: allLessonsCompleted ? '#ffffff' : '#ffffff', border: allLessonsCompleted ? '2px solid #4F46E5' : '2px dashed #E2E8F0', borderRadius: '32px', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }}>
                               <h3 style={{ margin: '0 0 8px 0', fontSize: '2rem', fontWeight: '600', color: '#0F172A' }}>Unit Assessment</h3>
                               <p style={{ color: '#64748B', margin: '0 0 24px 0', fontSize: '1.1rem', lineHeight: '1.5' }}>
@@ -550,24 +576,19 @@ export default function App() {
                               </button>
                             </div>
                           </div>
-
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* ===================== RESOURCES FLOW ===================== */}
                   {activeTab === 'Resources' && <ResourceLibrary resources={resources} />}
-
                   {activeTab === 'Word Bank' && <VocabVault savedWords={savedWords} toggleSaveWord={toggleSaveWord} />}
-
                   {activeTab === 'About' && (
                     <div className="soft-card" style={{ ...styles.card, maxWidth: '750px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
                       <h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2>
                       <p style={{ lineHeight: '2.2', color: '#475569', fontSize: '1.3rem', fontWeight: '400' }}>Welcome to my classroom. I am passionate about blending literature with language learning to help you achieve absolute fluency.</p>
                     </div>
                   )}
-
                   {activeTab === 'Contact' && (
                     <div className="soft-card" style={{ ...styles.card, maxWidth: '650px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
                       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center' }}><IconMail /></div>
@@ -580,28 +601,15 @@ export default function App() {
               )}
             </>
           ) : (
-            /* --- OVERLAY RENDERER --- */
             <>
               {isQuizMode && <QuizOverlay quizItems={quizItems} isLevelExam={isLevelExam} onClose={() => handleNavigation()} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} />}
-              
               {isInteractiveLesson && activeLessonData && (
-                <InteractiveLesson
-                  lessonData={activeLessonData}
-                  onClose={() => {
-                    setIsInteractiveLesson(false);
-                    setActiveLessonData(null);
-                  }}
-                  dictionary={dictionary}
-                  savedWords={savedWords}
-                  toggleSaveWord={toggleSaveWord}
-                  onComplete={() => handleMarkLessonComplete(activeLessonData._id)}
-                />
+                <InteractiveLesson lessonData={activeLessonData} onClose={() => { setIsInteractiveLesson(false); setActiveLessonData(null); }} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} onComplete={() => handleMarkLessonComplete(activeLessonData._id)} />
               )}
             </>
           )}
         </div>
 
-        {/* CUSTOM REACT MODAL FOR EMPTY QUIZ ALERTS */}
         {showNoQuizModal && (
           <div style={styles.modalOverlay} onClick={() => setShowNoQuizModal(false)}>
             <div className="responsive-card" style={{...styles.modalContent, maxWidth: '450px', textAlign: 'center', padding: '50px'}} onClick={e => e.stopPropagation()}>
@@ -610,19 +618,15 @@ export default function App() {
               </div>
               <h2 style={{ fontSize: '2.2rem', marginBottom: '16px', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>No Questions Yet</h2>
               <p style={{ color: '#64748B', fontSize: '1.15rem', marginBottom: '32px', lineHeight: '1.6' }}>No assessment questions have been published for this unit yet. Check back later!</p>
-              <button onClick={() => setShowNoQuizModal(false)} style={{ background: '#4F46E5', color: '#ffffff', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', width: '100%', transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)' }}>
-                Understood
-              </button>
+              <button onClick={() => setShowNoQuizModal(false)} style={{ background: '#4F46E5', color: '#ffffff', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', width: '100%', transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)' }}>Understood</button>
             </div>
           </div>
         )}
 
-        {/* BOOK REVIEW MODAL (WITH SANITY RICH TEXT FIX & TEXTHIGHLIGHTER) */}
         {selectedBook && (
           <div style={styles.modalOverlay} onClick={() => setSelectedBook(null)}>
             <div className="responsive-card" style={styles.modalContent} onClick={e => e.stopPropagation()}>
               <button onClick={() => setSelectedBook(null)} style={styles.closeButton}>✕</button>
-              
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '30px' }}>
                 {selectedBook.coverImage ? (
                   <img src={urlFor(selectedBook.coverImage).url()} alt={selectedBook.title} style={{ height: '280px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 15px 35px rgba(0,0,0,0.15)' }} />
@@ -632,19 +636,10 @@ export default function App() {
                 <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px', lineHeight: '1.2' }}>{selectedBook.title}</h2>
                 <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginTop: '16px' }} />
               </div>
-
               <div style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
                 <TextHighlighter 
-                  text={
-                    typeof selectedBook.content === 'string' 
-                      ? selectedBook.content 
-                      : Array.isArray(selectedBook.content) 
-                        ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n')
-                        : "Review content is currently being updated."
-                  } 
-                  dictionary={dictionary} 
-                  onSaveWord={toggleSaveWord} 
-                  savedWords={savedWords} 
+                  text={typeof selectedBook.content === 'string' ? selectedBook.content : Array.isArray(selectedBook.content) ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n') : "Review content is currently being updated."} 
+                  dictionary={dictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
                 />
               </div>
             </div>
