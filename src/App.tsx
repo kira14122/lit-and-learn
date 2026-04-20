@@ -7,7 +7,7 @@ import { InteractiveLesson } from './components/InteractiveLesson';
 import { CustomAudioPlayer } from './components/CustomAudioPlayer';
 import TextHighlighter from './components/TextHighlighter';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/clerk-react'; 
-import { getSupabaseClient } from './supabaseClient'; // <-- SECURED SUPABASE CLIENT
+import { getSupabaseClient } from './supabaseClient'; 
 
 // --- 1. SLEEK SVG ICONS ---
 const IconFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
@@ -54,11 +54,19 @@ const styles: any = {
 };
 
 export default function App() {
-  // CLERK AUTHENTICATION HOOK
-  const { userId, getToken } = useAuth(); // <-- Added getToken here!
+  const { userId, getToken } = useAuth(); 
 
-  const [activeTab, setActiveTab] = useState('English Corner');
-  
+  // --- SMART MEMORY FOR TABS ---
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedTab = localStorage.getItem('litAndLearnCurrentTab');
+    return savedTab || 'English Corner';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('litAndLearnCurrentTab', activeTab);
+  }, [activeTab]);
+  // -----------------------------
+
   const [bookCategory, setBookCategory] = useState<string | null>(null);
   const [activeSubCategory, setActiveSubCategory] = useState<string | null>(null); 
   const [reviews, setReviews] = useState<any[]>([]);
@@ -85,7 +93,6 @@ export default function App() {
   
   const [showNoQuizModal, setShowNoQuizModal] = useState(false);
 
-  // FETCH SANITY DATA ONCE
   useEffect(() => {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
@@ -103,11 +110,9 @@ export default function App() {
     });
   }, []);
 
-  // SMART CLOUD SYNC
   useEffect(() => {
     const loadPersonalData = async () => {
       if (userId) {
-        // Securely fetch token and connect to Supabase
         const token = await getToken({ template: 'supabase' });
         const supabase = getSupabaseClient(token || '');
 
@@ -127,7 +132,6 @@ export default function App() {
     loadPersonalData();
   }, [userId, getToken]); 
 
-  // SMART SAVING
   const toggleSaveWord = async (word: string, info: any) => {
     if (!word) return;
     const cleanWord = word.trim().toLowerCase();
@@ -159,7 +163,6 @@ export default function App() {
     }
   };
 
-  // SMART COMPLETION
   const handleMarkLessonComplete = async (lessonId: string) => {
     if (completedLessons.includes(lessonId)) return;
 
