@@ -54,9 +54,9 @@ const styles: any = {
 };
 
 export default function App() {
-  const { userId, getToken } = useAuth(); 
+  // --- ADDED isLoaded HERE ---
+  const { userId, getToken, isLoaded } = useAuth(); 
 
-  // --- SMART MEMORY FOR TABS ---
   const [activeTab, setActiveTab] = useState(() => {
     const savedTab = localStorage.getItem('litAndLearnCurrentTab');
     return savedTab || 'English Corner';
@@ -65,7 +65,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('litAndLearnCurrentTab', activeTab);
   }, [activeTab]);
-  // -----------------------------
 
   const [bookCategory, setBookCategory] = useState<string | null>(null);
   const [activeSubCategory, setActiveSubCategory] = useState<string | null>(null); 
@@ -105,12 +104,22 @@ export default function App() {
 
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {
       const dictMap: Record<string, any> = {};
-      data.forEach((item: any) => { if (item.word) dictMap[item.word.toLowerCase()] = { pos: item.pos, def: item.definition, level: item.level }; });
+      data.forEach((item: any) => { 
+        if (item.word) dictMap[item.word.toLowerCase()] = { 
+          pos: item.pos, 
+          def: item.definition, 
+          level: item.level,
+          example: item.example || null 
+        }; 
+      });
       setDictionary(dictMap);
     });
   }, []);
 
   useEffect(() => {
+    // --- THE FIX: WAIT FOR CLERK TO LOAD TO PREVENT FLICKERING OF OFFLINE DATA ---
+    if (!isLoaded) return; 
+
     const loadPersonalData = async () => {
       if (userId) {
         const token = await getToken({ template: 'supabase' });
@@ -130,12 +139,15 @@ export default function App() {
       }
     };
     loadPersonalData();
-  }, [userId, getToken]); 
+  }, [userId, getToken, isLoaded]); // <-- Added isLoaded to dependencies
 
   const toggleSaveWord = async (word: string, info: any) => {
     if (!word) return;
     const cleanWord = word.trim().toLowerCase();
     const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
+
+    // 🚨 THE BULLETPROOF NET: Ensuring example is caught even if the highlighter drops it
+    const secureExample = info.example || (dictionary[cleanWord] ? dictionary[cleanWord].example : null) || null;
 
     if (userId) {
       const token = await getToken({ template: 'supabase' });
@@ -145,7 +157,15 @@ export default function App() {
         await supabase.from('vocab_vault').delete().eq('user_id', userId).eq('word', cleanWord);
         setSavedWords(prev => prev.filter(w => w?.word?.trim().toLowerCase() !== cleanWord));
       } else {
-        const newWord = { user_id: userId, word: cleanWord, pos: info.pos, definition: info.definition || info.def, level: info.level };
+        const newWord = { 
+          user_id: userId, 
+          word: cleanWord, 
+          pos: info.pos, 
+          definition: info.definition || info.def, 
+          level: info.level,
+          example: secureExample 
+        };
+        
         await supabase.from('vocab_vault').insert([newWord]);
         setSavedWords(prev => [...prev, newWord]);
       }
@@ -155,7 +175,7 @@ export default function App() {
         if (exists) {
           updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
         } else {
-          updatedVault = [...prevVault, { word: word.trim(), ...info }];
+          updatedVault = [...prevVault, { word: cleanWord, ...info, example: secureExample }];
         }
         localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
         return updatedVault;
@@ -229,7 +249,9 @@ export default function App() {
 
   const isOverlayActive = isQuizMode || isInteractiveLesson;
   const unitLessons = interactiveLessons.filter(l => l.unit === activeUnit && l.subLevel === activeSubLevel).sort((a, b) => a.lessonOrder - b.lessonOrder);
-  const allLessonsCompleted = unitLessons.length > 0 && unitLessons.every(l => completedLessons.includes(l._id));return (
+  const allLessonsCompleted = unitLessons.length > 0 && unitLessons.every(l => completedLessons.includes(l._id));
+
+  return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
@@ -267,7 +289,6 @@ export default function App() {
                   <button key={tab} style={styles.navButton(activeTab === tab)} onClick={() => handleNavigation(tab)}>{tab}</button>
                 ))}
                 
-                {/* CLERK BUTTONS */}
                 <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', paddingLeft: '16px', borderLeft: '2px solid #E2E8F0' }}>
                   <SignedOut>
                     <SignInButton mode="modal">
@@ -286,7 +307,6 @@ export default function App() {
         <div className="app-container" style={styles.container}>
           {!isOverlayActive ? (
             <>
-              {/* TOP ACTION BAR */}
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '50px', gap: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '24px' }}>
                 <div>
                   <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>
@@ -313,7 +333,6 @@ export default function App() {
               </div>
 
               {searchTerm ? (
-                /* --- SEARCH RESULTS --- */
                 <div>
                   {searchResultsReviews.length > 0 && (
                     <div style={{ marginBottom: '60px' }}>
@@ -358,7 +377,6 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                /* --- TABS --- */
                 <>
                   {activeTab === 'Book Reviews' && (
                     <div>

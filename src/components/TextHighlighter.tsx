@@ -44,7 +44,7 @@ export default function TextHighlighter({
   const regex = new RegExp(`\\b(${escapedWords})\\b`, 'gi');
   const parts = text.split(regex);
 
-  // UPGRADED: Container-Aware Edge Detection
+  // Container-Aware Edge Detection
   const handleWordClick = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
     if (activeTooltip === index) {
@@ -68,10 +68,10 @@ export default function TextHighlighter({
     let arrowTop = '100%';
     let arrowBorder = '#0F172A transparent transparent transparent';
 
-    // 1. Horizontal Detection (Is it hitting the left or right wall of the modal?)
+    // 1. Horizontal Detection
     if (rect.left - containerRect.left < 160) {
       left = '0';
-      transform = 'translateX(-10px)'; // Add a tiny 10px buffer from the wall
+      transform = 'translateX(-10px)'; 
       arrowLeft = '20px';
     } else if (containerRect.right - rect.right < 160) {
       left = '100%';
@@ -79,11 +79,11 @@ export default function TextHighlighter({
       arrowLeft = 'calc(100% - 20px)';
     }
 
-    // 2. Vertical Detection (Is it hitting the top ceiling of the modal?)
+    // 2. Vertical Detection
     if (rect.top - containerRect.top < 180) {
       bottom = 'auto';
       top = '120%';
-      arrowTop = '-20px'; // Shift arrow to point upwards
+      arrowTop = '-20px'; 
       arrowBorder = 'transparent transparent #0F172A transparent';
     }
 
@@ -116,7 +116,7 @@ export default function TextHighlighter({
           transform: translateX(-50%);
         }
 
-        /* MOBILE OVERRIDE: Forces the tooltip into a bottom sheet, ignoring all inline JS styles */
+        /* MOBILE OVERRIDE */
         @media (max-width: 768px) {
           .vocab-tooltip {
             position: fixed !important;
@@ -140,6 +140,7 @@ export default function TextHighlighter({
         let vocabDef = '';
         let vocabPos = '';
         let vocabLevel = '';
+        let vocabExample = ''; // <-- NEW: Added to catch the example
         let isMatch = false;
 
         if (dictionary && dictionary[part.toLowerCase()]) {
@@ -148,6 +149,7 @@ export default function TextHighlighter({
           vocabDef = info.def;
           vocabPos = info.pos;
           vocabLevel = info.level;
+          vocabExample = info.example; // <-- NEW: Grabs example from the dictionary map
           isMatch = true;
         } else if (!dictionary && dictionaryArray.length > 0) {
           const matchInfo = dictionaryArray.find(w => (w.word || w.title || w.term)?.toLowerCase() === part.toLowerCase());
@@ -156,6 +158,7 @@ export default function TextHighlighter({
             vocabDef = matchInfo.definition || matchInfo.description || matchInfo.meaning;
             vocabPos = matchInfo.pos || matchInfo.partOfSpeech;
             vocabLevel = matchInfo.level;
+            vocabExample = matchInfo.example; // <-- NEW: Grabs example from the direct fetch
             isMatch = true;
           }
         }
@@ -208,7 +211,8 @@ export default function TextHighlighter({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        onSaveWord(vocabWord, { def: vocabDef, pos: vocabPos, level: vocabLevel });
+                        // THE FIX: The payload now includes `example: vocabExample`
+                        onSaveWord(vocabWord, { def: vocabDef, pos: vocabPos, level: vocabLevel, example: vocabExample }); 
                       }}
                       style={{
                          all: 'unset',
