@@ -8,6 +8,7 @@ import { CustomAudioPlayer } from './components/CustomAudioPlayer';
 import TextHighlighter from './components/TextHighlighter';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
+import { generateExampleSentence } from './aiGenerator';
 
 // --- 1. SLEEK SVG ICONS ---
 const IconFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
@@ -54,7 +55,6 @@ const styles: any = {
 };
 
 export default function App() {
-  // --- ADDED isLoaded HERE ---
   const { userId, getToken, isLoaded } = useAuth(); 
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -83,6 +83,8 @@ export default function App() {
   const [savedWords, setSavedWords] = useState<any[]>([]);
   const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const [processingWords, setProcessingWords] = useState<Record<string, boolean>>({});
 
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [isLevelExam, setIsLevelExam] = useState(false);
@@ -105,19 +107,21 @@ export default function App() {
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {
       const dictMap: Record<string, any> = {};
       data.forEach((item: any) => { 
-        if (item.word) dictMap[item.word.toLowerCase()] = { 
-          pos: item.pos, 
-          def: item.definition, 
-          level: item.level,
-          example: item.example || null 
-        }; 
+        if (item.word) {
+          dictMap[item.word.toLowerCase()] = { 
+            pos: item.pos, 
+            def: item.definition, 
+            level: item.level,
+            example: item.example || null,
+            variations: item.variations || [] // <-- THE MAGIC LINE! Pulls variations from Sanity
+          }; 
+        }
       });
       setDictionary(dictMap);
     });
   }, []);
 
   useEffect(() => {
-    // --- THE FIX: WAIT FOR CLERK TO LOAD TO PREVENT FLICKERING OF OFFLINE DATA ---
     if (!isLoaded) return; 
 
     const loadPersonalData = async () => {
@@ -139,47 +143,59 @@ export default function App() {
       }
     };
     loadPersonalData();
-  }, [userId, getToken, isLoaded]); // <-- Added isLoaded to dependencies
+  }, [userId, getToken, isLoaded]);
 
   const toggleSaveWord = async (word: string, info: any) => {
     if (!word) return;
     const cleanWord = word.trim().toLowerCase();
-    const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
+    
+    if (processingWords[cleanWord]) return;
+    setProcessingWords(prev => ({ ...prev, [cleanWord]: true }));
 
-    // 🚨 THE BULLETPROOF NET: Ensuring example is caught even if the highlighter drops it
-    const secureExample = info.example || (dictionary[cleanWord] ? dictionary[cleanWord].example : null) || null;
+    try {
+      const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
 
-    if (userId) {
-      const token = await getToken({ template: 'supabase' });
-      const supabase = getSupabaseClient(token || '');
+      let secureExample = info.example || (dictionary[cleanWord] ? dictionary[cleanWord].example : null) || null;
 
-      if (exists) {
-        await supabase.from('vocab_vault').delete().eq('user_id', userId).eq('word', cleanWord);
-        setSavedWords(prev => prev.filter(w => w?.word?.trim().toLowerCase() !== cleanWord));
-      } else {
-        const newWord = { 
-          user_id: userId, 
-          word: cleanWord, 
-          pos: info.pos, 
-          definition: info.definition || info.def, 
-          level: info.level,
-          example: secureExample 
-        };
-        
-        await supabase.from('vocab_vault').insert([newWord]);
-        setSavedWords(prev => [...prev, newWord]);
+      if (!secureExample && !exists) {
+        console.log(`🤖 Sanity example missing for "${cleanWord}". Asking Gemini to generate a ${info.level || 'B2'} level sentence...`);
+        secureExample = await generateExampleSentence(cleanWord, info.level || 'B2');
       }
-    } else {
-      setSavedWords((prevVault) => {
-        let updatedVault;
+
+      if (userId) {
+        const token = await getToken({ template: 'supabase' });
+        const supabase = getSupabaseClient(token || '');
+
         if (exists) {
-          updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
+          await supabase.from('vocab_vault').delete().eq('user_id', userId).eq('word', cleanWord);
+          setSavedWords(prev => prev.filter(w => w?.word?.trim().toLowerCase() !== cleanWord));
         } else {
-          updatedVault = [...prevVault, { word: cleanWord, ...info, example: secureExample }];
+          const newWord = { 
+            user_id: userId, 
+            word: cleanWord, 
+            pos: info.pos, 
+            definition: info.definition || info.def, 
+            level: info.level,
+            example: secureExample 
+          };
+          
+          await supabase.from('vocab_vault').insert([newWord]);
+          setSavedWords(prev => [...prev, newWord]);
         }
-        localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
-        return updatedVault;
-      });
+      } else {
+        setSavedWords((prevVault) => {
+          let updatedVault;
+          if (exists) {
+            updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
+          } else {
+            updatedVault = [...prevVault, { word: cleanWord, ...info, example: secureExample }];
+          }
+          localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
+          return updatedVault;
+        });
+      }
+    } finally {
+      setProcessingWords(prev => ({ ...prev, [cleanWord]: false }));
     }
   };
 

@@ -10,6 +10,13 @@ export default {
       validation: Rule => Rule.required().error('You need to enter a word.')
     },
     {
+      name: 'variations',
+      title: 'Word Variations & Conjugations',
+      description: 'Add different tenses or forms (e.g., giving up, given up, gave up). Hit Enter after each one to add it to the list.',
+      type: 'array',
+      of: [{ type: 'string' }]
+    },
+    {
       name: 'pos',
       title: 'Part of Speech',
       type: 'string',
