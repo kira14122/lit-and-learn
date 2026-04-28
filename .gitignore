@@ -36,3 +36,4 @@ dist-ssr
 # Sanity Studio
 studio/node_modules
 studio/dist
+supabase/.temp

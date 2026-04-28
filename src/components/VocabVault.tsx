@@ -84,6 +84,27 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
     }
   };
 
+  // --- RESPONSIVE CSS INJECTION ---
+  const sharedStyles = (
+    <style>{`
+      /* Custom Scrollbar for the Vocab List */
+      .vocab-scroll-container::-webkit-scrollbar { width: 8px; }
+      .vocab-scroll-container::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 10px; }
+      .vocab-scroll-container::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
+      .vocab-scroll-container::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+      /* Mobile Overrides for Cards */
+      @media (max-width: 768px) {
+        .mobile-quiz-card { padding: 24px !important; border-radius: 24px !important; }
+        .mobile-quiz-def { font-size: 1.3rem !important; margin-bottom: 24px !important; }
+        .mobile-quiz-btn { padding: 16px !important; font-size: 1.1rem !important; }
+        
+        .mobile-flashcard { padding: 30px 20px !important; min-height: 250px !important; border-radius: 24px !important; }
+        .mobile-flashcard-word { font-size: 2.5rem !important; }
+      }
+    `}</style>
+  );
+
   if (!savedWords || savedWords.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '80px 20px', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0', marginTop: '40px' }}>
@@ -99,7 +120,8 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
       const percentage = Math.round((score / savedWords.length) * 100);
       return (
         <div style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center', animation: 'fadeInDown 0.3s ease-out' }}>
-          <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '40px', padding: '60px', border: '2px solid #E2E8F0', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.08)' }}>
+          {sharedStyles}
+          <div className="soft-card mobile-quiz-card" style={{ backgroundColor: '#ffffff', borderRadius: '40px', padding: '60px', border: '2px solid #E2E8F0', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.08)' }}>
             
             {renderResultIcon(percentage)}
 
@@ -107,7 +129,7 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
             <p style={{ color: '#64748B', fontSize: '1.3rem', marginBottom: '40px' }}>You scored <strong style={{ color: '#4F46E5' }}>{score}</strong> out of <strong style={{ color: '#0F172A' }}>{savedWords.length}</strong>.</p>
             
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-              <button onClick={exitQuiz} style={{ background: '#F1F5F9', color: '#475569', border: 'none', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s' }}>Back to Vault</button>
+              <button onClick={exitQuiz} style={{ background: '#F1F5F9', color: '#475569', border: 'none', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s' }}>Back to List</button>
               <button onClick={() => { setQuizIndex(0); setScore(0); setShowQuizResults(false); }} style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', transition: 'all 0.2s' }}>Try Again</button>
             </div>
           </div>
@@ -119,6 +141,7 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
 
     return (
       <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeInDown 0.3s ease-out' }}>
+        {sharedStyles}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <button onClick={exitQuiz} style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #EEF2FF', padding: '10px 20px', borderRadius: '9999px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
             ← End Quiz
@@ -128,11 +151,11 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
           </span>
         </div>
 
-        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '40px', padding: '50px', border: '2px solid #E2E8F0', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.08)' }}>
+        <div className="soft-card mobile-quiz-card" style={{ backgroundColor: '#ffffff', borderRadius: '40px', padding: '50px', border: '2px solid #E2E8F0', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.08)' }}>
           <span style={{ display: 'inline-block', background: '#EEF2FF', color: '#4F46E5', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '24px' }}>
             Match the Definition
           </span>
-          <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 40px 0', lineHeight: '1.4', fontWeight: '500' }}>
+          <h3 className="mobile-quiz-def" style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 40px 0', lineHeight: '1.4', fontWeight: '500' }}>
             "{currentQuizWord.definition}"
           </h3>
 
@@ -157,6 +180,7 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
                 <button 
                   key={i}
                   disabled={!!selectedAnswer}
+                  className="mobile-quiz-btn"
                   onClick={() => handleAnswerClick(opt.word)}
                   style={{ width: '100%', padding: '20px', borderRadius: '20px', background: bgColor, border: `2px solid ${borderColor}`, color: textColor, fontSize: '1.3rem', fontWeight: '600', textAlign: 'left', cursor: selectedAnswer ? 'default' : 'pointer', transition: 'all 0.2s' }}
                 >
@@ -194,6 +218,7 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
 
     return (
       <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeInDown 0.3s ease-out' }}>
+        {sharedStyles}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <button 
             onClick={() => { setIsStudyMode(false); setIsFlipped(false); setCurrentIndex(0); }} 
@@ -208,7 +233,7 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
 
         <div 
           onClick={() => setIsFlipped(!isFlipped)} 
-          className="soft-card" 
+          className="soft-card mobile-flashcard" 
           style={{ 
             cursor: 'pointer', 
             minHeight: '350px', 
@@ -228,15 +253,23 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
         >
           {!isFlipped ? (
             <>
-              <h2 style={{ fontSize: '3.5rem', color: '#0F172A', margin: '0 0 16px 0', letterSpacing: '-1px', textAlign: 'center' }}>{currentWord.word}</h2>
+              <h2 className="mobile-flashcard-word" style={{ fontSize: '3.5rem', color: '#0F172A', margin: '0 0 16px 0', letterSpacing: '-1px', textAlign: 'center' }}>{currentWord.word}</h2>
               <p style={{ color: '#94A3B8', fontSize: '1.1rem', margin: 0 }}>Click to reveal definition</p>
             </>
           ) : (
             <>
-              <span style={{ display: 'inline-block', background: '#EEF2FF', color: '#4F46E5', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '24px' }}>
-                {currentWord.pos || 'Vocabulary'}
-              </span>
-              <h3 style={{ fontSize: '1.8rem', color: '#0F172A', textAlign: 'center', margin: '0 0 24px 0', lineHeight: '1.4', fontWeight: '500' }}>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
+                <span style={{ display: 'inline-block', background: '#EEF2FF', color: '#4F46E5', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {currentWord.pos || 'Vocabulary'}
+                </span>
+                {currentWord.level && (
+                  <span style={{ display: 'inline-block', background: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0', padding: '5px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    {currentWord.level}
+                  </span>
+                )}
+              </div>
+              
+              <h3 className="mobile-quiz-def" style={{ fontSize: '1.8rem', color: '#0F172A', textAlign: 'center', margin: '0 0 24px 0', lineHeight: '1.4', fontWeight: '500' }}>
                 {currentWord.definition}
               </h3>
               
@@ -259,93 +292,119 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
 
   // --- THE LIST UI (DEFAULT) ---
   return (
-    <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', marginBottom: '40px' }}>
-        <div>
-          <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>Word Bank</h2>
-          <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>You have {savedWords.length} word{savedWords.length !== 1 ? 's' : ''} saved.</p>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button 
-            onClick={() => setIsStudyMode(true)} 
-            style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #4F46E5', padding: '12px 28px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="8" y="8" width="14" height="14" rx="2" ry="2"/>
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-            </svg>
-            Study Flashcards
-          </button>
-          <button 
-            onClick={() => setIsQuizMode(true)} 
-            style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '12px 28px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Quiz Me
-          </button>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px' }}>
-        {savedWords.map((item, index) => (
-          <div key={index} className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', position: 'relative', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' }}>
+    <>
+      {sharedStyles}
+      <div style={{ animation: 'fadeInDown 0.3s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', marginBottom: '30px' }}>
+          <div>
+            <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>Word List</h2>
+            <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>You have {savedWords.length} word{savedWords.length !== 1 ? 's' : ''} saved.</p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '16px' }}>
             <button 
-              onClick={() => setWordToDelete(item)} 
-              style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEF2F2', border: 'none', color: '#EF4444', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
-              title="Remove Word"
+              onClick={() => setIsStudyMode(true)} 
+              style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #4F46E5', padding: '12px 28px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
-              ✕
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="8" y="8" width="14" height="14" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              Study Flashcards
             </button>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>{item.word}</h3>
-              <span style={{ fontSize: '0.8rem', background: '#EEF2FF', color: '#4F46E5', padding: '4px 10px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase' }}>
-                {item.pos || 'Word'}
-              </span>
-            </div>
-            <p style={{ margin: 0, color: '#475569', fontSize: '1rem', lineHeight: '1.5' }}>{item.definition}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* --- SLEEK CUSTOM DELETE CONFIRMATION MODAL --- */}
-      {wordToDelete && (
-        <div 
-          onClick={() => setWordToDelete(null)}
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', animation: 'fadeInDown 0.2s ease-out' }}
-        >
-          <div 
-            onClick={e => e.stopPropagation()}
-            style={{ backgroundColor: '#ffffff', borderRadius: '32px', width: '100%', maxWidth: '420px', padding: '40px', textAlign: 'center', boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.25)' }}
-          >
-            <div style={{ width: '72px', height: '72px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px auto' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </div>
-            <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 12px 0', fontWeight: '600', letterSpacing: '-0.5px' }}>Remove Word?</h3>
-            <p style={{ color: '#64748B', fontSize: '1.1rem', margin: '0 0 32px 0', lineHeight: '1.5' }}>
-              Are you sure you want to delete <strong style={{ color: '#0F172A' }}>"{wordToDelete.word}"</strong> from your Word Bank?
-            </p>
-            <div style={{ display: 'flex', gap: '16px' }}>
-              <button 
-                onClick={() => setWordToDelete(null)} 
-                style={{ flex: 1, background: '#F1F5F9', color: '#475569', border: 'none', padding: '16px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s' }}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                  toggleSaveWord(wordToDelete.word, wordToDelete);
-                  setWordToDelete(null);
-                }} 
-                style={{ flex: 1, background: '#EF4444', color: '#ffffff', border: 'none', padding: '16px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239, 68, 68, 0.2)', transition: 'all 0.2s' }}
-              >
-                Yes, Delete
-              </button>
-            </div>
+            <button 
+              onClick={() => setIsQuizMode(true)} 
+              style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '12px 28px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Quiz Me
+            </button>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* --- NEW: INTERNALLY SCROLLING CONTAINER --- */}
+        <div 
+          className="vocab-scroll-container" 
+          style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
+            gap: '24px', 
+            maxHeight: '450px', 
+            overflowY: 'auto', 
+            paddingRight: '12px',
+            paddingBottom: '16px',
+            alignContent: 'start',
+            flexGrow: 1
+          }}
+        >
+          {savedWords.map((item, index) => (
+            <div key={index} className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '24px', position: 'relative', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column' }}>
+              <button 
+                onClick={() => setWordToDelete(item)} 
+                style={{ position: 'absolute', top: '20px', right: '20px', background: '#FEF2F2', border: 'none', color: '#EF4444', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.2s' }}
+                title="Remove Word"
+              >
+                ✕
+              </button>
+              
+              <div style={{ marginBottom: '16px', paddingRight: '40px' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '1.5rem', color: '#0F172A', wordBreak: 'break-word', lineHeight: '1.2' }}>{item.word}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', background: '#EEF2FF', color: '#4F46E5', padding: '4px 10px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase' }}>
+                    {item.pos || 'Word'}
+                  </span>
+                  {item.level && (
+                    <span style={{ fontSize: '0.8rem', background: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0', padding: '3px 10px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase' }}>
+                      {item.level}
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              <p style={{ margin: 0, color: '#475569', fontSize: '1rem', lineHeight: '1.5' }}>{item.definition}</p>
+            </div>
+          ))}
+        </div>
+        {/* --- END SCROLLING CONTAINER --- */}
+
+        {/* --- SLEEK CUSTOM DELETE CONFIRMATION MODAL --- */}
+        {wordToDelete && (
+          <div 
+            onClick={() => setWordToDelete(null)}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', animation: 'fadeInDown 0.2s ease-out' }}
+          >
+            <div 
+              onClick={e => e.stopPropagation()}
+              style={{ backgroundColor: '#ffffff', borderRadius: '32px', width: '100%', maxWidth: '420px', padding: '40px', textAlign: 'center', boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.25)' }}
+            >
+              <div style={{ width: '72px', height: '72px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px auto' }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              </div>
+              <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 12px 0', fontWeight: '600', letterSpacing: '-0.5px' }}>Remove Word?</h3>
+              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: '0 0 32px 0', lineHeight: '1.5' }}>
+                Are you sure you want to delete <strong style={{ color: '#0F172A' }}>"{wordToDelete.word}"</strong> from your Word List?
+              </p>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <button 
+                  onClick={() => setWordToDelete(null)} 
+                  style={{ flex: 1, background: '#F1F5F9', color: '#475569', border: 'none', padding: '16px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    toggleSaveWord(wordToDelete.word, wordToDelete);
+                    setWordToDelete(null);
+                  }} 
+                  style={{ flex: 1, background: '#EF4444', color: '#ffffff', border: 'none', padding: '16px', borderRadius: '16px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239, 68, 68, 0.2)', transition: 'all 0.2s' }}
+                >
+                  Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 };

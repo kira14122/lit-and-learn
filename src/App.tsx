@@ -6,7 +6,8 @@ import { ResourceLibrary } from './components/ResourceLibrary';
 import { InteractiveLesson } from './components/InteractiveLesson';
 import { CustomAudioPlayer } from './components/CustomAudioPlayer';
 import TextHighlighter from './components/TextHighlighter';
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/clerk-react'; 
+import { TeacherDashboard } from './components/TeacherDashboard';
+import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 import { generateExampleSentence } from './aiGenerator';
 
@@ -26,6 +27,7 @@ const IconMail = () => (<svg width="48" height="48" viewBox="0 0 24 24" fill="no
 const IconDoc = () => (<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>);
 const IconAudio = () => (<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>);
 const IconLibrary = () => (<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
+const IconFlashcard = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" ry="2"/><path d="M7 15h10"/></svg>);
 
 const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) => (
   <button onClick={onClick} className="back-btn" style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #EEF2FF', padding: '10px 20px', borderRadius: '9999px', fontWeight: '600', fontSize: '1rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.05)' }}>
@@ -50,16 +52,20 @@ const styles: any = {
   actionButton: { background: '#4F46E5', color: '#ffffff', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s' },
   readMoreBtn: { fontFamily: '"Fredoka", sans-serif', background: '#F8FAFC', border: 'none', color: '#4F46E5', fontWeight: '600', fontSize: '1.05rem', padding: '12px 20px', borderRadius: '16px', marginTop: 'auto', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', textAlign: 'center', justifyContent: 'center', width: '100%' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(12px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' },
-  modalContent: { backgroundColor: '#ffffff', borderRadius: '40px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', position: 'relative', padding: '50px', boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.25)' },
+  modalContent: { backgroundColor: '#ffffff', borderRadius: '40px', width: '100%', maxWidth: '800px', maxHeight: '90vh', position: 'relative', padding: '50px', boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.25)', display: 'flex', flexDirection: 'column' },
   closeButton: { position: 'absolute', top: '24px', right: '24px', background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', color: '#0F172A', fontWeight: 'bold', fontSize: '1.4rem', zIndex: 10 },
 };
 
 export default function App() {
   const { userId, getToken, isLoaded } = useAuth(); 
+  const { user } = useUser(); 
+
+  // --- ADMIN CHECK ---
+  const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
 
   const [activeTab, setActiveTab] = useState(() => {
     const savedTab = localStorage.getItem('litAndLearnCurrentTab');
-    return savedTab || 'English Corner';
+    return (savedTab === 'Word Bank' || savedTab === 'Dashboard') ? 'My Progress' : (savedTab || 'English Corner');
   });
 
   useEffect(() => {
@@ -75,6 +81,7 @@ export default function App() {
   const [activeUnit, setActiveUnit] = useState<number | null>(null);
 
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [officialGrades, setOfficialGrades] = useState<any[]>([]); 
   const [unitMetadataList, setUnitMetadataList] = useState<any[]>([]);
 
   const [resources, setResources] = useState<any[]>([]);
@@ -113,7 +120,7 @@ export default function App() {
             def: item.definition, 
             level: item.level,
             example: item.example || null,
-            variations: item.variations || [] // <-- THE MAGIC LINE! Pulls variations from Sanity
+            variations: item.variations || [] 
           }; 
         }
       });
@@ -134,16 +141,51 @@ export default function App() {
 
         const { data: lessonData } = await supabase.from('completed_lessons').select('lesson_id').eq('user_id', userId);
         if (lessonData) setCompletedLessons(lessonData.map(l => l.lesson_id));
+
+        const { data: gradesData } = await supabase.from('student_grades').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (gradesData) setOfficialGrades(gradesData);
+
+        // --- MAGIC PROFILE SYNC ---
+        if (user) {
+          const userEmail = user.primaryEmailAddress?.emailAddress || '';
+          const userFullName = user.fullName || 'Unknown Student';
+          const isTeacher = userEmail === 'kira14122@gmail.com';
+
+          await supabase.from('profiles').upsert({
+            id: userId,
+            email: userEmail,
+            full_name: userFullName,
+            is_admin: isTeacher
+          });
+        }
+        // -------------------------------
+
       } else {
         const localVault = localStorage.getItem('vocabVault');
-        if (localVault) setSavedWords(JSON.parse(localVault));
+        if (localVault) {
+          try {
+            const parsed = JSON.parse(localVault);
+            const repairedVault = parsed.map((item: any) => ({
+              word: item.word || item.name || '',
+              pos: item.pos || 'N/A',
+              definition: item.definition || item.def || 'Definition unavailable.',
+              level: item.level || 'B2',
+              example: item.example || ''
+            })).filter((item: any) => item.word !== '');
+            setSavedWords(repairedVault);
+          } catch (e) {
+            setSavedWords([]);
+          }
+        }
 
         const localProgress = localStorage.getItem('litAndLearnProgress');
         if (localProgress) setCompletedLessons(JSON.parse(localProgress));
+        
+        setOfficialGrades([]); 
       }
     };
     loadPersonalData();
-  }, [userId, getToken, isLoaded]);
+  }, [userId, getToken, isLoaded, user]);
 
   const toggleSaveWord = async (word: string, info: any) => {
     if (!word) return;
@@ -154,13 +196,20 @@ export default function App() {
 
     try {
       const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
-
       let secureExample = info.example || (dictionary[cleanWord] ? dictionary[cleanWord].example : null) || null;
 
       if (!secureExample && !exists) {
         console.log(`🤖 Sanity example missing for "${cleanWord}". Asking Gemini to generate a ${info.level || 'B2'} level sentence...`);
         secureExample = await generateExampleSentence(cleanWord, info.level || 'B2');
       }
+
+      const normalizedWordObj = {
+        word: cleanWord,
+        pos: info.pos || 'N/A',
+        definition: info.definition || info.def || '',
+        level: info.level || 'B2',
+        example: secureExample
+      };
 
       if (userId) {
         const token = await getToken({ template: 'supabase' });
@@ -170,15 +219,7 @@ export default function App() {
           await supabase.from('vocab_vault').delete().eq('user_id', userId).eq('word', cleanWord);
           setSavedWords(prev => prev.filter(w => w?.word?.trim().toLowerCase() !== cleanWord));
         } else {
-          const newWord = { 
-            user_id: userId, 
-            word: cleanWord, 
-            pos: info.pos, 
-            definition: info.definition || info.def, 
-            level: info.level,
-            example: secureExample 
-          };
-          
+          const newWord = { user_id: userId, ...normalizedWordObj };
           await supabase.from('vocab_vault').insert([newWord]);
           setSavedWords(prev => [...prev, newWord]);
         }
@@ -188,7 +229,7 @@ export default function App() {
           if (exists) {
             updatedVault = prevVault.filter(w => w?.word?.trim().toLowerCase() !== cleanWord);
           } else {
-            updatedVault = [...prevVault, { word: cleanWord, ...info, example: secureExample }];
+            updatedVault = [...prevVault, normalizedWordObj];
           }
           localStorage.setItem('vocabVault', JSON.stringify(updatedVault));
           return updatedVault;
@@ -277,6 +318,13 @@ export default function App() {
         .back-btn:hover { background-color: #EEF2FF !important; transform: translateX(-4px); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
+        /* Bento Box Layout for Dashboard */
+        .bento-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 40px; align-items: start; }
+        
+        /* THE MOBILE LAYOUT FIXES */
+        @media (max-width: 992px) {
+          .bento-layout { grid-template-columns: 1fr; gap: 40px; }
+        }
         @media (max-width: 768px) {
           .app-container { padding: 0 16px !important; }
           .page-header h1 { font-size: 3.2rem !important; }
@@ -286,10 +334,19 @@ export default function App() {
           .timeline-card { padding: 20px !important; flex-direction: column !important; align-items: stretch !important; gap: 16px !important; border-radius: 20px !important; }
           .timeline-card h3 { font-size: 1.4rem !important; line-height: 1.3 !important; margin-top: 4px !important; }
           .timeline-card button { width: 100% !important; justify-content: center !important; padding: 14px !important; }
-          .timeline-final-icon { width: 50px !important; height: 50px !important; font-size: 1.5rem !important; }
-          .timeline-final-card { padding: 24px !important; align-items: stretch !important; border-radius: 20px !important; }
-          .timeline-final-card h3 { font-size: 1.6rem !important; }
-          .timeline-final-card button { width: 100% !important; justify-content: center !important; padding: 14px !important; }
+          
+          /* Modal Mobile Overrides */
+          .responsive-card { padding: 30px 20px !important; border-radius: 24px !important; max-height: 85vh !important; }
+          .modal-close-btn { top: 16px !important; right: 16px !important; width: 36px !important; height: 36px !important; font-size: 1.1rem !important; }
+          .modal-text-content { padding: 0 !important; font-size: 1.1rem !important; }
+          
+          /* Table Overrides (Stacked Vertically) */
+          .mobile-table thead { display: none; }
+          .mobile-table tbody { display: block; width: 100%; }
+          .mobile-table tr { display: block; border-bottom: 2px dashed #E2E8F0 !important; padding: 10px 0; }
+          .mobile-table tr:last-child { border-bottom: none !important; }
+          .mobile-table td { display: block; width: 100%; text-align: left; padding: 12px 24px !important; border: none !important; }
+          .mobile-table td::before { content: attr(data-label); display: block; position: static; width: 100%; font-weight: 700; color: #64748B; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
         }
       `}</style>
 
@@ -301,7 +358,15 @@ export default function App() {
           <div style={{ marginTop: '30px' }}>
             {!isOverlayActive && (
               <nav style={styles.nav}>
-                {['Book Reviews', 'English Corner', 'Resources', 'Word Bank', 'About', 'Contact'].map(tab => (
+                {[
+                  'Book Reviews', 
+                  'English Corner', 
+                  'Resources', 
+                  'My Progress', 
+                  ...(isTeacherAdmin ? ['Admin Dashboard'] : []), 
+                  'About', 
+                  'Contact'
+                ].map(tab => (
                   <button key={tab} style={styles.navButton(activeTab === tab)} onClick={() => handleNavigation(tab)}>{tab}</button>
                 ))}
                 
@@ -330,10 +395,12 @@ export default function App() {
                   </h2>
                   <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>
                     {searchTerm ? `Showing results for "${searchTerm}"` : 
+                      activeTab === 'My Progress' ? 'Review your saved vocabulary and progress.' :
+                      activeTab === 'Admin Dashboard' ? 'Secure Command Center.' :
                       activeTab === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
                       activeTab === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
                       activeTab === 'Resources' ? 'Download worksheets and audio lessons.' :
-                      activeTab === 'Word Bank' ? 'Review your saved vocabulary.' : 'Welcome to Lit & Learn.'}
+                      'Welcome to Lit & Learn.'}
                   </p>
                 </div>
 
@@ -358,8 +425,10 @@ export default function App() {
                            <div key={book._id} className="soft-card" style={styles.card}>
                              <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
                              <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                               <h3 style={{ margin: '0 0 16px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center' }}>{book.title}</h3>
-                               <button style={{ ...styles.actionButton, width: '100%', marginTop: 'auto' }} onClick={() => setSelectedBook(book)}>Read Review</button>
+                               <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
+                               {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
+                               {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
+                               <button style={{ ...styles.actionButton, width: '100%', marginTop: '20px' }} onClick={() => setSelectedBook(book)}>Read Review</button>
                              </div>
                            </div>
                         ))}
@@ -394,6 +463,168 @@ export default function App() {
                 </div>
               ) : (
                 <>
+                  {activeTab === 'My Progress' && (
+                    <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1100px', margin: '0 auto' }}>
+                      
+                      {/* --- THE BENTO BOX LAYOUT --- */}
+                      <div className="bento-layout">
+                        
+                        {/* LEFT TILE: DAILY REVIEW (ACTION FIRST) */}
+                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                          <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconFlashcard /></div>
+                            Daily Review
+                          </h3>
+                          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                            <VocabVault savedWords={savedWords} toggleSaveWord={toggleSaveWord} />
+                          </div>
+                        </div>
+
+                        {/* RIGHT TILE: VOCABULARY STATS */}
+                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', height: '100%' }}>
+                          <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ background: '#FEF3C7', color: '#D97706', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconTarget /></div>
+                            Acquisition Stats
+                          </h3>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', textAlign: 'center', border: '2px solid #F1F5F9' }}>
+                              <div style={{ fontSize: '4rem', fontWeight: '700', color: '#4F46E5', lineHeight: '1', letterSpacing: '-2px' }}>{savedWords.length}</div>
+                              <div style={{ color: '#64748B', fontWeight: '600', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '1.5px', fontSize: '0.85rem' }}>Words Saved</div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                              {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(lvl => {
+                                const count = savedWords.filter(w => w.level === lvl).length;
+                                const isActive = count > 0;
+                                return (
+                                  <div key={lvl} style={{ flex: '1 1 30%', background: isActive ? '#ffffff' : '#F8FAFC', border: isActive ? '2px solid #CBD5E1' : '2px dashed #E2E8F0', padding: '16px 10px', borderRadius: '16px', textAlign: 'center', opacity: isActive ? 1 : 0.4, transition: 'all 0.3s' }}>
+                                    <div style={{ fontSize: '1.1rem', fontWeight: '700', color: isActive ? '#0F172A' : '#94A3B8' }}>{lvl}</div>
+                                    <div style={{ fontSize: '1.4rem', fontWeight: '600', color: isActive ? '#4F46E5' : '#CBD5E1', marginTop: '4px' }}>{count}</div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* PILLAR 2: CURRICULUM TRACKER */}
+                      <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
+                          <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ background: '#ECFDF5', color: '#10B981', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconDoc /></div>
+                            Curriculum Tracker
+                          </h3>
+                          <span style={{ background: '#F8FAFC', color: '#64748B', padding: '8px 16px', borderRadius: '9999px', fontWeight: '600', fontSize: '0.9rem', border: '1px solid #E2E8F0' }}>
+                            {completedLessons.length} Lesson{completedLessons.length !== 1 ? 's' : ''} Completed
+                          </span>
+                        </div>
+
+                        {completedLessons.length === 0 ? (
+                          <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', color: '#94A3B8', marginBottom: '16px' }}><IconLibrary /></div>
+                            <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>You haven't completed any lessons yet. Head over to the English Corner to begin your journey!</p>
+                          </div>
+                        ) : (
+                          <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {[...completedLessons].reverse().map((lessonId, index) => {
+                              const lessonData = interactiveLessons.find(l => l._id === lessonId);
+                              if (!lessonData) return null;
+
+                              return (
+                                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '20px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', transition: 'all 0.2s' }}>
+                                  <div style={{ width: '48px', height: '48px', background: '#D1FAE5', color: '#10B981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <IconCheck />
+                                  </div>
+                                  <div style={{ flexGrow: 1 }}>
+                                    <div style={{ color: '#64748B', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                                      {lessonData.subLevel} • Unit {lessonData.unit}
+                                    </div>
+                                    <h4 style={{ margin: 0, fontSize: '1.3rem', color: '#0F172A', fontWeight: '600' }}>{lessonData.title}</h4>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* PILLAR 3: THE OFFICIAL GRADEBOOK */}
+                      <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
+                          <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconStar /></div>
+                            Official Gradebook
+                          </h3>
+                        </div>
+
+                        <SignedIn>
+                          {officialGrades.length === 0 ? (
+                            <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
+                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>No official assessments have been recorded yet.</p>
+                            </div>
+                          ) : (
+                            <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+                              <table className="mobile-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                                <thead>
+                                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Date</th>
+                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Assessment</th>
+                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Score</th>
+                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Teacher Feedback</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {officialGrades.map((grade, idx) => (
+                                    <tr key={idx} style={{ borderBottom: idx === officialGrades.length - 1 ? 'none' : '1px solid #F1F5F9', transition: 'background 0.2s' }}>
+                                      <td data-label="Date" style={{ padding: '20px 24px', color: '#64748B', fontWeight: '500' }}>
+                                        {new Date(grade.date_recorded).toLocaleDateString()}
+                                      </td>
+                                      <td data-label="Assessment" style={{ padding: '20px 24px', color: '#0F172A', fontWeight: '600', fontSize: '1.1rem' }}>
+                                        {grade.assessment_name}
+                                      </td>
+                                      <td data-label="Score" style={{ padding: '20px 24px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                          {grade.score.split('\n').map((line: string, i: number) => line.trim() ? (
+                                            <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
+                                              {line}
+                                            </span>
+                                          ) : null)}
+                                        </div>
+                                      </td>
+                                      <td data-label="Feedback" style={{ padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                                        "{grade.feedback || 'Excellent work!'}"
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </SignedIn>
+                        
+                        <SignedOut>
+                          <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '50px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ color: '#94A3B8' }}><IconLock /></div>
+                            <h4 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>Sign In Required</h4>
+                            <p style={{ color: '#64748B', fontSize: '1.1rem', margin: '0 0 10px 0' }}>Official academic records and instructor feedback are only available for enrolled students.</p>
+                            <SignInButton mode="modal">
+                              <button style={{ background: '#10B981', color: '#ffffff', border: 'none', padding: '14px 32px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s' }}>View Official Records</button>
+                            </SignInButton>
+                          </div>
+                        </SignedOut>
+                      </div>
+                      
+                    </div>
+                  )}
+
+                  {/* ADMIN DASHBOARD COMPONENT CALL */}
+                  {activeTab === 'Admin Dashboard' && isTeacherAdmin && (
+                    <TeacherDashboard />
+                  )}
+
                   {activeTab === 'Book Reviews' && (
                     <div>
                       {!bookCategory ? (
@@ -439,8 +670,10 @@ export default function App() {
                               <div key={book._id} className="soft-card" style={styles.card}>
                                 <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
                                 <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <h3 style={{ margin: '0 0 16px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
-                                  {book.content && ( <div style={{ width: '100%', marginTop: 'auto' }}><button style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button></div> )}
+                                  <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
+                                  {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
+                                  {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
+                                  {book.content && ( <div style={{ width: '100%', marginTop: '20px' }}><button style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button></div> )}
                                 </div>
                               </div>
                             )) : ( 
@@ -619,7 +852,7 @@ export default function App() {
                   )}
 
                   {activeTab === 'Resources' && <ResourceLibrary resources={resources} />}
-                  {activeTab === 'Word Bank' && <VocabVault savedWords={savedWords} toggleSaveWord={toggleSaveWord} />}
+                  
                   {activeTab === 'About' && (
                     <div className="soft-card" style={{ ...styles.card, maxWidth: '750px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
                       <h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2>
@@ -662,8 +895,8 @@ export default function App() {
 
         {selectedBook && (
           <div style={styles.modalOverlay} onClick={() => setSelectedBook(null)}>
-            <div className="responsive-card" style={styles.modalContent} onClick={e => e.stopPropagation()}>
-              <button onClick={() => setSelectedBook(null)} style={styles.closeButton}>✕</button>
+            <div className="responsive-card" style={{...styles.modalContent, overflowY: 'auto'}} onClick={e => e.stopPropagation()}>
+              <button className="modal-close-btn" onClick={() => setSelectedBook(null)} style={styles.closeButton}>✕</button>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '30px' }}>
                 {selectedBook.coverImage ? (
                   <img src={urlFor(selectedBook.coverImage).url()} alt={selectedBook.title} style={{ height: '280px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 15px 35px rgba(0,0,0,0.15)' }} />
@@ -671,9 +904,11 @@ export default function App() {
                   <div style={{ height: '280px', width: '190px', background: '#F8FAFC', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', marginBottom: '24px' }}>No Cover</div>
                 )}
                 <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px', lineHeight: '1.2' }}>{selectedBook.title}</h2>
-                <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginTop: '16px' }} />
+                {selectedBook.author && <span style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '16px' }}>by {selectedBook.author}</span>}
+                {selectedBook.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 16px', borderRadius: '9999px', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>{selectedBook.level}</span>}
+                <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginTop: '24px' }} />
               </div>
-              <div style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
+              <div className="modal-text-content" style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
                 <TextHighlighter 
                   text={typeof selectedBook.content === 'string' ? selectedBook.content : Array.isArray(selectedBook.content) ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n') : "Review content is currently being updated."} 
                   dictionary={dictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
