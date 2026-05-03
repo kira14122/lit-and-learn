@@ -49,6 +49,7 @@ export default {
           { title: 'British Literature', value: 'British Literature' },
           { title: 'American Literature', value: 'American Literature' },
           { title: 'Russian Literature', value: 'Russian Literature' },
+          { title: 'French Literature', value: 'French Literature' },
           { title: 'Arabic Literature', value: 'Arabic Literature' },
           { title: 'Other Literature', value: 'Other Literature' },
           // Non-Fiction options

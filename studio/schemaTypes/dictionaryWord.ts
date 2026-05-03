@@ -7,7 +7,40 @@ export default {
       name: 'word',
       title: 'Vocabulary Word',
       type: 'string',
-      validation: Rule => Rule.required().error('You need to enter a word.')
+      validation: Rule => [
+        Rule.required().error('You need to enter a word.'),
+        Rule.custom(async (value, context) => {
+          if (!value) return true; 
+          
+          const client = context.getClient({ apiVersion: '2023-05-03' });
+          const id = context.document._id.replace(/^drafts\./, '');
+          const searchTerm = value.toLowerCase().trim();
+          
+          // Check if the word matches the main 'word' OR exists inside the 'variations' array
+          const query = `*[_type == "dictionaryWord" && (lower(word) == $word || count(variations[lower(@) == $word]) > 0) && !(_id in [$draft, $published])][0]`;
+          
+          const params = { 
+            word: searchTerm, 
+            draft: `drafts.${id}`, 
+            published: id 
+          };
+          
+          const existingWord = await client.fetch(query, params);
+          
+          if (existingWord) {
+            // Check if it matched a variation instead of the root word
+            const isVariation = existingWord.word?.toLowerCase() !== searchTerm;
+            
+            if (isVariation) {
+              return `Oops! "${value}" is already saved as a variation under the root word "${existingWord.word}".`;
+            }
+            
+            return `Oops! The word "${value}" is already in your dictionary.`;
+          }
+          
+          return true;
+        })
+      ]
     },
     {
       name: 'variations',
@@ -22,13 +55,25 @@ export default {
       type: 'string',
       options: {
         list: [
+          // The Core Categories
           { title: 'Noun', value: 'noun' },
           { title: 'Verb', value: 'verb' },
           { title: 'Adjective', value: 'adjective' },
           { title: 'Adverb', value: 'adverb' },
           { title: 'Preposition', value: 'preposition' },
           { title: 'Conjunction', value: 'conjunction' },
-          { title: 'Pronoun', value: 'pronoun' }
+          { title: 'Pronoun', value: 'pronoun' },
+          { title: 'Interjection', value: 'interjection' },
+          
+          // The "Dual-Role" Chameleons
+          { title: 'Noun / Verb', value: 'noun / verb' },
+          { title: 'Adjective / Adverb', value: 'adjective / adverb' },
+          { title: 'Adjective / Noun', value: 'adjective / noun' },
+          
+          // The ESL Advanced Essentials
+          { title: 'Phrasal Verb', value: 'phrasal verb' },
+          { title: 'Idiom / Expression', value: 'idiom / expression' },
+          { title: 'Collocation', value: 'collocation' }
         ],
         layout: 'dropdown'
       },

@@ -7,6 +7,7 @@ import { InteractiveLesson } from './components/InteractiveLesson';
 import { CustomAudioPlayer } from './components/CustomAudioPlayer';
 import TextHighlighter from './components/TextHighlighter';
 import { TeacherDashboard } from './components/TeacherDashboard';
+import { ContactPage } from './components/ContactPage';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 import { generateExampleSentence } from './aiGenerator';
@@ -37,7 +38,7 @@ const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) =>
 );
 
 // --- 2. CONSTANTS & STYLES ---
-const fictionCategories = ["British Literature", "American Literature", "Russian Literature", "Arabic Literature", "Other Literature"];
+const fictionCategories = ["British Literature", "American Literature", "Russian Literature", "French Literature", "Arabic Literature", "Other Literature"];
 const nonFictionCategories = ["Informative & Educational", "Self Improvement", "Language Learning & Teaching"];
 const LEVELS = [ { name: "Beginner", icon: <IconBeginner />, subLevels: ["Level 1", "Level 2", "Level 3"] }, { name: "Intermediate", icon: <IconIntermediate />, subLevels: ["Level 4", "Level 5", "Level 6"] }, { name: "Advanced", icon: <IconAdvanced />, subLevels: ["Level 7", "Level 8", "Business English"] } ];
 
@@ -47,7 +48,7 @@ const styles: any = {
   header: { textAlign: 'center', marginBottom: '40px' },
   nav: { display: 'inline-flex', backgroundColor: '#ffffff', padding: '8px', borderRadius: '9999px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.06)', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' },
   navButton: (a: boolean) => ({ background: a ? '#4F46E5' : 'transparent', color: a ? '#ffffff' : '#64748B', border: 'none', fontSize: '17px', fontWeight: '600', padding: '14px 28px', borderRadius: '9999px', cursor: 'pointer', transition: 'all 0.3s ease' }),
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '30px' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '30px' },
   card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'visible', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column' },
   actionButton: { background: '#4F46E5', color: '#ffffff', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s' },
   readMoreBtn: { fontFamily: '"Fredoka", sans-serif', background: '#F8FAFC', border: 'none', color: '#4F46E5', fontWeight: '600', fontSize: '1.05rem', padding: '12px 20px', borderRadius: '16px', marginTop: 'auto', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', textAlign: 'center', justifyContent: 'center', width: '100%' },
@@ -60,7 +61,6 @@ export default function App() {
   const { userId, getToken, isLoaded } = useAuth(); 
   const { user } = useUser(); 
 
-  // --- ADMIN CHECK ---
   const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -145,7 +145,6 @@ export default function App() {
         const { data: gradesData } = await supabase.from('student_grades').select('*').eq('user_id', userId).order('created_at', { ascending: false });
         if (gradesData) setOfficialGrades(gradesData);
 
-        // --- MAGIC PROFILE SYNC ---
         if (user) {
           const userEmail = user.primaryEmailAddress?.emailAddress || '';
           const userFullName = user.fullName || 'Unknown Student';
@@ -158,8 +157,6 @@ export default function App() {
             is_admin: isTeacher
           });
         }
-        // -------------------------------
-
       } else {
         const localVault = localStorage.getItem('vocabVault');
         if (localVault) {
@@ -305,23 +302,36 @@ export default function App() {
   };
 
   const isOverlayActive = isQuizMode || isInteractiveLesson;
-  const unitLessons = interactiveLessons.filter(l => l.unit === activeUnit && l.subLevel === activeSubLevel).sort((a, b) => a.lessonOrder - b.lessonOrder);
+
+  const unitLessons = interactiveLessons.filter(l => 
+    String(l.unit) === String(activeUnit) && String(l.subLevel) === String(activeSubLevel)
+  ).sort((a, b) => Number(a.lessonOrder) - Number(b.lessonOrder));
+  
   const allLessonsCompleted = unitLessons.length > 0 && unitLessons.every(l => completedLessons.includes(l._id));
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
+        
         * { box-sizing: border-box; font-family: 'Fredoka', sans-serif !important; }
-        body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        
+        /* OVERFLOW FIX: Locks the screen width so the menu can't break the page */
+        html, body { 
+          margin: 0; 
+          padding: 0;
+          overflow-x: hidden !important; 
+          width: 100%;
+          -webkit-font-smoothing: antialiased; 
+          -moz-osx-font-smoothing: grayscale; 
+        }
+        
         .soft-card:hover { transform: translateY(-8px); box-shadow: 0 40px 60px -15px rgba(15, 23, 42, 0.1) !important; }
         .back-btn:hover { background-color: #EEF2FF !important; transform: translateX(-4px); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Bento Box Layout for Dashboard */
         .bento-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 40px; align-items: start; }
         
-        /* THE MOBILE LAYOUT FIXES */
         @media (max-width: 992px) {
           .bento-layout { grid-template-columns: 1fr; gap: 40px; }
         }
@@ -335,18 +345,42 @@ export default function App() {
           .timeline-card h3 { font-size: 1.4rem !important; line-height: 1.3 !important; margin-top: 4px !important; }
           .timeline-card button { width: 100% !important; justify-content: center !important; padding: 14px !important; }
           
-          /* Modal Mobile Overrides */
           .responsive-card { padding: 30px 20px !important; border-radius: 24px !important; max-height: 85vh !important; }
           .modal-close-btn { top: 16px !important; right: 16px !important; width: 36px !important; height: 36px !important; font-size: 1.1rem !important; }
           .modal-text-content { padding: 0 !important; font-size: 1.1rem !important; }
           
-          /* Table Overrides (Stacked Vertically) */
+          /* NEW: Fixes the squeezing issue on About and Contact pages */
+          .adapt-padding { padding: 30px 20px !important; border-radius: 24px !important; }
+          
           .mobile-table thead { display: none; }
           .mobile-table tbody { display: block; width: 100%; }
           .mobile-table tr { display: block; border-bottom: 2px dashed #E2E8F0 !important; padding: 10px 0; }
           .mobile-table tr:last-child { border-bottom: none !important; }
           .mobile-table td { display: block; width: 100%; text-align: left; padding: 12px 24px !important; border: none !important; }
           .mobile-table td::before { content: attr(data-label); display: block; position: static; width: 100%; font-weight: 700; color: #64748B; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+
+          /* Horizontal scrolling nav - SWIPEABLE MENU */
+          .mobile-nav-container {
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            justify-content: flex-start !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            border-radius: 24px !important; 
+            padding: 12px !important;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          .mobile-nav-container::-webkit-scrollbar {
+            display: none; 
+          }
+          
+          .mobile-nav-container button {
+            flex-shrink: 0 !important;
+          }
         }
       `}</style>
 
@@ -357,7 +391,7 @@ export default function App() {
           
           <div style={{ marginTop: '30px' }}>
             {!isOverlayActive && (
-              <nav style={styles.nav}>
+              <nav className="mobile-nav-container" style={styles.nav}>
                 {[
                   'Book Reviews', 
                   'English Corner', 
@@ -490,7 +524,7 @@ export default function App() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                             <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', textAlign: 'center', border: '2px solid #F1F5F9' }}>
                               <div style={{ fontSize: '4rem', fontWeight: '700', color: '#4F46E5', lineHeight: '1', letterSpacing: '-2px' }}>{savedWords.length}</div>
-                              <div style={{ color: '#64748B', fontWeight: '600', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '1.5px', fontSize: '0.85rem' }}>Words Saved</div>
+                              <div style={{ color: '#64748B', fontWeight: '600', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.85rem' }}>Words Saved</div>
                             </div>
                             
                             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -853,19 +887,42 @@ export default function App() {
 
                   {activeTab === 'Resources' && <ResourceLibrary resources={resources} />}
                   
+                  {/* --- NEW ABOUT SECTION --- */}
                   {activeTab === 'About' && (
-                    <div className="soft-card" style={{ ...styles.card, maxWidth: '750px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
-                      <h2 style={{ marginBottom: '30px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>About the Teacher</h2>
-                      <p style={{ lineHeight: '2.2', color: '#475569', fontSize: '1.3rem', fontWeight: '400' }}>Welcome to my classroom. I am passionate about blending literature with language learning to help you achieve absolute fluency.</p>
+                    <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '800px', margin: '0 auto' }}>
+                      <div className="soft-card adapt-padding" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '60px', border: '1px solid #E2E8F0', boxShadow: '0 20px 40px rgba(0,0,0,0.04)' }}>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderBottom: '2px solid #F1F5F9', paddingBottom: '40px', marginBottom: '40px' }}>
+                          <h2 style={{ margin: '0 0 8px 0', fontSize: '2.6rem', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>Meet Dr. Chouit Abderraouf</h2>
+                          <p style={{ color: '#64748B', fontSize: '1.15rem', margin: '0 0 20px 0', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>Creator & Founder of Lit & Learn</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
+                            <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>PhD in English Linguistics</span>
+                            <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>TESOL Certified</span>
+                          </div>
+                        </div>
+
+                        <div style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                           <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Bridging Language and Literature</h3>
+                           <p style={{ margin: 0 }}>
+                             Welcome to Lit & Learn. As an educator, I have seen firsthand how frustrating traditional language learning can be when it is reduced to passing tests and studying dry vocabulary lists. I created this platform to offer a different path—one where language mastery is achieved through a dynamic, multifaceted approach.
+                           </p>
+                           <p style={{ margin: 0 }}>
+                             The foundation of our method is contextual immersion, with a strong emphasis on cultivating reading as a lifelong, evolving skill. Reading is not merely a vehicle for absorbing complex syntax; it is a profound educational journey. Through our curated book reviews and literary analyses, you are not just learning vocabulary in context—you are exploring the rich ideas, diverse cultures, and timeless philosophies embedded in world literature. The literature itself elevates both your mind and your English.
+                           </p>
+                           <p style={{ margin: 0 }}>
+                             However, Lit & Learn is much more than a library of literary reviews; it is a complete, interactive language center. Your learning journey here bridges the gap between theory and practice. You will move from deep textual analysis to structured lessons in the <strong>English Corner</strong>, where you can actively apply your knowledge through targeted exercises for grammar, pronunciation, and vocabulary. Finally, the <strong>My Progress</strong> dashboard ensures your success is measurable, allowing you to track your daily reviews and official assessments.
+                           </p>
+                           <p style={{ margin: 0 }}>
+                             Drawing on my PhD in English Linguistics and years of teaching experience, my mission is to continuously evolve this platform. By blending the profound depth of world literature with interactive pedagogical tools, my goal is to guide you to absolute, confident mastery of the English language.
+                           </p>
+                        </div>
+                      </div>
                     </div>
                   )}
+
+                  {/* --- NEW CONTACT SECTION --- */}
                   {activeTab === 'Contact' && (
-                    <div className="soft-card" style={{ ...styles.card, maxWidth: '650px', margin: '0 auto', padding: '60px', textAlign: 'center' }}>
-                      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center' }}><IconMail /></div>
-                      <h2 style={{ marginBottom: '20px', fontWeight: '600', fontSize: '2.8rem', color: '#0F172A', letterSpacing: '-1px' }}>Get in Touch</h2>
-                      <p style={{ color: '#475569', marginBottom: '40px', fontSize: '1.3rem', fontWeight: '400' }}>Want to book a tutoring session or ask a question?</p>
-                      <a href="mailto:teacher@litandlearn.com" style={{...styles.actionButton, padding: '18px 48px', fontSize: '1.3rem', width: 'auto', textDecoration: 'none'}}>Email Me</a>
-                    </div>
+                    <ContactPage />
                   )}
                 </>
               )}
