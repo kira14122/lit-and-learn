@@ -10,13 +10,14 @@ const IconRefresh = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill=
 const IconUsers = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>);
 const IconSend = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>);
 const IconReply = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>);
+const IconChart = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>);
 
 // --- MAIN DASHBOARD COMPONENT ---
 export const TeacherDashboard: React.FC = () => {
   const { getToken } = useAuth();
   
   // Dashboard Navigation State
-  const [adminTab, setAdminTab] = useState<'inbox' | 'grading'>('inbox');
+  const [adminTab, setAdminTab] = useState<'inbox' | 'grading' | 'progress'>('inbox');
 
   // --- GLOBAL TOAST NOTIFICATION STATE ---
   const [toastMessage, setToastMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
@@ -26,7 +27,6 @@ export const TeacherDashboard: React.FC = () => {
   };
 
   // --- SMART DELETE MODAL STATE ---
-  // Tracks whether we are deleting a single message (by ID) or a full thread (by Email)
   const [deleteTarget, setDeleteTarget] = useState<{type: 'message', id: number} | {type: 'thread', email: string} | null>(null);
 
   // --- INBOX STATE ---
@@ -36,8 +36,10 @@ export const TeacherDashboard: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
 
-  // --- GRADING STATE ---
+  // --- GRADING & PROGRESS STATE ---
   const [students, setStudents] = useState<any[]>([]);
+  
+  // Grading Portal Specific
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentHistory, setStudentHistory] = useState<any[]>([]);
   const [assessmentName, setAssessmentName] = useState('Midterm Results');
@@ -46,12 +48,18 @@ export const TeacherDashboard: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Student Progress Specific
+  const [selectedProgressStudent, setSelectedProgressStudent] = useState<any | null>(null);
+  const [studentVocab, setStudentVocab] = useState<any[]>([]);
+  const [isFetchingVocab, setIsFetchingVocab] = useState(false);
+
   // Load Data on Mount
   useEffect(() => {
     fetchMessages();
     fetchStudents();
   }, []);
 
+  // Fetch Grading History when Student is selected
   useEffect(() => {
     if (selectedStudent) {
       fetchStudentHistory(selectedStudent.id);
@@ -59,6 +67,15 @@ export const TeacherDashboard: React.FC = () => {
       setStudentHistory([]);
     }
   }, [selectedStudent]);
+
+  // Fetch Vocab Vault when Progress Student is selected
+  useEffect(() => {
+    if (selectedProgressStudent) {
+      fetchStudentVocab(selectedProgressStudent.id);
+    } else {
+      setStudentVocab([]);
+    }
+  }, [selectedProgressStudent]);
 
   // --- THREADING LOGIC ---
   const threads = useMemo(() => {
@@ -106,26 +123,22 @@ export const TeacherDashboard: React.FC = () => {
   const executeDelete = async () => {
     if (!deleteTarget) return;
 
-    const target = deleteTarget; // Capture current state
-    setDeleteTarget(null); // Close modal instantly
+    const target = deleteTarget;
+    setDeleteTarget(null);
 
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
 
       if (target.type === 'message') {
-        // Optimistic UI Update: Remove single message
         setMessages(prev => prev.filter(msg => msg.id !== target.id));
         const { error } = await supabase.from('contact_messages').delete().eq('id', target.id);
         if (error) throw error;
         showToast('Message deleted', 'success');
 
       } else if (target.type === 'thread') {
-        // Optimistic UI Update: Remove entire thread
         if (selectedThreadEmail === target.email) setSelectedThreadEmail(null);
         setMessages(prev => prev.filter(msg => msg.email !== target.email));
-        
-        // Delete all rows matching this email
         const { error } = await supabase.from('contact_messages').delete().eq('email', target.email);
         if (error) throw error;
         showToast('Conversation deleted', 'success');
@@ -133,7 +146,7 @@ export const TeacherDashboard: React.FC = () => {
     } catch (error) {
       console.error("Error during deletion:", error);
       showToast('Failed to delete. Check console.', 'error');
-      fetchMessages(); // Reset UI on failure
+      fetchMessages();
     }
   };
 
@@ -165,7 +178,7 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
-  // --- GRADING FUNCTIONS ---
+  // --- GENERAL STUDENT FUNCTIONS ---
   const fetchStudents = async () => {
     const token = await getToken({ template: 'supabase' });
     const supabase = getSupabaseClient(token || '');
@@ -173,6 +186,7 @@ export const TeacherDashboard: React.FC = () => {
     if (data) setStudents(data);
   };
 
+  // --- GRADING FUNCTIONS ---
   const fetchStudentHistory = async (studentId: string) => {
     const token = await getToken({ template: 'supabase' });
     const supabase = getSupabaseClient(token || '');
@@ -237,6 +251,24 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
+  // --- PROGRESS FUNCTIONS ---
+  const fetchStudentVocab = async (studentId: string) => {
+    setIsFetchingVocab(true);
+    try {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      // Fetches all vocabulary words saved by this specific user
+      const { data, error } = await supabase.from('vocab_vault').select('*').eq('user_id', studentId).order('created_at', { ascending: false });
+      if (error) throw error;
+      setStudentVocab(data || []);
+    } catch (error) {
+      console.error("Error fetching vocab vault:", error);
+      showToast('Failed to load student vocabulary.', 'error');
+    } finally {
+      setIsFetchingVocab(false);
+    }
+  };
+
   const activeThread = threads.find(t => t.email === selectedThreadEmail);
 
   return (
@@ -286,11 +318,20 @@ export const TeacherDashboard: React.FC = () => {
           >
             <IconMail /> Inbox
           </button>
+          
           <button 
             onClick={() => setAdminTab('grading')}
             style={{ background: adminTab === 'grading' ? '#4F46E5' : 'transparent', color: adminTab === 'grading' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <IconUsers /> Grading Portal
+          </button>
+
+          {/* STUDENT PROGRESS BUTTON */}
+          <button 
+            onClick={() => setAdminTab('progress')}
+            style={{ background: adminTab === 'progress' ? '#10B981' : 'transparent', color: adminTab === 'progress' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <IconChart /> Student Progress
           </button>
         </div>
       </div>
@@ -312,7 +353,6 @@ export const TeacherDashboard: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', alignItems: 'flex-start' }}>
-            {/* LEFT COLUMN: CONVERSATION THREADS */}
             <div style={{ flex: '1 1 350px', maxWidth: '450px', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '700px', overflowY: 'auto', paddingRight: '8px' }}>
               {isLoadingMessages ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#94A3B8', fontWeight: '500' }}>Loading...</div>
@@ -352,12 +392,10 @@ export const TeacherDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* RIGHT COLUMN: READING PANE WITH CHAT HISTORY */}
             <div style={{ flex: '2 1 500px' }}>
               {activeThread ? (
                 <div style={{ background: '#F8FAFC', borderRadius: '24px', padding: '32px', border: '1px solid #E2E8F0', maxHeight: '800px', display: 'flex', flexDirection: 'column' }}>
                   
-                  {/* Thread Header WITH NEW DELETE BUTTON */}
                   <div style={{ borderBottom: '2px solid #E2E8F0', paddingBottom: '20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <h3 style={{ margin: '0 0 4px 0', fontSize: '1.8rem', color: '#0F172A', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -367,7 +405,6 @@ export const TeacherDashboard: React.FC = () => {
                       <div style={{ color: '#4F46E5', fontSize: '1.05rem', fontWeight: '600' }}>{activeThread.email}</div>
                     </div>
                     
-                    {/* NEW: Delete Entire Thread Button */}
                     <button 
                       onClick={() => setDeleteTarget({ type: 'thread', email: activeThread.email })} 
                       style={{ background: '#ffffff', color: '#94A3B8', border: '1px solid #E2E8F0', padding: '10px 16px', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', transition: 'all 0.2s' }} 
@@ -378,7 +415,6 @@ export const TeacherDashboard: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Chat History List */}
                   <div style={{ flexGrow: 1, overflowY: 'auto', paddingRight: '12px', display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
                     {activeThread.messages.map((msg, index) => (
                       <div key={msg.id} style={{ background: '#ffffff', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)', position: 'relative' }}>
@@ -394,7 +430,6 @@ export const TeacherDashboard: React.FC = () => {
                         </button>
 
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '12px' }}>
-                          {/* THIS IS THE FIX: Explicitly showing the name used for this specific message */}
                           <span style={{ color: '#4F46E5', fontWeight: '700', fontSize: '1rem' }}>
                             {msg.name}
                           </span>
@@ -410,7 +445,6 @@ export const TeacherDashboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Reply Box at the Bottom */}
                   <div style={{ background: '#ffffff', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 -4px 20px rgba(0,0,0,0.02)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569', fontWeight: '700', marginBottom: '16px' }}>
                       <IconReply /> Reply to {activeThread.name}
@@ -517,6 +551,86 @@ export const TeacherDashboard: React.FC = () => {
               <div className="soft-card" style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '32px', padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <h3 style={{ margin: '0 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
                 <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem', lineHeight: '1.6' }}>Click on a student from the directory to review their history and draft new grades.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- NEW TAB: STUDENT PROGRESS (VOCAB VAULT) --- */}
+      {adminTab === 'progress' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px', alignItems: 'start' }}>
+          
+          {/* Left Column: Student List (Green Styling) */}
+          <div className="soft-card" style={{ background: '#ffffff', borderRadius: '32px', padding: '32px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+            <h3 style={{ margin: '0 0 24px 0', color: '#0F172A', fontSize: '1.4rem' }}>Review Vocab Vaults ({students.length})</h3>
+            
+            {students.length === 0 ? (
+               <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '16px', textAlign: 'center', color: '#94A3B8', border: '2px dashed #E2E8F0' }}>
+                 No students have registered yet.
+               </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {students.map(student => (
+                  <div 
+                    key={student.id} 
+                    onClick={() => setSelectedProgressStudent(student)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: selectedProgressStudent?.id === student.id ? '#F0FDF4' : '#F8FAFC', border: selectedProgressStudent?.id === student.id ? '2px solid #10B981' : '2px solid transparent', borderRadius: '16px', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: '700', color: selectedProgressStudent?.id === student.id ? '#10B981' : '#0F172A', fontSize: '1.1rem', marginBottom: '4px' }}>
+                        {student.full_name}
+                      </div>
+                      <div style={{ color: '#64748B', fontSize: '0.9rem' }}>{student.email}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Displaying the Vocab Words */}
+          <div style={{ position: 'sticky', top: '40px' }}>
+            {selectedProgressStudent ? (
+              <div className="soft-card" style={{ background: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 20px 40px rgba(0,0,0,0.04)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', paddingBottom: '24px', borderBottom: '2px solid #F1F5F9' }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.8rem', color: '#0F172A' }}>{selectedProgressStudent.full_name}'s Vault</h3>
+                    <div style={{ color: '#64748B', fontWeight: '600' }}>
+                      <span style={{ color: '#10B981' }}>{studentVocab.length}</span> Words Saved
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedProgressStudent(null)} style={{ background: '#F1F5F9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', color: '#64748B', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>✕</button>
+                </div>
+                
+                <div style={{ overflowY: 'auto', flexGrow: 1, paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {isFetchingVocab ? (
+                     <div style={{ textAlign: 'center', padding: '40px', color: '#94A3B8', fontWeight: '500' }}>Accessing secure vault...</div>
+                  ) : studentVocab.length === 0 ? (
+                    <div style={{ background: '#F8FAFC', padding: '40px', borderRadius: '16px', textAlign: 'center', color: '#94A3B8', border: '2px dashed #E2E8F0' }}>
+                      This student hasn't saved any vocabulary words yet.
+                    </div>
+                  ) : (
+                    studentVocab.map(item => (
+                      <div key={item.id} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                          <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#0F172A' }}>{item.word}</div>
+                          <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: '600' }}>
+                            {new Date(item.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                        {item.definition && <div style={{ color: '#475569', lineHeight: '1.5', marginBottom: item.example ? '12px' : '0' }}>{item.definition}</div>}
+                        {item.example && <div style={{ color: '#64748B', fontStyle: 'italic', background: '#F1F5F9', padding: '12px', borderRadius: '8px', fontSize: '0.95rem' }}>"{item.example}"</div>}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="soft-card" style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '32px', padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <IconChart />
+                <h3 style={{ margin: '16px 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
+                <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem', lineHeight: '1.6' }}>Click on a student to instantly open their personal Vocab Vault.</p>
               </div>
             )}
           </div>
