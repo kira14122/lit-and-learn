@@ -1,9 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%">
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <style>
-    path { fill: #0F172A; } /* Dark color for Light Mode tabs */
+    :root {
+      --bg: #ffffff;
+      --book: #111827;
+      --accent: #4F46E5;
+      --lines: #ffffff;
+      --border: #E5E7EB;
+    }
+
     @media (prefers-color-scheme: dark) {
-      path { fill: #FFFFFF; } /* Crisp white for Dark Mode tabs */
+      :root {
+        --bg: #111827;
+        --book: #F9FAFB;
+        --accent: #6366F1;
+        --lines: #111827;
+        --border: #374151;
+      }
     }
   </style>
-  <path d="M560-250q73-19 146.5-24.5T840-280v-560q-63-12-132.5-16t-147.5 4v560Zm-80 0v-560q-78-8-147.5-4T200-840v560q60-6 133.5-1T480-250ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h60q53 0 106.5 6t113.5 18q59-12 113.5-18t106.5-6h60q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120h-60q-54 0-109-5.5T480-140q-56 15-111 20.5T260-120h-60Zm80-160h-80v-480h80v480Zm480 0v-480h-80v480h80ZM280-280Z"/>
+
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="var(--bg)" stroke="var(--border)" stroke-width="2"/>
+
+  <path d="M17 19C17 17.9 17.9 17 19 17H30C31.1 17 32 17.9 32 19V46C32 45 31.1 44 30 44H19C17.9 44 17 43.1 17 42V19Z" fill="var(--book)"/>
+  <path d="M47 19C47 17.9 46.1 17 45 17H34C32.9 17 32 17.9 32 19V46C32 45 32.9 44 34 44H45C46.1 44 47 43.1 47 42V19Z" fill="var(--book)"/>
+
+  <path d="M32 18.5V46" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+
+  <path d="M21 26H28" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M21 31H27" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M21 36H26" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+
+  <path d="M36 26H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M37 31H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M38 36H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
+
+  <path d="M49 14L49.9 16.2L52 17L49.9 17.8L49 20L48.1 17.8L46 17L48.1 16.2L49 14Z" fill="var(--accent)"/>
 </svg>
