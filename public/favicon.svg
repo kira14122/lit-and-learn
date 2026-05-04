@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f"><path d="M270-80q-45 0-77.5-30.5T160-186v-558q0-38 23.5-68t61.5-38l395-78v640l-379 76q-9 2-15 9.5t-6 16.5q0 11 9 18.5t21 7.5h450v-640h80v720H270Zm90-233 200-39v-478l-200 39v478Zm-80 16v-478l-15 3q-11 2-18 9.5t-7 18.5v457q5-2 10.5-3.5T261-293l19-4Zm-40-472v482-482Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%">
+  <style>
+    path { fill: #0F172A; } /* Dark color for Light Mode tabs */
+    @media (prefers-color-scheme: dark) {
+      path { fill: #FFFFFF; } /* Crisp white for Dark Mode tabs */
+    }
+  </style>
+  <path d="M560-250q73-19 146.5-24.5T840-280v-560q-63-12-132.5-16t-147.5 4v560Zm-80 0v-560q-78-8-147.5-4T200-840v560q60-6 133.5-1T480-250ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h60q53 0 106.5 6t113.5 18q59-12 113.5-18t106.5-6h60q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120h-60q-54 0-109-5.5T480-140q-56 15-111 20.5T260-120h-60Zm80-160h-80v-480h80v480Zm480 0v-480h-80v480h80ZM280-280Z"/>
+</svg>
