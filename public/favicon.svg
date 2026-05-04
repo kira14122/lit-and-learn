@@ -1,38 +1,16 @@
 <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    :root {
-      --bg: #ffffff;
-      --book: #111827;
-      --accent: #4F46E5;
-      --lines: #ffffff;
-      --border: #E5E7EB;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #111827;
-        --book: #F9FAFB;
-        --accent: #6366F1;
-        --lines: #111827;
-        --border: #374151;
-      }
-    }
-  </style>
-
-  <rect x="1" y="1" width="62" height="62" rx="16" fill="var(--bg)" stroke="var(--border)" stroke-width="2"/>
-
-  <path d="M17 19C17 17.9 17.9 17 19 17H30C31.1 17 32 17.9 32 19V46C32 45 31.1 44 30 44H19C17.9 44 17 43.1 17 42V19Z" fill="var(--book)"/>
-  <path d="M47 19C47 17.9 46.1 17 45 17H34C32.9 17 32 17.9 32 19V46C32 45 32.9 44 34 44H45C46.1 44 47 43.1 47 42V19Z" fill="var(--book)"/>
-
-  <path d="M32 18.5V46" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
-
-  <path d="M21 26H28" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-  <path d="M21 31H27" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-  <path d="M21 36H26" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-
-  <path d="M36 26H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-  <path d="M37 31H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-  <path d="M38 36H43" stroke="var(--lines)" stroke-width="2" stroke-linecap="round"/>
-
-  <path d="M49 14L49.9 16.2L52 17L49.9 17.8L49 20L48.1 17.8L46 17L48.1 16.2L49 14Z" fill="var(--accent)"/>
+  <rect width="64" height="64" rx="16" fill="#4F46E5"/>
+  
+  <!-- Open book -->
+  <path d="M14 20C14 18.3431 15.3431 17 17 17H29C30.6569 17 32 18.3431 32 20V47C32 45.3431 30.6569 44 29 44H17C15.3431 44 14 42.6569 14 41V20Z" fill="#FFFFFF"/>
+  <path d="M50 20C50 18.3431 48.6569 17 47 17H35C33.3431 17 32 18.3431 32 20V47C32 45.3431 33.3431 44 35 44H47C48.6569 44 50 42.6569 50 41V20Z" fill="#FFFFFF"/>
+  
+  <!-- Center fold -->
+  <path d="M32 18V46" stroke="#4F46E5" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Simple page lines -->
+  <path d="M19 27H27" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M19 34H26" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M37 27H45" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M38 34H45" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
 </svg>
