@@ -106,9 +106,15 @@ export default function App() {
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     client.fetch('*[_type == "unitMetadata"]').then(setUnitMetadataList);
 
+    // --- THE FIXED GROQ QUERY WITH ALIAS TRICK ---
     client.fetch(`*[_type == "interactiveLesson"] | order(lessonOrder asc) {
       ...,
-      lessonBlocks[]{ ..., "audioUrl": audio.asset->url, visualHook{ ..., asset->{ url } } }
+      lessonBlocks[]{
+        ...,
+        "audioUrl": audio.asset->url,
+        visualHook{ ..., asset->{ url } },
+        "quickCheckQuiz": quickCheck
+      }
     }`).then(setInteractiveLessons);
 
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {

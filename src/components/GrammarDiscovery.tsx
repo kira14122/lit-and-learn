@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 
 export default function GrammarDiscovery({ block }: { block: any }) {
   const [showRule, setShowRule] = useState(false);
+  
+  // NEW: State for the quiz
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
+  const [isQuizChecked, setIsQuizChecked] = useState(false);
 
   if (!block) return null;
 
@@ -28,6 +32,12 @@ export default function GrammarDiscovery({ block }: { block: any }) {
       return item[keyName] || item.text || item.sentence || item.question || "";
     }
     return "";
+  };
+
+  // NEW: Handle clicking an option
+  const handleOptionClick = (questionIndex: number, option: string) => {
+    if (isQuizChecked) return; // Prevent changing answer after checking
+    setQuizAnswers(prev => ({ ...prev, [questionIndex]: option }));
   };
 
   return (
@@ -104,46 +114,85 @@ export default function GrammarDiscovery({ block }: { block: any }) {
               <div style={{ position: 'absolute', top: '-20px', right: '-20px', opacity: 0.1, transform: 'rotate(15deg)' }}>
                 <svg width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
-              {/* FIX: Added whiteSpace: 'pre-wrap' here! */}
               <p style={{ margin: 0, lineHeight: '1.8', color: '#312E81', fontSize: '1.25rem', fontWeight: '500', position: 'relative', zIndex: 1, whiteSpace: 'pre-wrap' }}>
                 {block.grammarRule}
               </p>
             </div>
 
-            {/* PHASE 4: THE NEW QUIZ SECTION */}
+            {/* PHASE 4: THE NEW INTERACTIVE QUIZ SECTION */}
             {block.quickCheckQuiz && block.quickCheckQuiz.length > 0 && (
               <div>
                 <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
                   4. Quick Check Quiz
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   {block.quickCheckQuiz.map((quizItem: any, index: number) => {
                     const questionText = extractText(quizItem, 'questionText') || extractText(quizItem, 'question');
+                    const correctAnswer = extractText(quizItem, 'correctAnswer');
+                    const userAnswer = quizAnswers[index];
+
                     return (
                       <div key={index} style={{ padding: '24px', backgroundColor: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
                         <p style={{ margin: '0 0 16px 0', fontSize: '1.15rem', color: '#1E293B', fontWeight: '600' }}>
-                          {index + 1}. {questionText}
+                          <span style={{ color: '#4F46E5', marginRight: '8px' }}>{index + 1}.</span> {questionText}
                         </p>
-                        {/* Maps through multiple choice options if your Sanity schema has them */}
+                        
                         {quizItem.options && quizItem.options.length > 0 && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {quizItem.options.map((opt: string, optIdx: number) => (
-                              <div key={optIdx} style={{ padding: '14px 20px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s ease', color: '#475569', fontWeight: '500' }}
-                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#4F46E5'; e.currentTarget.style.color = '#4F46E5'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#475569'; }}
-                              >
-                                {opt}
-                              </div>
-                            ))}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                            {quizItem.options.map((opt: string, optIdx: number) => {
+                              const isSelected = userAnswer === opt;
+                              let bg = '#ffffff'; let border = '2px solid #E2E8F0'; let color = '#475569';
+                              
+                              if (isSelected && !isQuizChecked) { 
+                                bg = '#EEF2FF'; border = '2px solid #4F46E5'; color = '#4F46E5'; 
+                              }
+                              if (isQuizChecked) {
+                                if (opt === correctAnswer) { 
+                                  bg = '#D1FAE5'; border = '2px solid #10B981'; color = '#065F46'; 
+                                } else if (isSelected) { 
+                                  bg = '#FEE2E2'; border = '2px solid #EF4444'; color = '#991B1B'; 
+                                }
+                              }
+
+                              return (
+                                <button 
+                                  key={optIdx} 
+                                  onClick={() => handleOptionClick(index, opt)}
+                                  disabled={isQuizChecked}
+                                  style={{ padding: '16px 20px', borderRadius: '12px', border, backgroundColor: bg, color, fontSize: '1.1rem', fontWeight: '500', cursor: isQuizChecked ? 'default' : 'pointer', textAlign: 'left', transition: 'all 0.2s', outline: 'none' }}
+                                >
+                                  {opt}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Submit Button */}
+                <div style={{ marginTop: '24px' }}>
+                  {!isQuizChecked ? (
+                    <button 
+                      onClick={() => setIsQuizChecked(true)}
+                      disabled={Object.keys(quizAnswers).length !== block.quickCheckQuiz.length}
+                      style={{ width: '100%', padding: '16px', background: Object.keys(quizAnswers).length === block.quickCheckQuiz.length ? '#4F46E5' : '#CBD5E1', color: '#ffffff', border: 'none', borderRadius: '16px', cursor: Object.keys(quizAnswers).length === block.quickCheckQuiz.length ? 'pointer' : 'not-allowed', fontWeight: '600', fontSize: '1.15rem', transition: 'all 0.2s ease' }}
+                    >
+                      Check Answers
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => { setIsQuizChecked(false); setQuizAnswers({}); }}
+                      style={{ width: '100%', padding: '16px', background: '#F1F5F9', color: '#475569', border: 'none', borderRadius: '16px', cursor: 'pointer', fontWeight: '600', fontSize: '1.15rem', transition: 'all 0.2s ease' }}
+                    >
+                      Retake Quiz
+                    </button>
+                  )}
+                </div>
               </div>
             )}
-
           </div>
         )}
       </div>
