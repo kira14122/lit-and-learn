@@ -72,13 +72,17 @@ export default function App() {
     localStorage.setItem('litAndLearnCurrentTab', activeTab);
   }, [activeTab]);
 
-  const [bookCategory, setBookCategory] = useState<string | null>(null);
-  const [activeSubCategory, setActiveSubCategory] = useState<string | null>(null); 
+  // --- UPGRADED DEEP NAVIGATION MEMORY ---
+  const [bookCategory, setBookCategory] = useState<string | null>(() => localStorage.getItem('ll_bookCat'));
+  const [activeSubCategory, setActiveSubCategory] = useState<string | null>(() => localStorage.getItem('ll_subCat')); 
   const [reviews, setReviews] = useState<any[]>([]);
   
-  const [activeLevel, setActiveLevel] = useState<string | null>(null);
-  const [activeSubLevel, setActiveSubLevel] = useState<string | null>(null);
-  const [activeUnit, setActiveUnit] = useState<number | null>(null);
+  const [activeLevel, setActiveLevel] = useState<string | null>(() => localStorage.getItem('ll_level'));
+  const [activeSubLevel, setActiveSubLevel] = useState<string | null>(() => localStorage.getItem('ll_subLevel'));
+  const [activeUnit, setActiveUnit] = useState<number | null>(() => {
+    const saved = localStorage.getItem('ll_unit');
+    return saved ? parseInt(saved, 10) : null;
+  });
 
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [officialGrades, setOfficialGrades] = useState<any[]>([]); 
@@ -88,18 +92,39 @@ export default function App() {
   const [interactiveLessons, setInteractiveLessons] = useState<any[]>([]);
   const [dictionary, setDictionary] = useState<Record<string, any>>({});
   const [savedWords, setSavedWords] = useState<any[]>([]);
-  const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
   const [processingWords, setProcessingWords] = useState<Record<string, boolean>>({});
 
+  // Keeps books and lessons open on refresh!
+  const [selectedBook, setSelectedBook] = useState<any | null>(() => {
+    const saved = localStorage.getItem('ll_book');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isInteractiveLesson, setIsInteractiveLesson] = useState(() => localStorage.getItem('ll_isLesson') === 'true');
+  const [activeLessonData, setActiveLessonData] = useState<any | null>(() => {
+    const saved = localStorage.getItem('ll_lessonData');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // Quiz states (we keep these temporary so a refresh restarts the test)
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [isLevelExam, setIsLevelExam] = useState(false);
   const [quizItems, setQuizItems] = useState<any[]>([]);
-  const [isInteractiveLesson, setIsInteractiveLesson] = useState(false);
-  const [activeLessonData, setActiveLessonData] = useState<any | null>(null);
-  
   const [showNoQuizModal, setShowNoQuizModal] = useState(false);
+
+  // --- SYNCHRONIZE MEMORY WHENEVER YOU CLICK AROUND ---
+  useEffect(() => {
+    if (bookCategory) localStorage.setItem('ll_bookCat', bookCategory); else localStorage.removeItem('ll_bookCat');
+    if (activeSubCategory) localStorage.setItem('ll_subCat', activeSubCategory); else localStorage.removeItem('ll_subCat');
+    if (activeLevel) localStorage.setItem('ll_level', activeLevel); else localStorage.removeItem('ll_level');
+    if (activeSubLevel) localStorage.setItem('ll_subLevel', activeSubLevel); else localStorage.removeItem('ll_subLevel');
+    if (activeUnit) localStorage.setItem('ll_unit', activeUnit.toString()); else localStorage.removeItem('ll_unit');
+    
+    if (selectedBook) localStorage.setItem('ll_book', JSON.stringify(selectedBook)); else localStorage.removeItem('ll_book');
+    if (isInteractiveLesson) localStorage.setItem('ll_isLesson', 'true'); else localStorage.removeItem('ll_isLesson');
+    if (activeLessonData) localStorage.setItem('ll_lessonData', JSON.stringify(activeLessonData)); else localStorage.removeItem('ll_lessonData');
+  }, [bookCategory, activeSubCategory, activeLevel, activeSubLevel, activeUnit, selectedBook, isInteractiveLesson, activeLessonData]);
+
 
   useEffect(() => {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);

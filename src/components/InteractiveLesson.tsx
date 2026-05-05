@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import WarmUpQuiz from './WarmUpQuiz';
 import GrammarDiscovery from './GrammarDiscovery';
 import GrammarPracticeBlock from './GrammarPracticeBlock';
@@ -18,16 +18,38 @@ const IconSearch = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="
 export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveWord, onComplete, dictionary }: any) {
   const warmUpBlock = lessonData?.lessonBlocks?.find((b: any) => b._type === 'warmUpBlock');
   const readingBlock = lessonData?.lessonBlocks?.find((b: any) => b._type === 'readingBlock');
+  const lessonId = lessonData?._id || 'default';
 
-  // 1. STATE
-  const [showReading, setShowReading] = useState(!warmUpBlock);
-  const [isReadingFinished, setIsReadingFinished] = useState(false);
-  const [isGrammarUnlocked, setIsGrammarUnlocked] = useState(false);
+  // 1. STATE (Upgraded with Lesson-Specific Memory)
+  const [showReading, setShowReading] = useState(() => {
+    const saved = localStorage.getItem(`ll_showReading_${lessonId}`);
+    return saved !== null ? saved === 'true' : !warmUpBlock;
+  });
+  
+  const [isReadingFinished, setIsReadingFinished] = useState(() => {
+    return localStorage.getItem(`ll_readFin_${lessonId}`) === 'true';
+  });
+  
+  const [isGrammarUnlocked, setIsGrammarUnlocked] = useState(() => {
+    return localStorage.getItem(`ll_gramUnl_${lessonId}`) === 'true';
+  });
+  
+  const [activeRightTab, setActiveRightTab] = useState<'activities' | 'grammar'>(() => {
+    return (localStorage.getItem(`ll_rTab_${lessonId}`) as 'activities' | 'grammar') || 'activities';
+  });
+  
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
-  const [activeRightTab, setActiveRightTab] = useState<'activities' | 'grammar'>('activities');
 
   const activitiesRef = useRef<HTMLDivElement>(null);
   const rightColumnRef = useRef<HTMLDivElement>(null);
+
+  // --- SYNCHRONIZE MEMORY WHENEVER STATE CHANGES ---
+  useEffect(() => {
+    localStorage.setItem(`ll_showReading_${lessonId}`, String(showReading));
+    localStorage.setItem(`ll_readFin_${lessonId}`, String(isReadingFinished));
+    localStorage.setItem(`ll_gramUnl_${lessonId}`, String(isGrammarUnlocked));
+    localStorage.setItem(`ll_rTab_${lessonId}`, activeRightTab);
+  }, [showReading, isReadingFinished, isGrammarUnlocked, activeRightTab, lessonId]);
 
   // 2. MEMOIZATION: Only calculate the text once!
   const rawText = useMemo(() => {
