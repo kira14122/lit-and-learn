@@ -21,7 +21,7 @@ export default function GrammarDiscovery({ block }: { block: any }) {
     });
   };
 
-  // --- THE FIX: This safely extracts the text if Sanity sends an object instead of a string ---
+  // Safely extracts the text if Sanity sends an object instead of a string
   const extractText = (item: any, keyName: string) => {
     if (typeof item === 'string') return item;
     if (item && typeof item === 'object') {
@@ -53,7 +53,6 @@ export default function GrammarDiscovery({ block }: { block: any }) {
         </h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {block.noticingSentences?.map((s: any, i: number) => {
-            // Unpack the sentence object
             const sentenceText = extractText(s, 'sentenceText');
             return (
               <p key={i} style={{ margin: 0, padding: '16px 20px', backgroundColor: '#F8FAFC', borderRadius: '16px', borderLeft: '4px solid #4F46E5', fontSize: '1.2rem', color: '#334155', lineHeight: '1.6' }}>
@@ -71,7 +70,6 @@ export default function GrammarDiscovery({ block }: { block: any }) {
         </h4>
         <div style={{ padding: '24px', backgroundColor: '#FFFBEB', borderRadius: '16px', border: '1px solid #FEF3C7' }}>
           {block.noticingQuestions?.map((q: any, i: number) => {
-            // Unpack the question object using the exact key from your error message
             const qText = extractText(q, 'questionText');
             return (
               <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: i === (block.noticingQuestions?.length || 1) - 1 ? '0' : '16px' }}>
@@ -83,7 +81,7 @@ export default function GrammarDiscovery({ block }: { block: any }) {
         </div>
       </div>
 
-      {/* PHASE 3: The Reveal */}
+      {/* PHASE 3 & 4: The Reveal and Quiz */}
       <div style={{ marginTop: '20px' }}>
         {!showRule ? (
           <button 
@@ -97,17 +95,55 @@ export default function GrammarDiscovery({ block }: { block: any }) {
           </button>
         ) : (
           <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+            
+            {/* PHASE 3 */}
             <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
               3. The Core Concept
             </h4>
-            <div style={{ padding: '30px', backgroundColor: '#EEF2FF', borderRadius: '24px', border: '2px solid #C7D2FE', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ padding: '30px', backgroundColor: '#EEF2FF', borderRadius: '24px', border: '2px solid #C7D2FE', position: 'relative', overflow: 'hidden', marginBottom: '40px' }}>
               <div style={{ position: 'absolute', top: '-20px', right: '-20px', opacity: 0.1, transform: 'rotate(15deg)' }}>
                 <svg width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
-              <p style={{ margin: 0, lineHeight: '1.8', color: '#312E81', fontSize: '1.25rem', fontWeight: '500', position: 'relative', zIndex: 1 }}>
+              {/* FIX: Added whiteSpace: 'pre-wrap' here! */}
+              <p style={{ margin: 0, lineHeight: '1.8', color: '#312E81', fontSize: '1.25rem', fontWeight: '500', position: 'relative', zIndex: 1, whiteSpace: 'pre-wrap' }}>
                 {block.grammarRule}
               </p>
             </div>
+
+            {/* PHASE 4: THE NEW QUIZ SECTION */}
+            {block.quickCheckQuiz && block.quickCheckQuiz.length > 0 && (
+              <div>
+                <h4 style={{ fontSize: '1rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', fontWeight: '600' }}>
+                  4. Quick Check Quiz
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {block.quickCheckQuiz.map((quizItem: any, index: number) => {
+                    const questionText = extractText(quizItem, 'questionText') || extractText(quizItem, 'question');
+                    return (
+                      <div key={index} style={{ padding: '24px', backgroundColor: '#F8FAFC', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+                        <p style={{ margin: '0 0 16px 0', fontSize: '1.15rem', color: '#1E293B', fontWeight: '600' }}>
+                          {index + 1}. {questionText}
+                        </p>
+                        {/* Maps through multiple choice options if your Sanity schema has them */}
+                        {quizItem.options && quizItem.options.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {quizItem.options.map((opt: string, optIdx: number) => (
+                              <div key={optIdx} style={{ padding: '14px 20px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s ease', color: '#475569', fontWeight: '500' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#4F46E5'; e.currentTarget.style.color = '#4F46E5'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#475569'; }}
+                              >
+                                {opt}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
           </div>
         )}
       </div>

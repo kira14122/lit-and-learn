@@ -8,11 +8,22 @@ export default function GrammarPracticeBlock({ block }: { block: any }) {
 
   const totalQuestions = block.questions.length;
 
+  // --- THE FIX: The Safety Net for Sanity Text ---
+  const extractText = (item: any, keyName: string) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+      return item[keyName] || item.text || item.sentence || item.question || "";
+    }
+    return "";
+  };
+
+  const instructionText = extractText(block, 'instruction');
+
   // Check if every question has a valid answer
   const allAnswered = block.questions.every((q: any, i: number) => {
     const ans = answers[i];
     const type = q.questionType || 'multipleChoice';
-    if (type === 'unscramble') return Array.isArray(ans) && ans.length === q.scrambledWords.length;
+    if (type === 'unscramble') return Array.isArray(ans) && ans.length === q.scrambledWords?.length;
     return ans !== undefined && ans !== '';
   });
 
@@ -74,14 +85,19 @@ export default function GrammarPracticeBlock({ block }: { block: any }) {
         </h2>
       </div>
 
-      {block.instruction && (
-        <p style={{ fontSize: '1.15rem', color: '#64748b', marginBottom: '40px', lineHeight: '1.6' }}>{block.instruction}</p>
+      {/* FIX: Using extracted text and pre-wrap for line breaks */}
+      {instructionText && (
+        <p style={{ fontSize: '1.15rem', color: '#64748b', marginBottom: '40px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+          {instructionText}
+        </p>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', marginBottom: '40px' }}>
         {block.questions.map((q: any, i: number) => {
           const type = q.questionType || 'multipleChoice';
           const userAnswer = answers[i];
+          const questionText = extractText(q, 'questionText');
+          const explanationText = extractText(q, 'explanation');
           
           let isCorrect = false;
           if (type === 'multipleChoice') isCorrect = userAnswer === q.correctAnswer;
@@ -95,22 +111,22 @@ export default function GrammarPracticeBlock({ block }: { block: any }) {
             <div key={i} style={{ backgroundColor: '#F8FAFC', padding: '24px', borderRadius: '20px', border: '1px solid #E2E8F0' }}>
               
               {/* Question Header */}
-              {q.questionText && (
+              {questionText && (
                 <h3 style={{ fontSize: '1.25rem', color: '#1E293B', marginBottom: '20px', lineHeight: '1.5' }}>
                   <span style={{ color: '#4F46E5', marginRight: '8px', fontWeight: 'bold' }}>{i + 1}.</span> 
                   {type === 'errorCorrection' ? 'Find and fix the error: ' : ''}
                   {type === 'cloze' ? 'Fill in the blank: ' : ''}
-                  <span style={{ fontWeight: type === 'errorCorrection' ? '500' : '600' }}>"{q.questionText}"</span>
+                  <span style={{ fontWeight: type === 'errorCorrection' ? '500' : '600' }}>"{questionText}"</span>
                 </h3>
               )}
-              {type === 'unscramble' && !q.questionText && (
+              {type === 'unscramble' && !questionText && (
                  <h3 style={{ fontSize: '1.25rem', color: '#1E293B', marginBottom: '20px', lineHeight: '1.5' }}>
                     <span style={{ color: '#4F46E5', marginRight: '8px', fontWeight: 'bold' }}>{i + 1}.</span> Unscramble the sentence:
                  </h3>
               )}
 
               {/* MODE 1: MULTIPLE CHOICE */}
-              {type === 'multipleChoice' && (
+              {type === 'multipleChoice' && q.options && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
                   {q.options.map((opt: string, optIdx: number) => {
                     const isSelected = userAnswer === opt;
@@ -192,9 +208,9 @@ export default function GrammarPracticeBlock({ block }: { block: any }) {
               )}
 
               {/* Global Explanation */}
-              {isSubmitted && q.explanation && (
+              {isSubmitted && explanationText && (
                 <div style={{ marginTop: '20px', padding: '16px', backgroundColor: isCorrect ? '#ECFDF5' : '#FEF2F2', borderRadius: '12px', color: isCorrect ? '#065F46' : '#991B1B', fontSize: '1.05rem', lineHeight: '1.5' }}>
-                  <strong>{isCorrect ? 'Great job!' : 'Review:'}</strong> {q.explanation}
+                  <strong>{isCorrect ? 'Great job!' : 'Review:'}</strong> {explanationText}
                 </div>
               )}
 
