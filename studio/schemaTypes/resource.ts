@@ -34,6 +34,14 @@ export default {
       title: 'Unit Number (1-12)',
       hidden: ({document}: any) => document?.isGeneral
     },
+    // --- NEW FIELD ADDED HERE ---
+    {
+      name: 'lessonOrder',
+      title: 'Lesson Order',
+      type: 'number',
+      description: 'Which lesson number is this within the unit? (e.g., 1, 2, 3)',
+      hidden: ({document}: any) => document?.isGeneral
+    },
     {
       name: 'category',
       type: 'string',

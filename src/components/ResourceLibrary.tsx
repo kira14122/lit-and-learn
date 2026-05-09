@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CustomAudioPlayer } from './CustomAudioPlayer'; // <-- IMPORTING THE PREMIUM PLAYER!
+import React, { useState, useMemo, useEffect } from 'react';
+import { CustomAudioPlayer } from './CustomAudioPlayer'; 
 
 // --- Reusable Back Button ---
 const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) => (
@@ -16,9 +16,15 @@ const IconWriting = () => (<svg width="40" height="40" viewBox="0 0 24 24" fill=
 const IconListening = () => (<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>);
 const IconGrammar = () => (<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>);
 const IconVocab = () => (<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>);
+const IconDownloadSmall = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>);
+const IconChevronDown = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>);
+const IconChevronUp = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>);
 
 export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  
+  // State to track which folders are open/closed
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const categories = [
     { name: 'General', icon: <IconDoc />, bg: '#F1F5F9', color: '#475569', desc: 'Syllabi and overviews.' },
@@ -29,25 +35,85 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
     { name: 'Vocabulary', icon: <IconVocab />, bg: '#FEF3C7', color: '#D97706', desc: 'Word lists.' }
   ];
 
-  const filteredResources = resources.filter(res => {
-    if (!activeFilter) return false;
-    if (activeFilter === 'General') return res.isGeneral;
-    return !res.isGeneral && res.category === activeFilter;
-  });
+  // Wrap grouping and sorting in useMemo for performance
+  const filteredResources = useMemo(() => {
+    return resources.filter(res => {
+      if (!activeFilter) return false;
+      if (activeFilter === 'General') return res.isGeneral;
+      return !res.isGeneral && res.category === activeFilter;
+    });
+  }, [resources, activeFilter]);
 
-  const getIcon = (cat: string, isGeneral: boolean, audioUrl: string) => {
-    if (isGeneral) return <IconDoc />;
-    if (audioUrl && cat === 'Listening') return <IconListening />;
-    if (cat === 'Grammar') return <IconGrammar />;
-    if (cat === 'Vocabulary') return <IconVocab />;
-    if (cat === 'Reading') return <IconReading />;
-    if (cat === 'Writing') return <IconWriting />;
-    if (cat === 'Listening') return <IconListening />;
-    return <IconDoc />;
+  const groupedResources = useMemo(() => {
+    return filteredResources.reduce((acc, res) => {
+      const key = res.isGeneral ? 'General Guides' : `Unit ${res.unit || 'Unknown'}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(res);
+      return acc;
+    }, {} as Record<string, any[]>);
+  }, [filteredResources]);
+
+  const sortedGroupKeys = useMemo(() => {
+    return Object.keys(groupedResources).sort((a, b) => {
+      if (a === 'General Guides') return -1;
+      if (b === 'General Guides') return 1;
+      const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
+  }, [groupedResources]);
+
+  // Auto-open the very first folder whenever the category changes!
+  useEffect(() => {
+    if (activeFilter && sortedGroupKeys.length > 0) {
+      setExpandedGroups({ [sortedGroupKeys[0]]: true });
+    }
+  }, [activeFilter, sortedGroupKeys]);
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
 
   return (
     <div>
+      {/* MOBILE CSS INJECTION */}
+      <style>{`
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .accordion-content { animation: slideDown 0.3s ease-out; }
+
+        @media (max-width: 768px) {
+          .syllabus-card {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            padding: 20px !important;
+            gap: 16px !important;
+          }
+          .syllabus-info {
+            align-items: flex-start !important;
+            gap: 16px !important;
+          }
+          .syllabus-number {
+            width: 40px !important;
+            height: 40px !important;
+            font-size: 1.1rem !important;
+          }
+          .syllabus-info h4 {
+            font-size: 1.15rem !important;
+          }
+          .syllabus-actions {
+            width: 100% !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+          }
+          .syllabus-actions > a, .syllabus-actions > div, .syllabus-actions > span {
+            width: 100% !important;
+            justify-content: center !important;
+            text-align: center !important;
+          }
+        }
+      `}</style>
+
       {/* STEP 1: Display the 6 big category cards */}
       {!activeFilter ? (
         <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
@@ -70,58 +136,95 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
         </div>
       ) : (
 
-        /* STEP 2: Show the resources for the clicked category */
-        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-          <div style={{ marginBottom: '30px' }}>
+        /* STEP 2: Show the Syllabus Accordion View */
+        <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1000px', margin: '0 auto' }}>
+          <div style={{ marginBottom: '40px' }}>
             <BackButton onClick={() => setActiveFilter(null)} text="Back to Categories" />
-            <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeFilter}</h3>
-            <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>Resource Library</span>
+            <h3 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '16px 0 4px 0', letterSpacing: '-1px' }}>{activeFilter}</h3>
+            <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>Syllabus & Downloads</span>
           </div>
 
-          {filteredResources.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '30px' }}>
-              {filteredResources.map(res => (
-                <div key={res._id} className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'visible', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', padding: '30px', alignItems: 'center', textAlign: 'center' }}>
-                  
-                  {/* SVG ICON INSTEAD OF EMOJI */}
-                  <div style={{ marginBottom: '20px', color: '#94A3B8' }}>{getIcon(res.category, res.isGeneral, res.audioUrl)}</div>
-                  
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase' }}>
-                      {res.isGeneral ? 'General Guide' : res.category}
-                    </span>
-                    {!res.isGeneral && res.level && (
-                      <span style={{ background: '#F1F5F9', color: '#475569', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '600', textTransform: 'uppercase' }}>
-                        {res.level} • Unit {res.unit}
-                      </span>
+          {sortedGroupKeys.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {sortedGroupKeys.map(groupKey => {
+                const isExpanded = expandedGroups[groupKey];
+                
+                // Sort lessons within the unit by their assigned 'lessonOrder' in Sanity
+                const resourcesInGroup = groupedResources[groupKey].sort((a, b) => {
+                  const orderA = a.lessonOrder !== undefined ? a.lessonOrder : 999;
+                  const orderB = b.lessonOrder !== undefined ? b.lessonOrder : 999;
+                  return orderA - orderB;
+                });
+
+                return (
+                  <div key={groupKey} style={{ backgroundColor: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', boxShadow: isExpanded ? '0 15px 35px rgba(15,23,42,0.04)' : '0 4px 10px rgba(15,23,42,0.02)', overflow: 'hidden', transition: 'all 0.3s' }}>
+                    
+                    {/* ACCORDION HEADER */}
+                    <button 
+                      onClick={() => toggleGroup(groupKey)}
+                      style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 32px', backgroundColor: isExpanded ? '#ffffff' : '#ffffff', border: 'none', borderBottom: isExpanded ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                    >
+                      <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0, fontWeight: '700' }}>
+                        {groupKey}
+                      </h3>
+                      <div style={{ color: isExpanded ? '#ffffff' : '#64748B', background: isExpanded ? '#4F46E5' : '#F1F5F9', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s' }}>
+                        {isExpanded ? <IconChevronUp /> : <IconChevronDown />}
+                      </div>
+                    </button>
+
+                    {/* ACCORDION BODY (EXPANDED CONTENT) */}
+                    {isExpanded && (
+                      <div className="accordion-content" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#F8FAFC' }}>
+                        {resourcesInGroup.map((res, index) => {
+                          // SMART TYPO CATCHER: Now catches numbers and the letter "O/o"
+                          const cleanTitle = res.title.replace(/^lesson\s*[0-9oO]+\s*[:-]?\s*/i, '');
+                          const displayIndex = res.lessonOrder !== undefined ? res.lessonOrder : index + 1;
+
+                          return (
+                            <div key={res._id} className="soft-card syllabus-card" style={{ backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', padding: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+                              
+                              {/* Left Side: Number and Title */}
+                              <div className="syllabus-info" style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: '1 1 min-content' }}>
+                                <div className="syllabus-number" style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F8FAFC', color: '#4F46E5', border: '2px solid #EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '1.2rem', flexShrink: 0 }}>
+                                  {displayIndex}
+                                </div>
+                                <div>
+                                  <h4 style={{ margin: '0 0 6px 0', color: '#0F172A', fontSize: '1.3rem', fontWeight: '600', lineHeight: '1.3' }}>{cleanTitle}</h4>
+                                  <div style={{ color: '#64748B', fontSize: '0.9rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    {res.isGeneral ? 'General Guide' : `${res.level}`}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right Side: Audio and Download */}
+                              <div className="syllabus-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                {res.audioUrl && (
+                                  <div style={{ minWidth: '250px' }}>
+                                    <CustomAudioPlayer src={res.audioUrl} title="" />
+                                  </div>
+                                )}
+                                
+                                {res.fileUrl ? (
+                                  <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <IconDownloadSmall /> {res.audioUrl ? 'Worksheet' : 'Download PDF'}
+                                  </a>
+                                ) : res.audioUrl ? (
+                                  <a href={res.audioUrl} target="_blank" rel="noreferrer" style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #CBD5E1', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <IconDownloadSmall /> Save Audio
+                                  </a>
+                                ) : (
+                                  <span style={{ padding: '12px 24px', color: '#94A3B8', fontSize: '0.95rem', fontStyle: 'italic', background: '#F8FAFC', borderRadius: '9999px' }}>File pending...</span>
+                                )}
+                              </div>
+
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-
-                  <h3 style={{ margin: '0 0 24px', fontWeight: '600', color: '#0F172A', fontSize: '1.4rem', lineHeight: '1.4' }}>{res.title}</h3>
-                  
-                  {/* INJECTED CUSTOM AUDIO PLAYER */}
-                  {res.audioUrl && ( 
-                    <div style={{ width: '100%', marginBottom: '24px' }}>
-                      <CustomAudioPlayer src={res.audioUrl} title="Preview Audio" />
-                    </div> 
-                  )}
-                  
-                  <div style={{ marginTop: 'auto', width: '100%' }}>
-                    {res.fileUrl ? (
-                      <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{ background: '#4F46E5', color: '#ffffff', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', textDecoration: 'none', width: '100%', display: 'inline-block', boxSizing: 'border-box' }}>
-                        {res.audioUrl ? 'Download Worksheet' : 'Download PDF'}
-                      </a>
-                    ) : res.audioUrl ? (
-                      <a href={res.audioUrl} target="_blank" rel="noreferrer" style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', textDecoration: 'none', width: '100%', display: 'inline-block', boxSizing: 'border-box' }}>
-                        Download Audio File
-                      </a>
-                    ) : (
-                      <span style={{ display: 'inline-block', padding: '12px', color: '#94A3B8', fontSize: '1rem', fontStyle: 'italic', background: '#F8FAFC', borderRadius: '16px', width: '100%' }}>File pending...</span>
-                    )}
-                  </div>
-
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
              <div style={{ textAlign: 'center', padding: '80px', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0', color: '#94A3B8' }}>
