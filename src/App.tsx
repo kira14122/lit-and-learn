@@ -87,6 +87,9 @@ export default function App() {
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [officialGrades, setOfficialGrades] = useState<any[]>([]); 
   const [unitMetadataList, setUnitMetadataList] = useState<any[]>([]);
+  
+  // NEW STATE: Tracks all published assessments to calculate the "lock" feature
+  const [publishedAssessments, setPublishedAssessments] = useState<any[]>([]);
 
   const [resources, setResources] = useState<any[]>([]);
   const [interactiveLessons, setInteractiveLessons] = useState<any[]>([]);
@@ -130,8 +133,10 @@ export default function App() {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     client.fetch('*[_type == "unitMetadata"]').then(setUnitMetadataList);
+    
+    // FETCH PUBLISHED ASSESSMENTS FOR THE LOCK COUNTER
+    client.fetch('*[_type == "unitAssessment"]{_id, level, subLevel, unit}').then(setPublishedAssessments).catch(console.error);
 
-    // --- THE FIXED GROQ QUERY WITH ALIAS TRICK ---
     client.fetch(`*[_type == "interactiveLesson"] | order(lessonOrder asc) {
       ...,
       lessonBlocks[]{
@@ -304,16 +309,31 @@ export default function App() {
   const searchResultsResources = resources.filter(res => res.title?.toLowerCase().includes(searchTerm.toLowerCase()) || res.category?.toLowerCase().includes(searchTerm.toLowerCase()) || res.subLevel?.toLowerCase().includes(searchTerm.toLowerCase()) );
 
   const startQuiz = async (runAsLevelExam: boolean = false) => {
-    const singleQuery = runAsLevelExam ? `*[_type == "quizQuestion" && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}` : `*[_type == "quizQuestion" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "questionAudioUrl": audioSnippet.asset->url, "lessonUrl": relatedLesson->file.asset->url, "lessonTitle": relatedLesson->title}`;
-    const blockQuery = runAsLevelExam ? `*[_type == "comprehensionBlock" && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}` : `*[_type == "comprehensionBlock" && unit == ${activeUnit} && level == "${activeLevel}"]{..., "blockAudioUrl": audioFile.asset->url}`;
+    // Search for the full "unitAssessment" box, matching Level, Sub-Level (Path), and Unit
+    const query = runAsLevelExam 
+      ? `*[_type == "unitAssessment" && level == "${activeLevel}" && subLevel == "${activeSubLevel}"]{ title, questions[]{..., "questionAudioUrl": audioSnippet.asset->url} }` 
+      : `*[_type == "unitAssessment" && level == "${activeLevel}" && subLevel == "${activeSubLevel}" && unit == ${activeUnit}]{ title, questions[]{..., "questionAudioUrl": audioSnippet.asset->url} }`;
     
-    const [singleData, blockData] = await Promise.all([client.fetch(singleQuery), client.fetch(blockQuery)]);
-    let allItems = [...singleData, ...blockData].sort(() => 0.5 - Math.random()).slice(0, 15);
+    const assessments = await client.fetch(query);
+    
+    // If the box doesn't exist or is empty, show the "No Questions Yet" error
+    if (!assessments || assessments.length === 0) {
+      setShowNoQuizModal(true);
+      return; 
+    }
+    
+    // Open all matching boxes, flatten into one massive array of questions, and shuffle them
+    const allQuestionsFromAllBoxes = assessments.flatMap((assessment: any) => assessment.questions || []);
+    
+    // Final Exam = 30 questions. Unit Exam = 15 questions.
+    const questionLimit = runAsLevelExam ? 30 : 15;
+    let allItems = [...allQuestionsFromAllBoxes].sort(() => 0.5 - Math.random()).slice(0, questionLimit);
     
     if (allItems.length === 0) {
       setShowNoQuizModal(true);
       return; 
     }
+    
     setQuizItems(allItems); 
     setIsLevelExam(runAsLevelExam); 
     setIsQuizMode(true);
@@ -412,6 +432,10 @@ export default function App() {
           .mobile-nav-container button {
             flex-shrink: 0 !important;
           }
+
+          /* --- RESPONSIVE FIX FOR FINAL EXAM BUTTON --- */
+          .final-exam-wrapper { justify-content: flex-start !important; margin-top: 10px !important; }
+          .final-exam-btn { max-width: 100% !important; justify-content: flex-start !important; }
         }
       `}</style>
 
@@ -790,15 +814,63 @@ export default function App() {
 
                   {activeTab === 'English Corner' && activeSubLevel && !activeUnit && (
                     <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', flexWrap: 'wrap', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', flexWrap: 'wrap', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
                         <div>
                           <BackButton onClick={() => setActiveSubLevel(null)} text="Back to Paths" />
                           <h2 style={{ margin: '16px 0 4px 0', color: '#0F172A', fontWeight: '600', fontSize: '2.5rem' }}>{activeSubLevel} Curriculum</h2>
                           <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{activeLevel}</span>
                         </div>
-                        <button onClick={() => startQuiz(true)} style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #EEF2FF', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.05)', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', marginTop: '20px' }}>
-                          <IconStar /> Level Placement Test
-                        </button>
+                        
+                        {/* --- THE UPGRADED FINAL EXAM COMPONENT --- */}
+                        {(() => {
+                          const currentPathAssessments = publishedAssessments.filter(a => a.level === activeLevel && a.subLevel === activeSubLevel);
+                          const uniqueUnitsPublished = new Set(currentPathAssessments.map(a => a.unit)).size;
+                          const isFinalExamUnlocked = uniqueUnitsPublished >= 12;
+
+                          return (
+                            <div className="final-exam-wrapper" style={{ display: 'flex', justifyContent: 'flex-end', flexGrow: 1, minWidth: '280px' }}>
+                              <button 
+                                onClick={() => startQuiz(true)} 
+                                disabled={!isFinalExamUnlocked}
+                                className="soft-card final-exam-btn"
+                                style={{ 
+                                  background: '#ffffff', 
+                                  border: isFinalExamUnlocked ? '2px solid #EEF2FF' : '1px solid #E2E8F0', 
+                                  padding: '16px 24px', 
+                                  borderRadius: '20px', 
+                                  cursor: isFinalExamUnlocked ? 'pointer' : 'not-allowed', 
+                                  boxShadow: isFinalExamUnlocked ? '0 10px 20px rgba(79, 70, 229, 0.1)' : '0 2px 5px rgba(15, 23, 42, 0.02)', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '16px', 
+                                  transition: 'all 0.2s',
+                                  opacity: isFinalExamUnlocked ? 1 : 0.8,
+                                  maxWidth: '350px',
+                                  width: '100%'
+                                }}
+                              >
+                                <div style={{ background: isFinalExamUnlocked ? '#EEF2FF' : '#F1F5F9', color: isFinalExamUnlocked ? '#4F46E5' : '#94A3B8', padding: '14px', borderRadius: '14px', display: 'flex' }}>
+                                  {isFinalExamUnlocked ? <IconStar /> : <IconLock />}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+                                  <span style={{ fontWeight: '700', fontSize: '1.25rem', color: isFinalExamUnlocked ? '#4F46E5' : '#475569', lineHeight: '1.2' }}>
+                                    Final Exam
+                                  </span>
+                                  {!isFinalExamUnlocked ? (
+                                    <span style={{ color: '#94A3B8', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                                      Locked • {uniqueUnitsPublished}/12 Units
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#10B981', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                                      Ready to Start
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        })()}
+
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
                         {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => {

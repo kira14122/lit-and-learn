@@ -86,6 +86,24 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
     setTimeout(() => { rightColumnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
   }, []);
 
+  // NEW: Restart Lesson Handler
+  const handleRestart = useCallback(() => {
+    // Clear cache
+    localStorage.removeItem(`ll_showReading_${lessonId}`);
+    localStorage.removeItem(`ll_readFin_${lessonId}`);
+    localStorage.removeItem(`ll_gramUnl_${lessonId}`);
+    localStorage.removeItem(`ll_rTab_${lessonId}`);
+    
+    // Reset state
+    setShowReading(!warmUpBlock);
+    setIsReadingFinished(false);
+    setIsGrammarUnlocked(false);
+    setActiveRightTab('activities');
+    
+    // Scroll to top
+    document.getElementById('interactive-lesson-container')?.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+  }, [lessonId, warmUpBlock]);
+
   if (!lessonData) return <div style={{ padding: '50px', textAlign: 'center' }}>No lesson data found.</div>;
 
   // Helper to render the specific blocks
@@ -153,7 +171,7 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
   return (
     <div id="interactive-lesson-container" style={{ backgroundColor: '#F3F6F8', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
       
-      {/* Header (Unchanged) */}
+      {/* Header (UPDATED WITH RESTART BUTTON) */}
       <div className="lesson-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 40px', backgroundColor: '#ffffff', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 1000 }}>
         <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
           Lit <span style={{ color: '#4F46E5' }}>&</span> Learn
@@ -161,9 +179,15 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
         <div style={{ fontSize: '1.1rem', color: '#64748B', fontWeight: '500', display: 'none' }} className="desktop-only-title">
           {lessonData.title}
         </div>
-        <button onClick={onClose} style={{ padding: '10px 24px', backgroundColor: '#F1F5F9', color: '#0F172A', border: 'none', borderRadius: '999px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}>
-          ✕ Close
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={handleRestart} style={{ padding: '10px 20px', backgroundColor: '#FEF2F2', color: '#EF4444', border: 'none', borderRadius: '999px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Restart
+          </button>
+          <button onClick={onClose} style={{ padding: '10px 24px', backgroundColor: '#F1F5F9', color: '#0F172A', border: 'none', borderRadius: '999px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}>
+            ✕ Close
+          </button>
+        </div>
       </div>
 
       <div className="lesson-wrapper" style={{ maxWidth: '1600px', margin: '0 auto', padding: '40px 20px 120px 20px' }}>
@@ -198,7 +222,7 @@ export function InteractiveLesson({ lessonData, onClose, savedWords, toggleSaveW
               )}
             </div>
 
-            {/* Activities Pane - CONDITIONAL RENDER INSTEAD OF DISPLAY:NONE */}
+            {/* Activities Pane */}
             {isReadingFinished && (
               <div ref={activitiesRef} style={{ scrollMarginTop: '100px' }}>
                 

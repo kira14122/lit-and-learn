@@ -1,7 +1,6 @@
 import review from './review'
 import resource from './resource'
 import dictionaryWord from './dictionaryWord'
-import quizQuestion from './quizQuestion'
 import comprehensionBlock from './comprehensionBlock'
 import interactiveLesson from './interactiveLesson'
 import warmUpBlock from './warmUpBlock'
@@ -12,12 +11,12 @@ import grammarBlock from './grammarBlock'
 import pronunciationBlock from './pronunciationBlock'
 import grammarPracticeBlock from './grammarPracticeBlock'
 import unitMetadata from './unitMetadata'
+import unitAssessment from './unitAssessment'
 
 export const schemaTypes = [
   review,
   resource,
   dictionaryWord,
-  quizQuestion,
   comprehensionBlock,
   interactiveLesson,
   warmUpBlock,
@@ -28,4 +27,5 @@ export const schemaTypes = [
   pronunciationBlock,
   grammarPracticeBlock,
   unitMetadata,
+  unitAssessment,
 ]
