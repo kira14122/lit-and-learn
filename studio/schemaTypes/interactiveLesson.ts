@@ -8,14 +8,20 @@ export default {
       title: 'Lesson Title',
       type: 'string',
       description: 'e.g., "The Extreme Reality of Mount Everest"',
-      validation: (Rule) => Rule.required(),
+      validation: (Rule: any) => Rule.required(),
+    },
+    {
+      name: 'grammarFocus',
+      type: 'string',
+      title: 'Grammar Focus',
+      description: 'e.g., Stative Verbs, Present Perfect, Relative Clauses. (Keep it short!)'
     },
     {
       name: 'lessonOrder',
       title: 'Module Number (Order)',
       type: 'number',
       description: 'The order this lesson appears in the syllabus (e.g., 1, 2, 3)',
-      validation: (Rule) => Rule.required(),
+      validation: (Rule: any) => Rule.required(),
     },
     {
       name: 'level',
@@ -28,21 +34,21 @@ export default {
           { title: 'Advanced', value: 'Advanced' }
         ]
       },
-      validation: (Rule) => Rule.required(),
+      validation: (Rule: any) => Rule.required(),
     },
     {
       name: 'subLevel',
       title: 'Sub-Level Curriculum',
       type: 'string',
       description: 'e.g., "Level 7", "Level 8", "Business English"',
-      validation: (Rule) => Rule.required(),
+      validation: (Rule: any) => Rule.required(),
     },
     {
       name: 'unit',
       title: 'Unit Number',
       type: 'number',
       description: 'Which unit does this belong to? (e.g., 1)',
-      validation: (Rule) => Rule.required(),
+      validation: (Rule: any) => Rule.required(),
     },
     {
       name: 'lessonBlocks',
@@ -68,7 +74,7 @@ export default {
       subLevel: 'subLevel',
       module: 'lessonOrder'
     },
-    prepare(selection) {
+    prepare(selection: any) {
       const { title, unit, subLevel, module } = selection;
       return {
         title: title || 'Untitled Lesson',

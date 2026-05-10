@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 interface VocabVaultProps {
   savedWords: any[];
   toggleSaveWord: (word: string, info: any) => void;
+  dictionary?: Record<string, any>;
 }
 
-export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWord }) => {
+export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWord, dictionary = {} }) => {
   const [isStudyMode, setIsStudyMode] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -331,6 +332,10 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
   // --- THE FLASHCARD UI ---
   if (isStudyMode) {
     const currentWord = savedWords[currentIndex];
+    
+    // THE FIX: Cross-reference the live Sanity dictionary!
+    const liveDictionaryMatch = dictionary[currentWord.word.toLowerCase()];
+    const displayExample = currentWord.example || (liveDictionaryMatch ? liveDictionaryMatch.example : null);
 
     const handleNext = () => {
       setIsFlipped(false);
@@ -399,9 +404,13 @@ export const VocabVault: React.FC<VocabVaultProps> = ({ savedWords, toggleSaveWo
                 {currentWord.definition}
               </h3>
               
-              {currentWord.example && (
+              {displayExample ? (
                 <div style={{ width: '100%', padding: '24px', backgroundColor: '#F8FAFC', borderRadius: '24px', fontStyle: 'italic', color: '#475569', fontSize: '1.3rem', textAlign: 'center', borderLeft: '4px solid #4F46E5' }}>
-                  "{currentWord.example}"
+                  "{displayExample}"
+                </div>
+              ) : (
+                <div style={{ width: '100%', padding: '16px', backgroundColor: '#F8FAFC', borderRadius: '16px', color: '#94A3B8', fontSize: '1rem', textAlign: 'center', border: '1px dashed #E2E8F0' }}>
+                  No example sentence available for this word.
                 </div>
               )}
             </>
