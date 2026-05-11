@@ -11,6 +11,7 @@ const IconUsers = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="n
 const IconSend = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>);
 const IconReply = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>);
 const IconChart = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>);
+const IconEdit = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>);
 
 // --- MAIN DASHBOARD COMPONENT ---
 export const TeacherDashboard: React.FC = () => {
@@ -36,6 +37,12 @@ export const TeacherDashboard: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
 
+  // New Compose States
+  const [isComposing, setIsComposing] = useState(false);
+  const [composeRecipient, setComposeRecipient] = useState('');
+  const [composeText, setComposeText] = useState('');
+  const [isSendingCompose, setIsSendingCompose] = useState(false);
+
   // --- GRADING & PROGRESS STATE ---
   const [students, setStudents] = useState<any[]>([]);
   const [allGrades, setAllGrades] = useState<any[]>([]);
@@ -45,7 +52,7 @@ export const TeacherDashboard: React.FC = () => {
   const [studentHistory, setStudentHistory] = useState<any[]>([]);
   const [assessmentName, setAssessmentName] = useState('Midterm Results');
   const [scoreText, setScoreText] = useState('Speaking: \nWriting: \nGrammar: \nListening: \nVocabulary: ');
-  const [teacherNotes, setTeacherNotes] = useState(''); // Hidden Diagnostic Notes
+  const [teacherNotes, setTeacherNotes] = useState(''); 
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -153,7 +160,6 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
-  // --- UPDATED SEND REPLY LOGIC ---
   const handleSendReply = async () => {
     if (!replyText.trim() || !selectedThreadEmail) return;
     const activeThread = threads.find(t => t.email === selectedThreadEmail);
@@ -194,6 +200,54 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
+  // --- NEW COMPOSE FUNCTION ---
+  const handleSendCompose = async () => {
+    if (!composeRecipient || !composeText.trim()) return;
+
+    // Find the selected student to grab their name and ID
+    const student = students.find(s => s.email === composeRecipient);
+    const studentName = student ? student.full_name : 'Student';
+    const studentId = student ? student.id : null;
+
+    setIsSendingCompose(true);
+    try {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      
+      // 1. Send the email
+      const { error: emailError } = await supabase.functions.invoke('send-email', {
+        body: {
+          toEmail: composeRecipient,
+          studentName: studentName,
+          messageBody: composeText
+        }
+      });
+      if (emailError) throw emailError;
+      
+      // 2. Save to database so it creates a thread
+      const { error: dbError } = await supabase.from('contact_messages').insert([{
+        name: 'Dr. Chouit (Sent)', 
+        email: composeRecipient,  
+        message: composeText,
+        user_id: studentId 
+      }]);
+      
+      if (dbError) throw dbError;
+
+      showToast(`Message securely sent to ${studentName}!`, 'success');
+      setComposeText('');
+      setComposeRecipient('');
+      setIsComposing(false); // Close compose window
+      fetchMessages(); // Refresh to show new thread
+
+    } catch (error) {
+      console.error("Error sending composed email:", error);
+      showToast('Failed to send message. Check console for details.', 'error');
+    } finally {
+      setIsSendingCompose(false);
+    }
+  };
+
   // --- GENERAL STUDENT FUNCTIONS ---
   const fetchStudents = async () => {
     const token = await getToken({ template: 'supabase' });
@@ -220,7 +274,6 @@ export const TeacherDashboard: React.FC = () => {
   const handleGenerateFeedback = async () => {
     if (!selectedStudent || !scoreText.trim()) return;
     setIsGenerating(true);
-    // Passing the teacherNotes to the AI function
     const aiDraft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, scoreText, teacherNotes);
     setFeedback(aiDraft);
     setIsGenerating(false);
@@ -372,12 +425,22 @@ export const TeacherDashboard: React.FC = () => {
               <h2 style={{ margin: '0 0 4px 0', fontSize: '2rem', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>Admin Inbox</h2>
               <p style={{ color: '#64748B', fontSize: '1.05rem', margin: 0 }}>{threads.length} Conversation{threads.length !== 1 ? 's' : ''}</p>
             </div>
-            <button 
-              onClick={fetchMessages}
-              style={{ background: '#F8FAFC', border: '2px solid #E2E8F0', color: '#475569', padding: '10px 16px', borderRadius: '12px', fontWeight: '600', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
-            >
-              <IconRefresh /> Refresh
-            </button>
+            
+            {/* UPDATED HEADER CONTROLS */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => { setIsComposing(true); setSelectedThreadEmail(null); }}
+                style={{ background: '#4F46E5', border: 'none', color: '#ffffff', padding: '10px 20px', borderRadius: '12px', fontWeight: '600', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.2)' }}
+              >
+                <IconEdit /> Compose
+              </button>
+              <button 
+                onClick={fetchMessages}
+                style={{ background: '#F8FAFC', border: '2px solid #E2E8F0', color: '#475569', padding: '10px 16px', borderRadius: '12px', fontWeight: '600', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+              >
+                <IconRefresh /> Refresh
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', alignItems: 'flex-start' }}>
@@ -388,7 +451,7 @@ export const TeacherDashboard: React.FC = () => {
                 <div style={{ textAlign: 'center', padding: '40px', color: '#94A3B8', background: '#F8FAFC', borderRadius: '16px', border: '2px dashed #E2E8F0' }}>Inbox is empty</div>
               ) : (
                 threads.map((thread) => {
-                  const isSelected = selectedThreadEmail === thread.email;
+                  const isSelected = selectedThreadEmail === thread.email && !isComposing;
                   const latestMsg = thread.messages[thread.messages.length - 1];
                   const snippet = latestMsg.message.length > 60 ? latestMsg.message.substring(0, 60) + '...' : latestMsg.message;
                   const formattedTime = new Date(thread.latestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -396,7 +459,7 @@ export const TeacherDashboard: React.FC = () => {
                   return (
                     <div 
                       key={thread.email} 
-                      onClick={() => setSelectedThreadEmail(thread.email)}
+                      onClick={() => { setSelectedThreadEmail(thread.email); setIsComposing(false); }}
                       style={{ background: isSelected ? '#EEF2FF' : '#ffffff', border: `2px solid ${isSelected ? '#4F46E5' : '#E2E8F0'}`, borderRadius: '16px', padding: '16px', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', gap: '16px' }}
                     >
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: isSelected ? '#4F46E5' : '#F1F5F9', color: isSelected ? '#ffffff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: '700', flexShrink: 0 }}>
@@ -421,7 +484,58 @@ export const TeacherDashboard: React.FC = () => {
             </div>
 
             <div style={{ flex: '2 1 500px' }}>
-              {activeThread ? (
+              
+              {/* --- NEW COMPOSE VIEW --- */}
+              {isComposing ? (
+                <div style={{ background: '#F8FAFC', borderRadius: '24px', padding: '32px', border: '1px solid #E2E8F0', height: '100%', minHeight: '500px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ borderBottom: '2px solid #E2E8F0', paddingBottom: '20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.8rem', color: '#0F172A', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <IconEdit /> New Message
+                    </h3>
+                    <button onClick={() => setIsComposing(false)} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: '1.2rem', fontWeight: '700' }}>✕</button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flexGrow: 1 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', color: '#475569' }}>To: Student Name</label>
+                      <select 
+                        value={composeRecipient} 
+                        onChange={(e) => setComposeRecipient(e.target.value)}
+                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', cursor: 'pointer' }}
+                      >
+                        <option value="" disabled>-- Select a student --</option>
+                        {students.map(s => (
+                          <option key={s.id} value={s.email}>{s.full_name} ({s.email})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', color: '#475569' }}>Message</label>
+                      <textarea 
+                        value={composeText} 
+                        onChange={(e) => setComposeText(e.target.value)} 
+                        placeholder="Draft your message here..." 
+                        style={{ width: '100%', flexGrow: 1, minHeight: '200px', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical' }}
+                        onFocus={(e) => e.target.style.borderColor = '#4F46E5'}
+                        onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button 
+                        onClick={handleSendCompose}
+                        disabled={isSendingCompose || !composeRecipient || !composeText.trim()}
+                        style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '14px 32px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.05rem', cursor: (isSendingCompose || !composeRecipient || !composeText.trim()) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: (!composeRecipient || !composeText.trim()) ? 0.5 : 1, transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(79, 70, 229, 0.2)' }}
+                      >
+                        {isSendingCompose ? 'Sending...' : <><IconSend /> Send Message</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+              ) : activeThread ? (
+                
                 <div style={{ background: '#F8FAFC', borderRadius: '24px', padding: '32px', border: '1px solid #E2E8F0', maxHeight: '800px', display: 'flex', flexDirection: 'column' }}>
                   
                   <div style={{ borderBottom: '2px solid #E2E8F0', paddingBottom: '20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -501,7 +615,7 @@ export const TeacherDashboard: React.FC = () => {
                 <div style={{ background: '#F8FAFC', borderRadius: '24px', border: '2px dashed #E2E8F0', height: '100%', minHeight: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>
                   <IconMail />
                   <h3 style={{ margin: '16px 0 8px', fontSize: '1.5rem', color: '#475569' }}>Select a conversation</h3>
-                  <p style={{ margin: 0, fontSize: '1.1rem' }}>Click on any thread in the list to view the history and reply.</p>
+                  <p style={{ margin: 0, fontSize: '1.1rem', color: '#64748B' }}>Click on a thread to view history, or compose a new message.</p>
                 </div>
               )}
             </div>
@@ -576,7 +690,7 @@ export const TeacherDashboard: React.FC = () => {
                       <textarea value={scoreText} onChange={(e) => setScoreText(e.target.value)} rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#4F46E5', fontSize: '1.05rem', fontWeight: '700', outline: 'none', resize: 'none', lineHeight: '1.5' }} />
                     </div>
                     
-                    {/* FIXED: AI Diagnostic Notes with solid white background */}
+                    {/* AI Diagnostic Notes */}
                     <div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>
                         <IconChart /> Diagnostic Notes (Hidden from student)
