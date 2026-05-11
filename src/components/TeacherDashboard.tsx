@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';
@@ -12,10 +12,12 @@ const IconSend = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="no
 const IconReply = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>);
 const IconChart = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>);
 const IconEdit = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>);
+const IconPaperclip = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>);
 
 // --- MAIN DASHBOARD COMPONENT ---
 export const TeacherDashboard: React.FC = () => {
   const { getToken } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Dashboard Navigation State
   const [adminTab, setAdminTab] = useState<'inbox' | 'grading' | 'progress'>('inbox');
@@ -37,10 +39,12 @@ export const TeacherDashboard: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
 
-  // New Compose States
+  // Compose States
   const [isComposing, setIsComposing] = useState(false);
   const [composeRecipient, setComposeRecipient] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
   const [composeText, setComposeText] = useState('');
+  const [composeAttachment, setComposeAttachment] = useState<{filename: string, content: string} | null>(null);
   const [isSendingCompose, setIsSendingCompose] = useState(false);
 
   // --- GRADING & PROGRESS STATE ---
@@ -173,8 +177,9 @@ export const TeacherDashboard: React.FC = () => {
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: activeThread.email,
-          studentName: activeThread.name || 'Student',
-          messageBody: replyText
+          studentName: '', // Left blank so you control the greeting
+          messageBody: replyText,
+          subject: 'Re: Message from Lit & Learn'
         }
       });
       if (emailError) throw emailError;
@@ -200,11 +205,38 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
-  // --- NEW COMPOSE FUNCTION ---
+  // --- COMPOSE FUNCTION & ATTACHMENT HANDLER ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Strict 4MB limit to prevent Edge Function JSON payload rejection
+    if (file.size > 4 * 1024 * 1024) {
+      showToast("Attachment is too large. Limit is 4MB.", "error");
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = (reader.result as string).split(',')[1];
+      setComposeAttachment({
+        filename: file.name,
+        content: base64String
+      });
+      showToast(`Attached: ${file.name}`, 'success');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = () => {
+    setComposeAttachment(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSendCompose = async () => {
     if (!composeRecipient || !composeText.trim()) return;
 
-    // Find the selected student to grab their name and ID
     const student = students.find(s => s.email === composeRecipient);
     const studentName = student ? student.full_name : 'Student';
     const studentId = student ? student.id : null;
@@ -214,31 +246,41 @@ export const TeacherDashboard: React.FC = () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
       
-      // 1. Send the email
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: composeRecipient,
-          studentName: studentName,
-          messageBody: composeText
+          studentName: '', // Left blank so you control the greeting manually
+          subject: composeSubject || 'New Message from Lit & Learn',
+          messageBody: composeText,
+          attachment: composeAttachment
         }
       });
       if (emailError) throw emailError;
       
-      // 2. Save to database so it creates a thread
+      // Add a note in the message history if an attachment was sent
+      let dbMessageText = composeText;
+      if (composeAttachment) {
+        dbMessageText += `\n\n[Attachment sent: ${composeAttachment.filename}]`;
+      }
+
       const { error: dbError } = await supabase.from('contact_messages').insert([{
         name: 'Dr. Chouit (Sent)', 
         email: composeRecipient,  
-        message: composeText,
+        message: dbMessageText,
         user_id: studentId 
       }]);
       
       if (dbError) throw dbError;
 
-      showToast(`Message securely sent to ${studentName}!`, 'success');
+      showToast(`Message securely sent!`, 'success');
+      
+      // Reset Compose Form
       setComposeText('');
       setComposeRecipient('');
-      setIsComposing(false); // Close compose window
-      fetchMessages(); // Refresh to show new thread
+      setComposeSubject('');
+      removeAttachment();
+      setIsComposing(false); 
+      fetchMessages(); 
 
     } catch (error) {
       console.error("Error sending composed email:", error);
@@ -308,7 +350,8 @@ export const TeacherDashboard: React.FC = () => {
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: selectedStudent.email,
-          studentName: selectedStudent.full_name,
+          studentName: selectedStudent.full_name, // Keeps the nice greeting for automated grades
+          subject: `Official Assessment Grade: ${assessmentName}`,
           messageBody: automatedEmailBody
         }
       });
@@ -426,7 +469,6 @@ export const TeacherDashboard: React.FC = () => {
               <p style={{ color: '#64748B', fontSize: '1.05rem', margin: 0 }}>{threads.length} Conversation{threads.length !== 1 ? 's' : ''}</p>
             </div>
             
-            {/* UPDATED HEADER CONTROLS */}
             <div style={{ display: 'flex', gap: '12px' }}>
               <button 
                 onClick={() => { setIsComposing(true); setSelectedThreadEmail(null); }}
@@ -485,7 +527,7 @@ export const TeacherDashboard: React.FC = () => {
 
             <div style={{ flex: '2 1 500px' }}>
               
-              {/* --- NEW COMPOSE VIEW --- */}
+              {/* --- COMPOSE VIEW --- */}
               {isComposing ? (
                 <div style={{ background: '#F8FAFC', borderRadius: '24px', padding: '32px', border: '1px solid #E2E8F0', height: '100%', minHeight: '500px', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ borderBottom: '2px solid #E2E8F0', paddingBottom: '20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -497,17 +539,35 @@ export const TeacherDashboard: React.FC = () => {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flexGrow: 1 }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', color: '#475569' }}>To: Student Name</label>
-                      <select 
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', color: '#475569' }}>To: Email Address</label>
+                      <input 
+                        type="email"
+                        list="enrolled-students"
                         value={composeRecipient} 
                         onChange={(e) => setComposeRecipient(e.target.value)}
-                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', cursor: 'pointer' }}
-                      >
-                        <option value="" disabled>-- Select a student --</option>
+                        placeholder="Select a student or type any email address..."
+                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none' }}
+                        onFocus={(e) => e.target.style.borderColor = '#4F46E5'}
+                        onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                      />
+                      <datalist id="enrolled-students">
                         {students.map(s => (
-                          <option key={s.id} value={s.email}>{s.full_name} ({s.email})</option>
+                          <option key={s.id} value={s.email}>{s.full_name}</option>
                         ))}
-                      </select>
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', color: '#475569' }}>Subject</label>
+                      <input 
+                        type="text"
+                        value={composeSubject} 
+                        onChange={(e) => setComposeSubject(e.target.value)}
+                        placeholder="Enter email subject..."
+                        style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none' }}
+                        onFocus={(e) => e.target.style.borderColor = '#4F46E5'}
+                        onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                      />
                     </div>
 
                     <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
@@ -516,13 +576,37 @@ export const TeacherDashboard: React.FC = () => {
                         value={composeText} 
                         onChange={(e) => setComposeText(e.target.value)} 
                         placeholder="Draft your message here..." 
-                        style={{ width: '100%', flexGrow: 1, minHeight: '200px', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical' }}
+                        style={{ width: '100%', flexGrow: 1, minHeight: '150px', padding: '16px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical' }}
                         onFocus={(e) => e.target.style.borderColor = '#4F46E5'}
                         onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
                       />
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                      
+                      {/* ATTACHMENT CONTROLS */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <input 
+                          type="file" 
+                          ref={fileInputRef}
+                          onChange={handleFileChange} 
+                          style={{ display: 'none' }} 
+                        />
+                        <button 
+                          onClick={() => fileInputRef.current?.click()}
+                          style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#475569', padding: '10px 16px', borderRadius: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                        >
+                          <IconPaperclip /> Attach Document
+                        </button>
+                        
+                        {composeAttachment && (
+                          <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 16px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{composeAttachment.filename}</span>
+                            <button onClick={removeAttachment} style={{ background: 'transparent', border: 'none', color: '#4F46E5', cursor: 'pointer', fontWeight: '700' }}>✕</button>
+                          </div>
+                        )}
+                      </div>
+
                       <button 
                         onClick={handleSendCompose}
                         disabled={isSendingCompose || !composeRecipient || !composeText.trim()}
