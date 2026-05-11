@@ -38,12 +38,14 @@ export const TeacherDashboard: React.FC = () => {
 
   // --- GRADING & PROGRESS STATE ---
   const [students, setStudents] = useState<any[]>([]);
+  const [allGrades, setAllGrades] = useState<any[]>([]);
   
   // Grading Portal Specific
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentHistory, setStudentHistory] = useState<any[]>([]);
   const [assessmentName, setAssessmentName] = useState('Midterm Results');
   const [scoreText, setScoreText] = useState('Speaking: \nWriting: \nGrammar: \nListening: \nVocabulary: ');
+  const [teacherNotes, setTeacherNotes] = useState(''); // Hidden Diagnostic Notes
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -57,6 +59,7 @@ export const TeacherDashboard: React.FC = () => {
   useEffect(() => {
     fetchMessages();
     fetchStudents();
+    fetchAllGrades(); 
   }, []);
 
   // Fetch Grading History when Student is selected
@@ -150,6 +153,7 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
+  // --- UPDATED SEND REPLY LOGIC ---
   const handleSendReply = async () => {
     if (!replyText.trim() || !selectedThreadEmail) return;
     const activeThread = threads.find(t => t.email === selectedThreadEmail);
@@ -159,19 +163,31 @@ export const TeacherDashboard: React.FC = () => {
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
-      const { error } = await supabase.functions.invoke('send-email', {
+      
+      const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: activeThread.email,
           studentName: activeThread.name || 'Student',
           messageBody: replyText
         }
       });
-      if (error) throw error;
+      if (emailError) throw emailError;
       
+      const { error: dbError } = await supabase.from('contact_messages').insert([{
+        name: 'Dr. Chouit (Reply)', 
+        email: activeThread.email,  
+        message: replyText,
+        user_id: activeThread.user_id 
+      }]);
+      
+      if (dbError) throw dbError;
+
       showToast(`Reply sent successfully to ${activeThread.name}!`, 'success');
       setReplyText('');
+      fetchMessages();
+
     } catch (error) {
-      console.error("Error sending email:", error);
+      console.error("Error sending email or saving reply:", error);
       showToast('Failed to send reply. Check console for details.', 'error');
     } finally {
       setIsSendingReply(false);
@@ -187,6 +203,13 @@ export const TeacherDashboard: React.FC = () => {
   };
 
   // --- GRADING FUNCTIONS ---
+  const fetchAllGrades = async () => {
+    const token = await getToken({ template: 'supabase' });
+    const supabase = getSupabaseClient(token || '');
+    const { data } = await supabase.from('student_grades').select('*').order('created_at', { ascending: false });
+    if (data) setAllGrades(data);
+  };
+
   const fetchStudentHistory = async (studentId: string) => {
     const token = await getToken({ template: 'supabase' });
     const supabase = getSupabaseClient(token || '');
@@ -197,7 +220,8 @@ export const TeacherDashboard: React.FC = () => {
   const handleGenerateFeedback = async () => {
     if (!selectedStudent || !scoreText.trim()) return;
     setIsGenerating(true);
-    const aiDraft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, scoreText);
+    // Passing the teacherNotes to the AI function
+    const aiDraft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, scoreText, teacherNotes);
     setFeedback(aiDraft);
     setIsGenerating(false);
   };
@@ -217,7 +241,7 @@ export const TeacherDashboard: React.FC = () => {
       date_recorded: new Date().toISOString()
     };
 
-    const { error: dbError } = await supabase.from('student_grades').insert([newGrade]);
+    const { data: insertedGrade, error: dbError } = await supabase.from('student_grades').insert([newGrade]).select().single();
     
     if (dbError) {
       setIsSubmitting(false);
@@ -244,9 +268,15 @@ export const TeacherDashboard: React.FC = () => {
       showToast(`Grade saved, but the email failed to send.`, 'error');
     } finally {
       setIsSubmitting(false);
-      fetchStudentHistory(selectedStudent.id);
+      
+      if (insertedGrade) {
+        setAllGrades(prev => [insertedGrade, ...prev]);
+        setStudentHistory(prev => [insertedGrade, ...prev]);
+      }
+      
       setAssessmentName('Midterm Results');
       setScoreText('Speaking: \nWriting: \nGrammar: \nListening: \nVocabulary: ');
+      setTeacherNotes(''); 
       setFeedback('');
     }
   };
@@ -257,7 +287,6 @@ export const TeacherDashboard: React.FC = () => {
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
-      // Fetches all vocabulary words saved by this specific user
       const { data, error } = await supabase.from('vocab_vault').select('*').eq('user_id', studentId).order('created_at', { ascending: false });
       if (error) throw error;
       setStudentVocab(data || []);
@@ -326,7 +355,6 @@ export const TeacherDashboard: React.FC = () => {
             <IconUsers /> Grading Portal
           </button>
 
-          {/* STUDENT PROGRESS BUTTON */}
           <button 
             onClick={() => setAdminTab('progress')}
             style={{ background: adminTab === 'progress' ? '#10B981' : 'transparent', color: adminTab === 'progress' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -379,7 +407,7 @@ export const TeacherDashboard: React.FC = () => {
                           <h4 style={{ margin: 0, fontSize: '1.1rem', color: isSelected ? '#4F46E5' : '#0F172A', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {thread.name}
                             {thread.messages.length > 1 && (
-                              <span style={{ background: isSelected ? '#C7D2FE' : '#E2E8F0', color: isSelected ? '#3730A3' : '#475569', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '99px' }}>{thread.messages.length}</span>
+                              <span style={{ background: isSelected ? '#C7D2FE' : '#E2E8F0', color: isSelected ? '#3730A3' : '#475569', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '9999px' }}>{thread.messages.length}</span>
                             )}
                           </h4>
                           <span style={{ fontSize: '0.8rem', color: isSelected ? '#4F46E5' : '#94A3B8', fontWeight: '600' }}>{formattedTime}</span>
@@ -485,6 +513,7 @@ export const TeacherDashboard: React.FC = () => {
       {adminTab === 'grading' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px', alignItems: 'start' }}>
           
+          {/* LEFT COLUMN: ENROLLED STUDENTS LIST */}
           <div className="soft-card" style={{ background: '#ffffff', borderRadius: '32px', padding: '32px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
             <h3 style={{ margin: '0 0 24px 0', color: '#0F172A', fontSize: '1.4rem' }}>Enrolled Students ({students.length})</h3>
             
@@ -494,59 +523,114 @@ export const TeacherDashboard: React.FC = () => {
                </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {students.map(student => (
-                  <div 
-                    key={student.id} 
-                    onClick={() => setSelectedStudent(student)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: selectedStudent?.id === student.id ? '#EEF2FF' : '#F8FAFC', border: selectedStudent?.id === student.id ? '2px solid #4F46E5' : '2px solid transparent', borderRadius: '16px', cursor: 'pointer', transition: 'all 0.2s' }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: '700', color: selectedStudent?.id === student.id ? '#4F46E5' : '#0F172A', fontSize: '1.1rem', marginBottom: '4px' }}>
-                        {student.full_name}
+                {students.map(student => {
+                  const pastGradesCount = allGrades.filter(g => g.user_id === student.id).length;
+                  const isSelected = selectedStudent?.id === student.id;
+                  
+                  return (
+                    <div 
+                      key={student.id} 
+                      onClick={() => setSelectedStudent(student)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: isSelected ? '#EEF2FF' : '#F8FAFC', border: isSelected ? '2px solid #4F46E5' : '2px solid transparent', borderRadius: '16px', cursor: 'pointer', transition: 'all 0.2s' }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '700', color: isSelected ? '#4F46E5' : '#0F172A', fontSize: '1.1rem', marginBottom: '4px' }}>
+                          {student.full_name}
+                        </div>
+                        <div style={{ color: '#64748B', fontSize: '0.9rem' }}>{student.email}</div>
                       </div>
-                      <div style={{ color: '#64748B', fontSize: '0.9rem' }}>{student.email}</div>
+                      
+                      {pastGradesCount > 0 && (
+                        <div style={{ background: '#ECFDF5', color: '#10B981', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginLeft: 'auto' }}>
+                          {pastGradesCount} Record{pastGradesCount !== 1 ? 's' : ''}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
 
-          <div style={{ position: 'sticky', top: '40px' }}>
+          {/* RIGHT COLUMN: GRADING FORM & PREVIOUS RECORDS */}
+          <div style={{ position: 'sticky', top: '40px', maxHeight: '85vh', overflowY: 'auto', paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {selectedStudent ? (
-              <div className="soft-card" style={{ background: '#4F46E5', borderRadius: '32px', padding: '40px', color: '#ffffff', boxShadow: '0 20px 40px rgba(79, 70, 229, 0.3)', maxHeight: '85vh', overflowY: 'auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
-                  <div>
-                    <div style={{ textTransform: 'uppercase', letterSpacing: '1.5px', fontSize: '0.85rem', fontWeight: '700', opacity: 0.8, marginBottom: '8px' }}>Drafting Official Grade</div>
-                    <h3 style={{ margin: 0, fontSize: '2rem', lineHeight: '1.1' }}>{selectedStudent.full_name}</h3>
-                  </div>
-                  <button onClick={() => setSelectedStudent(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Assessment Name</label>
-                    <input type="text" value={assessmentName} onChange={(e) => setAssessmentName(e.target.value)} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', fontWeight: '500', outline: 'none' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Scores (One per line)</label>
-                    <textarea value={scoreText} onChange={(e) => setScoreText(e.target.value)} rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#4F46E5', fontSize: '1.05rem', fontWeight: '700', outline: 'none', resize: 'none', lineHeight: '1.5' }} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <label style={{ fontSize: '0.95rem', fontWeight: '600', opacity: 0.9 }}>Teacher Feedback</label>
-                      <button onClick={handleGenerateFeedback} disabled={isGenerating} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: isGenerating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}>
-                        {isGenerating ? '✨ Analyzing...' : '✨ Draft with AI'}
-                      </button>
+              <>
+                {/* 1. DRAFTING FORM */}
+                <div className="soft-card" style={{ background: '#4F46E5', borderRadius: '32px', padding: '40px', color: '#ffffff', boxShadow: '0 20px 40px rgba(79, 70, 229, 0.3)', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
+                    <div>
+                      <div style={{ textTransform: 'uppercase', letterSpacing: '1.5px', fontSize: '0.85rem', fontWeight: '700', opacity: 0.8, marginBottom: '8px' }}>Drafting Official Grade</div>
+                      <h3 style={{ margin: 0, fontSize: '2rem', lineHeight: '1.1' }}>{selectedStudent.full_name}</h3>
                     </div>
-                    <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Leave a personalized note..." rows={4} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical', lineHeight: '1.5' }} />
+                    <button onClick={() => setSelectedStudent(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                   </div>
                   
-                  <button onClick={submitGrade} disabled={isSubmitting} style={{ width: '100%', background: '#10B981', color: '#ffffff', border: 'none', padding: '18px', borderRadius: '16px', fontWeight: '700', fontSize: '1.15rem', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '10px', boxShadow: '0 10px 20px rgba(0,0,0,0.1)', transition: 'all 0.2s' }}>
-                    {isSubmitting ? 'Submitting to Vault...' : 'Publish Official Grade'}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Assessment Name</label>
+                      <input type="text" value={assessmentName} onChange={(e) => setAssessmentName(e.target.value)} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', fontWeight: '500', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Scores (One per line)</label>
+                      <textarea value={scoreText} onChange={(e) => setScoreText(e.target.value)} rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#4F46E5', fontSize: '1.05rem', fontWeight: '700', outline: 'none', resize: 'none', lineHeight: '1.5' }} />
+                    </div>
+                    
+                    {/* FIXED: AI Diagnostic Notes with solid white background */}
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.95rem', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>
+                        <IconChart /> Diagnostic Notes (Hidden from student)
+                      </label>
+                      <textarea 
+                        value={teacherNotes} 
+                        onChange={(e) => setTeacherNotes(e.target.value)} 
+                        placeholder="e.g., struggled with present continuous and dynamic verbs..." 
+                        rows={2}
+                        style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical', lineHeight: '1.5' }} 
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label style={{ fontSize: '0.95rem', fontWeight: '600', opacity: 0.9 }}>Official Feedback</label>
+                        <button onClick={handleGenerateFeedback} disabled={isGenerating} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: isGenerating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}>
+                          {isGenerating ? '✨ Analyzing...' : '✨ Draft with AI'}
+                        </button>
+                      </div>
+                      <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Leave a personalized note..." rows={4} style={{ width: '100%', padding: '14px 16px', borderRadius: '12px', border: 'none', background: '#ffffff', color: '#0F172A', fontSize: '1.05rem', outline: 'none', resize: 'vertical', lineHeight: '1.5' }} />
+                    </div>
+                    
+                    <button onClick={submitGrade} disabled={isSubmitting} style={{ width: '100%', background: '#10B981', color: '#ffffff', border: 'none', padding: '18px', borderRadius: '16px', fontWeight: '700', fontSize: '1.15rem', cursor: isSubmitting ? 'wait' : 'pointer', marginTop: '10px', boxShadow: '0 10px 20px rgba(0,0,0,0.1)', transition: 'all 0.2s' }}>
+                      {isSubmitting ? 'Submitting to Vault...' : 'Publish Official Grade'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                {/* 2. PREVIOUS RECORDS TIMELINE */}
+                {studentHistory.length > 0 && (
+                  <div style={{ padding: '0 10px', flexShrink: 0 }}>
+                    <h4 style={{ color: '#0F172A', fontSize: '1.3rem', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <IconChart /> Previous Records
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {studentHistory.map(history => (
+                        <div key={history.id} style={{ background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', padding: '24px', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', alignItems: 'center' }}>
+                            <span style={{ fontWeight: '700', color: '#0F172A', fontSize: '1.1rem' }}>{history.assessment_name}</span>
+                            <span style={{ color: '#64748B', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{new Date(history.date_recorded).toLocaleDateString()}</span>
+                          </div>
+                          <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px dashed #CBD5E1', color: '#4F46E5', fontWeight: '700', fontSize: '0.95rem', marginBottom: '16px', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                            {history.score}
+                          </div>
+                          <p style={{ margin: 0, color: '#475569', fontSize: '1rem', fontStyle: 'italic', lineHeight: '1.6' }}>
+                            "{history.feedback}"
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="soft-card" style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '32px', padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <h3 style={{ margin: '0 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>

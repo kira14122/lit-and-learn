@@ -44,30 +44,31 @@ export async function generateExampleSentence(word: string, level: string = 'B2'
   }
 }
 
-export async function generateStudentFeedback(studentName: string, assessment: string, scores: string): Promise<string> {
+export async function generateStudentFeedback(studentName: string, assessment: string, scores: string, teacherNotes?: string): Promise<string> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error("🚨 Supabase keys are missing from .env file");
-    return "Great effort on this assessment! Keep practicing and reviewing your materials.";
+    return "Assessment received. Please review your scores and continue targeting your weakest areas for improvement.";
   }
 
   try {
     const promptText = `
-      You are an encouraging, professional university ESL professor. 
-      Write a short, personalized feedback paragraph (3 to 4 sentences) for your student named ${studentName}.
-      They just completed the assessment: "${assessment}".
+      You are an expert ESL instructor and academic with a PhD in English Linguistics. 
+      Write a brief, highly personalized 3-4 sentence official feedback note for your student, ${studentName}, regarding their recent "${assessment}".
       
-      Here are their raw scores:
+      Exact Score Breakdown:
       ${scores}
+
+      ${teacherNotes ? `Diagnostic Notes from Instructor: "${teacherNotes}"` : ''}
       
-      Instructions:
-      1. Speak directly to the student (e.g., "Great job, ${studentName}...").
-      2. Highlight their strongest score(s) to encourage them.
-      3. Identify their lowest score and offer a gentle, constructive suggestion on how to improve it next time.
-      4. Keep the tone warm, academic, and supportive.
-      5. Do not include any placeholder text, just the final paragraph.
+      STRICT RULES for your response:
+      1. NO FLUFF: Do not use generic platitudes ("Great effort", "Keep practicing").
+      2. THE PRAISE (Sentence 1): Explicitly state their highest score and praise that specific linguistic skill.
+      3. THE CRITIQUE (Sentence 2 & 3): Explicitly state their lowest score. ${teacherNotes ? 'Then, seamlessly weave the Diagnostic Notes into a constructive sentence explaining exactly what they need to study next.' : 'Provide one brief, academic suggestion on how to improve that specific weak area.'}
+      4. Keep the tone warm, academic, and highly professional.
+      5. Output ONLY the final paragraph. No intros, no outtros.
     `;
 
     const response = await fetch(`${supabaseUrl}/functions/v1/ask-gemini`, {
@@ -84,7 +85,6 @@ export async function generateStudentFeedback(studentName: string, assessment: s
     }
 
     const data = await response.json();
-    
     console.log(`Raw AI Feedback Data for ${studentName}:`, data);
     
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -97,7 +97,6 @@ export async function generateStudentFeedback(studentName: string, assessment: s
     
   } catch (error) {
     console.error("🚨 Error generating feedback with secure AI vault:", error);
-    // Fallback message just in case the AI fails or the network drops
-    return "Great effort on this assessment! Keep practicing and reviewing your materials.";
+    return "Assessment received. Please review your scores and continue targeting your weakest areas for improvement.";
   }
 }
