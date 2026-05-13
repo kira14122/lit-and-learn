@@ -13,6 +13,7 @@ const IconReply = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="n
 const IconChart = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>);
 const IconEdit = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>);
 const IconPaperclip = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>);
+const IconPlay = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>);
 
 // --- MAIN DASHBOARD COMPONENT ---
 export const TeacherDashboard: React.FC = () => {
@@ -20,7 +21,7 @@ export const TeacherDashboard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Dashboard Navigation State
-  const [adminTab, setAdminTab] = useState<'inbox' | 'grading' | 'progress'>('inbox');
+  const [adminTab, setAdminTab] = useState<'inbox' | 'grading' | 'progress' | 'arena'>('inbox');
 
   // --- GLOBAL TOAST NOTIFICATION STATE ---
   const [toastMessage, setToastMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
@@ -66,6 +67,12 @@ export const TeacherDashboard: React.FC = () => {
   const [studentVocab, setStudentVocab] = useState<any[]>([]);
   const [isFetchingVocab, setIsFetchingVocab] = useState(false);
 
+  // --- LIVE ARENA STATE ---
+  const [liveQuizTopic, setLiveQuizTopic] = useState('');
+  const [activeSession, setActiveSession] = useState<any | null>(null);
+  const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
+  const [isCreatingLobby, setIsCreatingLobby] = useState(false);
+
   // Load Data on Mount
   useEffect(() => {
     fetchMessages();
@@ -90,6 +97,55 @@ export const TeacherDashboard: React.FC = () => {
       setStudentVocab([]);
     }
   }, [selectedProgressStudent]);
+
+  // --- LIVE ARENA REALTIME SUBSCRIPTION (UPDATED) ---
+  useEffect(() => {
+    if (!activeSession) return;
+
+    let channel: any;
+
+    const setupRealtime = async () => {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      
+      const fetchLatestLeaderboard = async () => {
+        const { data, error } = await supabase
+          .from('live_participants')
+          .select('*')
+          .eq('session_id', activeSession.id)
+          .order('score', { ascending: false });
+        
+        if (error) console.error("Leaderboard Fetch Error:", error);
+        if (data) setLiveParticipants(data);
+      };
+
+      await fetchLatestLeaderboard();
+
+      channel = supabase
+        .channel(`arena_${activeSession.id}`) 
+        .on(
+          'postgres_changes', 
+          { 
+            event: '*', // <--- CRITICAL FIX: Listen to ALL events (INSERT and UPDATE)
+            schema: 'public', 
+            table: 'live_participants', 
+            filter: `session_id=eq.${activeSession.id}` 
+          }, 
+          (payload) => {
+            console.log("Leaderboard update detected!", payload);
+            fetchLatestLeaderboard(); 
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime();
+
+    return () => {
+      if (channel) channel.unsubscribe();
+    };
+  }, [activeSession, getToken]);
+
 
   // --- THREADING LOGIC ---
   const threads = useMemo(() => {
@@ -394,6 +450,68 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
+  // --- LIVE ARENA FUNCTIONS ---
+  const handleLaunchLobby = async () => {
+    if (!liveQuizTopic.trim()) return;
+    setIsCreatingLobby(true);
+    try {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      
+      // Generate a random 4 digit PIN
+      const pin = Math.floor(1000 + Math.random() * 9000).toString();
+
+      const { data, error } = await supabase.from('live_sessions').insert([{
+        pin_code: pin,
+        quiz_id: liveQuizTopic,
+        status: 'waiting'
+      }]).select().single();
+
+      if (error) throw error;
+
+      setActiveSession(data);
+      setLiveParticipants([]);
+      showToast('Lobby created successfully!', 'success');
+    } catch (error) {
+      console.error(error);
+      showToast('Failed to create lobby. PIN might be taken.', 'error');
+    } finally {
+      setIsCreatingLobby(false);
+    }
+  };
+
+  const handleStartGame = async () => {
+    if (!activeSession) return;
+    try {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      
+      const { data, error } = await supabase.from('live_sessions').update({ status: 'active' }).eq('id', activeSession.id).select().single();
+      if (error) throw error;
+      
+      setActiveSession(data);
+      showToast('Game Started!', 'success');
+    } catch (error) {
+      showToast('Failed to start game.', 'error');
+    }
+  };
+
+  const handleEndGame = async () => {
+    if (!activeSession) return;
+    try {
+      const token = await getToken({ template: 'supabase' });
+      const supabase = getSupabaseClient(token || '');
+      
+      await supabase.from('live_sessions').update({ status: 'finished' }).eq('id', activeSession.id);
+      setActiveSession(null);
+      setLiveParticipants([]);
+      setLiveQuizTopic('');
+      showToast('Session closed.', 'success');
+    } catch (error) {
+      showToast('Failed to close session.', 'error');
+    }
+  };
+
   const activeThread = threads.find(t => t.email === selectedThreadEmail);
 
   return (
@@ -457,8 +575,119 @@ export const TeacherDashboard: React.FC = () => {
           >
             <IconChart /> Student Progress
           </button>
+
+          <button 
+            onClick={() => setAdminTab('arena')} 
+            style={{ background: adminTab === 'arena' ? '#F59E0B' : 'transparent', color: adminTab === 'arena' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <IconPlay /> Live Arena
+          </button>
         </div>
       </div>
+
+      {/* --- TAB: LIVE ARENA --- */}
+      {adminTab === 'arena' && (
+        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
+          
+          {/* STATE 1: SETUP SCREEN */}
+          {!activeSession && (
+            <div style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center', padding: '40px 0' }}>
+              <div style={{ background: '#FEF3C7', color: '#D97706', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+                <IconPlay />
+              </div>
+              <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '16px', fontWeight: '700' }}>Host a Live Contest</h2>
+              <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '40px', lineHeight: '1.6' }}>Turn your Practice Hub quizzes into a live multiplayer game. Students scan the QR code to join instantly from their phones.</p>
+              
+              <div style={{ textAlign: 'left', background: '#F8FAFC', padding: '32px', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
+                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Enter Quiz Topic / ID</label>
+                <input 
+                  type="text" 
+                  value={liveQuizTopic}
+                  onChange={(e) => setLiveQuizTopic(e.target.value)}
+                  placeholder="e.g., Present Continuous vs Simple"
+                  style={{ width: '100%', padding: '18px', borderRadius: '12px', border: '2px solid #CBD5E1', fontSize: '1.1rem', outline: 'none', marginBottom: '24px' }}
+                />
+                <button 
+                  onClick={handleLaunchLobby}
+                  disabled={isCreatingLobby || !liveQuizTopic.trim()}
+                  style={{ width: '100%', padding: '18px', background: '#F59E0B', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}
+                >
+                  {isCreatingLobby ? 'Creating...' : 'Launch Lobby'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STATE 2: LOBBY & ACTIVE GAME SCREEN */}
+          {activeSession && (
+            <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
+              
+              {/* LEFT: QR CODE & INSTRUCTIONS */}
+              <div style={{ flex: '1', background: '#F8FAFC', padding: '40px', borderRadius: '32px', border: '2px dashed #CBD5E1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px' }}>Join at litnlearn.com/play</h3>
+                <h1 style={{ fontSize: '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px' }}>{activeSession.pin_code}</h1>
+                
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
+                  {/* Bulletproof Encoded Image-based QR Code */}
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} 
+                    alt="Join Game QR Code" 
+                    width={200} 
+                    height={200} 
+                  />
+                </div>
+
+                {activeSession.status === 'waiting' ? (
+                  <button onClick={handleStartGame} style={{ background: '#10B981', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)' }}>
+                    Start Game
+                  </button>
+                ) : (
+                  <button onClick={handleEndGame} style={{ background: '#EF4444', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239, 68, 68, 0.3)' }}>
+                    End Game
+                  </button>
+                )}
+              </div>
+
+              {/* RIGHT: LIVE LEADERBOARD */}
+              <div style={{ flex: '1.5', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
+                  <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>
+                    {activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}
+                  </h3>
+                  <span style={{ background: '#F1F5F9', color: '#475569', padding: '8px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem' }}>
+                    {liveParticipants.length} Joined
+                  </span>
+                </div>
+
+                {liveParticipants.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8', fontSize: '1.2rem' }}>
+                    <div>Waiting for the first student to connect...</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {liveParticipants.map((player, index) => (
+                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '16px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s' }}>
+                        
+                        <div style={{ width: '40px', fontSize: '1.2rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8' }}>
+                          #{index + 1}
+                        </div>
+                        
+                        <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#0F172A', flexGrow: 1 }}>
+                          {player.nickname}
+                        </div>
+                        
+                        <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '8px 20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+                          {player.score} pts
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* --- TAB: THREADED EMAIL INBOX --- */}
       {adminTab === 'inbox' && (
@@ -531,7 +760,7 @@ export const TeacherDashboard: React.FC = () => {
               {isComposing ? (
                 <div style={{ background: '#F8FAFC', borderRadius: '24px', padding: '32px', border: '1px solid #E2E8F0', height: '100%', minHeight: '500px', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ borderBottom: '2px solid #E2E8F0', paddingBottom: '20px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.8rem', color: '#0F172A', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <h3 style={{ margin: '0 0 1.8rem', color: '#0F172A', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <IconEdit /> New Message
                     </h3>
                     <button onClick={() => setIsComposing(false)} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: '1.2rem', fontWeight: '700' }}>✕</button>

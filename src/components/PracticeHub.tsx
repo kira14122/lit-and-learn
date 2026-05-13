@@ -38,7 +38,7 @@ export const PracticeHub = () => {
       .filter((row: string) => row.trim() !== '');
     
     const rawQuestions = rows.map((row: string) => {
-      const cols = row.split('\t').map(c => c.trim());
+      const cols = row.split('\t').map((c: string) => c.trim());
       if (cols.length >= 5 && cols[0] !== '' && cols[0].toLowerCase() !== 'question') {
         return {
           question: cols[0],

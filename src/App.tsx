@@ -10,6 +10,7 @@ import TextHighlighter from './components/TextHighlighter';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ContactPage } from './components/ContactPage';
 import { PracticeHub } from './components/PracticeHub';
+import { LivePlayer } from './components/LivePlayer'; 
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
@@ -71,6 +72,9 @@ function LitAndLearnMain() {
   const { user } = useUser(); 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // --- 🔥 THE FIX: Bulletproof path detection that ignores trailing slashes ---
+  const isPlayRoute = location.pathname.startsWith('/play');
 
   const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
 
@@ -171,7 +175,6 @@ function LitAndLearnMain() {
       
       data.forEach((item: any) => { 
         if (item.word) {
-          // 1. Create the master data object for this word
           const wordData = { 
             pos: item.pos, 
             def: item.definition, 
@@ -180,11 +183,8 @@ function LitAndLearnMain() {
             variations: item.variations || [] 
           }; 
           
-          // 2. Map the root word
           dictMap[item.word.toLowerCase().trim()] = wordData;
 
-          // 3. THE FIX: Map EVERY variation to the exact same data!
-          // Now if a student saves "seizing", the app instantly knows it means "seize" and pulls the example!
           if (item.variations && Array.isArray(item.variations)) {
              item.variations.forEach((v: string) => {
                 if (v && v.trim() !== '') {
@@ -264,7 +264,6 @@ function LitAndLearnMain() {
     try {
       const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
       
-      // Update logic: make sure we use .trim() here too to guarantee a match!
       const liveDictionaryMatch = dictionary[cleanWord];
       let secureExample = info.example || (liveDictionaryMatch ? liveDictionaryMatch.example : null) || null;
 
@@ -534,622 +533,630 @@ function LitAndLearnMain() {
         }
       `}</style>
 
-      <div style={styles.page}>
-        <header style={styles.header}>
-          <h1 className="page-header" style={{ fontSize: '4.5rem', fontWeight: '600', color: '#0F172A', margin: '0 0 10px 0' }}>Lit <span style={{ color: '#4F46E5' }}>&</span> Learn</h1>
-          <p style={{color: '#94A3B8', letterSpacing: '3px', fontWeight: '500', fontSize: '1rem', textTransform: 'uppercase', margin: 0}}>English • Literature • Language</p>
-          
-          <div style={{ marginTop: '30px' }}>
-            {!isOverlayActive && (
-              <nav className="mobile-nav-container" style={styles.nav}>
-                {TABS.map(tab => (
-                  <button 
-                    key={tab.name} 
-                    style={styles.navButton(location.pathname === tab.path)} 
-                    onClick={() => handleNavigation(tab.path)}
-                  >
-                    {tab.name}
-                  </button>
-                ))}
-                
-                <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', paddingLeft: '16px', borderLeft: '2px solid #E2E8F0' }}>
-                  <SignedOut>
-                    <SignInButton mode="modal">
-                      <button style={{ ...styles.navButton(false), background: '#10B981', color: '#ffffff' }}>Sign In</button>
-                    </SignInButton>
-                  </SignedOut>
-                  <SignedIn>
-                    <UserButton afterSignOutUrl="/" />
-                  </SignedIn>
-                </div>
-              </nav>
-            )}
-          </div>
-        </header>
+      {isPlayRoute ? (
+        // --- 🚀 NEW: PURE FULL-SCREEN ARENA ROUTE ---
+        <Routes>
+          <Route path="/play" element={<LivePlayer />} />
+        </Routes>
+      ) : (
+        // --- THE STANDARD LIT & LEARN INTERFACE ---
+        <div style={styles.page}>
+          <header style={styles.header}>
+            <h1 className="page-header" style={{ fontSize: '4.5rem', fontWeight: '600', color: '#0F172A', margin: '0 0 10px 0' }}>Lit <span style={{ color: '#4F46E5' }}>&</span> Learn</h1>
+            <p style={{color: '#94A3B8', letterSpacing: '3px', fontWeight: '500', fontSize: '1rem', textTransform: 'uppercase', margin: 0}}>English • Literature • Language</p>
+            
+            <div style={{ marginTop: '30px' }}>
+              {!isOverlayActive && (
+                <nav className="mobile-nav-container" style={styles.nav}>
+                  {TABS.map(tab => (
+                    <button 
+                      key={tab.name} 
+                      style={styles.navButton(location.pathname === tab.path)} 
+                      onClick={() => handleNavigation(tab.path)}
+                    >
+                      {tab.name}
+                    </button>
+                  ))}
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px', paddingLeft: '16px', borderLeft: '2px solid #E2E8F0' }}>
+                    <SignedOut>
+                      <SignInButton mode="modal">
+                        <button style={{ ...styles.navButton(false), background: '#10B981', color: '#ffffff' }}>Sign In</button>
+                      </SignInButton>
+                    </SignedOut>
+                    <SignedIn>
+                      <UserButton afterSignOutUrl="/" />
+                    </SignedIn>
+                  </div>
+                </nav>
+              )}
+            </div>
+          </header>
 
-        <div className="app-container" style={styles.container}>
-          {!isOverlayActive ? (
-            <>
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '50px', gap: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '24px' }}>
-                <div>
-                  <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>
-                    {searchTerm ? 'Search Results' : currentTabName}
-                  </h2>
-                  <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>
-                    {searchTerm ? `Showing results for "${searchTerm}"` : 
-                      currentTabName === 'My Progress' ? 'Review your saved vocabulary and progress.' :
-                      currentTabName === 'Admin Dashboard' ? 'Secure Command Center.' :
-                      currentTabName === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
-                      currentTabName === 'Practice Hub' ? 'Fast, interactive exercises to test your knowledge.' : 
-                      currentTabName === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
-                      currentTabName === 'Resources' ? 'Download worksheets and audio lessons.' :
-                      'Welcome to Lit & Learn.'}
-                  </p>
+          <div className="app-container" style={styles.container}>
+            {!isOverlayActive ? (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '50px', gap: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '24px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>
+                      {searchTerm ? 'Search Results' : currentTabName}
+                    </h2>
+                    <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem' }}>
+                      {searchTerm ? `Showing results for "${searchTerm}"` : 
+                        currentTabName === 'My Progress' ? 'Review your saved vocabulary and progress.' :
+                        currentTabName === 'Admin Dashboard' ? 'Secure Command Center.' :
+                        currentTabName === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
+                        currentTabName === 'Practice Hub' ? 'Fast, interactive exercises to test your knowledge.' : 
+                        currentTabName === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
+                        currentTabName === 'Resources' ? 'Download worksheets and audio lessons.' :
+                        'Welcome to Lit & Learn.'}
+                    </p>
+                  </div>
+
+                  <div style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
+                    <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}><IconSearch size={20} /></div>
+                    <input 
+                      type="text" placeholder="Search everything..." 
+                      style={{ width: '100%', padding: '16px 16px 16px 48px', fontSize: '1.05rem', fontWeight: '500', borderRadius: '16px', border: '2px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#0F172A', outline: 'none', transition: 'all 0.2s' }} 
+                      value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} 
+                      onFocus={(e) => e.target.style.borderColor = '#4F46E5'} onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
-                  <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}><IconSearch size={20} /></div>
-                  <input 
-                    type="text" placeholder="Search everything..." 
-                    style={{ width: '100%', padding: '16px 16px 16px 48px', fontSize: '1.05rem', fontWeight: '500', borderRadius: '16px', border: '2px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#0F172A', outline: 'none', transition: 'all 0.2s' }} 
-                    value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} 
-                    onFocus={(e) => e.target.style.borderColor = '#4F46E5'} onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
-                  />
-                </div>
-              </div>
-
-              {searchTerm ? (
-                <div>
-                  {searchResultsReviews.length > 0 && (
-                    <div style={{ marginBottom: '60px' }}>
-                      <h3 style={{ color: '#4F46E5', fontWeight: '600', fontSize: '1.8rem', marginBottom: '24px', borderBottom: '2px solid #E2E8F0', paddingBottom: '10px' }}>Literature & Reviews</h3>
-                      <div style={styles.grid}>
-                        {searchResultsReviews.map(book => (
-                           <div key={book._id} className="soft-card" style={styles.card}>
-                             <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
-                             <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                               <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
-                               {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
-                               {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
-                               <button style={{ ...styles.actionButton, width: '100%', marginTop: '20px' }} onClick={() => setSelectedBook(book)}>Read Review</button>
+                {searchTerm ? (
+                  <div>
+                    {searchResultsReviews.length > 0 && (
+                      <div style={{ marginBottom: '60px' }}>
+                        <h3 style={{ color: '#4F46E5', fontWeight: '600', fontSize: '1.8rem', marginBottom: '24px', borderBottom: '2px solid #E2E8F0', paddingBottom: '10px' }}>Literature & Reviews</h3>
+                        <div style={styles.grid}>
+                          {searchResultsReviews.map(book => (
+                             <div key={book._id} className="soft-card" style={styles.card}>
+                               <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
+                               <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                 <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
+                                 {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
+                                 {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
+                                 <button style={{ ...styles.actionButton, width: '100%', marginTop: '20px' }} onClick={() => setSelectedBook(book)}>Read Review</button>
+                               </div>
                              </div>
-                           </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {searchResultsResources.length > 0 && (
-                    <div style={{ marginBottom: '60px' }}>
-                      <h3 style={{ color: '#0F172A', fontWeight: '600', fontSize: '1.8rem', marginBottom: '24px', borderBottom: '2px solid #E2E8F0', paddingBottom: '10px' }}>Lessons & Guides</h3>
-                      <div style={styles.grid}>
-                        {searchResultsResources.map(res => (
-                           <div key={res._id} className="soft-card" style={{...styles.card, padding: '30px', alignItems: 'center', textAlign: 'center'}}>
-                             <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center', color: '#94A3B8' }}>
-                               {res.isGeneral ? <IconDoc /> : res.audioUrl ? <IconAudio /> : <IconLibrary />}
+                    {searchResultsResources.length > 0 && (
+                      <div style={{ marginBottom: '60px' }}>
+                        <h3 style={{ color: '#0F172A', fontWeight: '600', fontSize: '1.8rem', marginBottom: '24px', borderBottom: '2px solid #E2E8F0', paddingBottom: '10px' }}>Lessons & Guides</h3>
+                        <div style={styles.grid}>
+                          {searchResultsResources.map(res => (
+                             <div key={res._id} className="soft-card" style={{...styles.card, padding: '30px', alignItems: 'center', textAlign: 'center'}}>
+                               <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center', color: '#94A3B8' }}>
+                                 {res.isGeneral ? <IconDoc /> : res.audioUrl ? <IconAudio /> : <IconLibrary />}
+                               </div>
+                               <span style={{ background: '#F1F5F9', color: '#475569', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
+                                 {res.isGeneral ? 'General Guide' : `${res.subLevel} • Unit ${res.unit}`}
+                               </span>
+                               <h3 style={{ margin: '0 0 24px', fontWeight: '600', color: '#0F172A', fontSize: '1.4rem' }}>{res.title}</h3>
+                               {res.audioUrl && ( 
+                                 <div style={{ width: '100%', marginBottom: '24px' }}>
+                                   <CustomAudioPlayer src={res.audioUrl} title="Listen to Track" />
+                                 </div> 
+                               )}
+                               {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%', background: res.audioUrl ? '#EEF2FF' : '#4F46E5', color: res.audioUrl ? '#4F46E5' : '#ffffff', boxShadow: res.audioUrl ? 'none' : '0 10px 20px -5px rgba(79,70,229,0.4)', textDecoration: 'none'}}>{res.audioUrl ? 'Download Worksheet' : 'Download Lesson'}</a>}
                              </div>
-                             <span style={{ background: '#F1F5F9', color: '#475569', padding: '6px 14px', borderRadius: '9999px', fontSize: '0.85rem', fontWeight: '600', marginBottom: '12px', textTransform: 'uppercase' }}>
-                               {res.isGeneral ? 'General Guide' : `${res.subLevel} • Unit ${res.unit}`}
-                             </span>
-                             <h3 style={{ margin: '0 0 24px', fontWeight: '600', color: '#0F172A', fontSize: '1.4rem' }}>{res.title}</h3>
-                             {res.audioUrl && ( 
-                               <div style={{ width: '100%', marginBottom: '24px' }}>
-                                 <CustomAudioPlayer src={res.audioUrl} title="Listen to Track" />
-                               </div> 
-                             )}
-                             {res.fileUrl && <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{...styles.actionButton, width: '100%', background: res.audioUrl ? '#EEF2FF' : '#4F46E5', color: res.audioUrl ? '#4F46E5' : '#ffffff', boxShadow: res.audioUrl ? 'none' : '0 10px 20px -5px rgba(79,70,229,0.4)', textDecoration: 'none'}}>{res.audioUrl ? 'Download Worksheet' : 'Download Lesson'}</a>}
-                           </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <Routes>
-                  {/* --- ROUTE: PRACTICE HUB --- */}
-                  <Route path="/practice" element={<PracticeHub />} />
+                    )}
+                  </div>
+                ) : (
+                  <Routes>
+                    {/* --- ROUTE: PRACTICE HUB --- */}
+                    <Route path="/practice" element={<PracticeHub />} />
 
-                  {/* --- ROUTE: MY PROGRESS --- */}
-                  <Route path="/progress" element={
-                    <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1100px', margin: '0 auto' }}>
-                      <div className="bento-layout">
-                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', height: '100%' }}>
-                          <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconFlashcard /></div>
-                            Daily Review
-                          </h3>
-                          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                            <VocabVault savedWords={savedWords} toggleSaveWord={toggleSaveWord} dictionary={dictionary} />
+                    {/* --- ROUTE: MY PROGRESS --- */}
+                    <Route path="/progress" element={
+                      <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1100px', margin: '0 auto' }}>
+                        <div className="bento-layout">
+                          <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                            <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconFlashcard /></div>
+                              Daily Review
+                            </h3>
+                            <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                              <VocabVault savedWords={savedWords} toggleSaveWord={toggleSaveWord} dictionary={dictionary} />
+                            </div>
+                          </div>
+
+                          <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', height: '100%' }}>
+                            <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ background: '#FEF3C7', color: '#D97706', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconTarget size={20} /></div>
+                              Acquisition Stats
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                              <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', textAlign: 'center', border: '2px solid #F1F5F9' }}>
+                                <div style={{ fontSize: '4rem', fontWeight: '700', color: '#4F46E5', lineHeight: '1', letterSpacing: '-2px' }}>{savedWords.length}</div>
+                                <div style={{ color: '#64748B', fontWeight: '600', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.85rem' }}>Words Saved</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(lvl => {
+                                  const count = savedWords.filter(w => w.level === lvl).length;
+                                  const isActive = count > 0;
+                                  return (
+                                    <div key={lvl} style={{ flex: '1 1 30%', background: isActive ? '#ffffff' : '#F8FAFC', border: isActive ? '2px solid #CBD5E1' : '2px dashed #E2E8F0', padding: '16px 10px', borderRadius: '16px', textAlign: 'center', opacity: isActive ? 1 : 0.4, transition: 'all 0.3s' }}>
+                                      <div style={{ fontSize: '1.1rem', fontWeight: '700', color: isActive ? '#0F172A' : '#94A3B8' }}>{lvl}</div>
+                                      <div style={{ fontSize: '1.4rem', fontWeight: '600', color: isActive ? '#4F46E5' : '#CBD5E1', marginTop: '4px' }}>{count}</div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', height: '100%' }}>
-                          <h3 style={{ margin: '0 0 30px 0', fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ background: '#FEF3C7', color: '#D97706', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconTarget size={20} /></div>
-                            Acquisition Stats
-                          </h3>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                            <div style={{ background: '#F8FAFC', padding: '30px', borderRadius: '24px', textAlign: 'center', border: '2px solid #F1F5F9' }}>
-                              <div style={{ fontSize: '4rem', fontWeight: '700', color: '#4F46E5', lineHeight: '1', letterSpacing: '-2px' }}>{savedWords.length}</div>
-                              <div style={{ color: '#64748B', fontWeight: '600', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.85rem' }}>Words Saved</div>
+                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ background: '#ECFDF5', color: '#10B981', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconDoc /></div>
+                              Curriculum Tracker
+                            </h3>
+                            <span style={{ background: '#F8FAFC', color: '#64748B', padding: '8px 16px', borderRadius: '9999px', fontWeight: '600', fontSize: '0.9rem', border: '1px solid #E2E8F0' }}>
+                              {completedLessons.length} Lesson{completedLessons.length !== 1 ? 's' : ''} Completed
+                            </span>
+                          </div>
+
+                          {completedLessons.length === 0 ? (
+                            <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', justifyContent: 'center', color: '#94A3B8', marginBottom: '16px' }}><IconLibrary /></div>
+                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>You haven't completed any lessons yet. Head over to the English Corner to begin your journey!</p>
                             </div>
-                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                              {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(lvl => {
-                                const count = savedWords.filter(w => w.level === lvl).length;
-                                const isActive = count > 0;
+                          ) : (
+                            <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                              {[...completedLessons].reverse().map((lessonId, index) => {
+                                const lessonData = interactiveLessons.find(l => l._id === lessonId);
+                                if (!lessonData) return null;
                                 return (
-                                  <div key={lvl} style={{ flex: '1 1 30%', background: isActive ? '#ffffff' : '#F8FAFC', border: isActive ? '2px solid #CBD5E1' : '2px dashed #E2E8F0', padding: '16px 10px', borderRadius: '16px', textAlign: 'center', opacity: isActive ? 1 : 0.4, transition: 'all 0.3s' }}>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: '700', color: isActive ? '#0F172A' : '#94A3B8' }}>{lvl}</div>
-                                    <div style={{ fontSize: '1.4rem', fontWeight: '600', color: isActive ? '#4F46E5' : '#CBD5E1', marginTop: '4px' }}>{count}</div>
+                                  <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '20px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', transition: 'all 0.2s' }}>
+                                    <div style={{ width: '48px', height: '48px', background: '#D1FAE5', color: '#10B981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                      <IconCheck size={20} />
+                                    </div>
+                                    <div style={{ flexGrow: 1 }}>
+                                      <div style={{ color: '#64748B', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                                        {lessonData.subLevel} • Unit {lessonData.unit}
+                                      </div>
+                                      <h4 style={{ margin: 0, fontSize: '1.3rem', color: '#0F172A', fontWeight: '600' }}>{lessonData.title}</h4>
+                                    </div>
                                   </div>
                                 )
                               })}
                             </div>
+                          )}
+                        </div>
+
+                        <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconStar size={24} /></div>
+                              Official Gradebook
+                            </h3>
                           </div>
+
+                          <SignedIn>
+                            {officialGrades.length === 0 ? (
+                              <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
+                                <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>No official assessments have been recorded yet.</p>
+                              </div>
+                            ) : (
+                              <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+                                <table className="mobile-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                                  <thead>
+                                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Date</th>
+                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Assessment</th>
+                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Score</th>
+                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Teacher Feedback</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {officialGrades.map((grade, idx) => (
+                                      <tr key={idx} style={{ borderBottom: idx === officialGrades.length - 1 ? 'none' : '1px solid #F1F5F9', transition: 'background 0.2s' }}>
+                                        <td data-label="Date" style={{ padding: '20px 24px', color: '#64748B', fontWeight: '500' }}>
+                                          {new Date(grade.date_recorded).toLocaleDateString()}
+                                        </td>
+                                        <td data-label="Assessment" style={{ padding: '20px 24px', color: '#0F172A', fontWeight: '600', fontSize: '1.1rem' }}>
+                                          {grade.assessment_name}
+                                        </td>
+                                        <td data-label="Score" style={{ padding: '20px 24px' }}>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                            {grade.score.split('\n').map((line: string, i: number) => line.trim() ? (
+                                              <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
+                                                {line}
+                                              </span>
+                                            ) : null)}
+                                          </div>
+                                        </td>
+                                        <td data-label="Feedback" style={{ padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                                          "{grade.feedback || 'Excellent work!'}"
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </SignedIn>
+                          
+                          <SignedOut>
+                            <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '50px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                              <div style={{ color: '#94A3B8' }}><IconLock size={20} /></div>
+                              <h4 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>Sign In Required</h4>
+                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: '0 0 10px 0' }}>Official academic records and instructor feedback are only available for enrolled students.</p>
+                              <SignInButton mode="modal">
+                                <button style={{ background: '#10B981', color: '#ffffff', border: 'none', padding: '14px 32px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s' }}>View Official Records</button>
+                              </SignInButton>
+                            </div>
+                          </SignedOut>
                         </div>
                       </div>
+                    } />
 
-                      <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
-                          <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ background: '#ECFDF5', color: '#10B981', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconDoc /></div>
-                            Curriculum Tracker
-                          </h3>
-                          <span style={{ background: '#F8FAFC', color: '#64748B', padding: '8px 16px', borderRadius: '9999px', fontWeight: '600', fontSize: '0.9rem', border: '1px solid #E2E8F0' }}>
-                            {completedLessons.length} Lesson{completedLessons.length !== 1 ? 's' : ''} Completed
-                          </span>
-                        </div>
+                    {/* --- ROUTE: ADMIN DASHBOARD --- */}
+                    <Route path="/admin" element={
+                      isTeacherAdmin ? <TeacherDashboard /> : <Navigate to="/" />
+                    } />
 
-                        {completedLessons.length === 0 ? (
-                          <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', color: '#94A3B8', marginBottom: '16px' }}><IconLibrary /></div>
-                            <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>You haven't completed any lessons yet. Head over to the English Corner to begin your journey!</p>
+                    {/* --- ROUTE: BOOK REVIEWS --- */}
+                    <Route path="/reviews" element={
+                      <div>
+                        {!bookCategory ? (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '800px', margin: '0 auto' }}>
+                              <button onClick={() => setBookCategory('Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
+                                <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconFiction size={40} /></div>
+                                <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Fiction</h3>
+                                <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Novels, short stories, and classics.</p>
+                              </button>
+                              <button onClick={() => setBookCategory('Non-Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
+                                <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconNonFiction size={40} /></div>
+                                <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Non-Fiction</h3>
+                                <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Essays and educational texts.</p>
+                              </button>
+                            </div>
+                          </div>
+                        ) : !activeSubCategory ? (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ marginBottom: '30px', textAlign: 'center' }}>
+                              <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
+                                <BackButton onClick={() => setBookCategory(null)} text="Back to Library" />
+                                <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Genre</h3>
+                                <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{bookCategory}</p>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+                              {(bookCategory === 'Fiction' ? fictionCategories : nonFictionCategories).map(cat => ( 
+                                <button key={cat} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubCategory(cat)}>{cat}</button> 
+                              ))}
+                            </div>
                           </div>
                         ) : (
-                          <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            {[...completedLessons].reverse().map((lessonId, index) => {
-                              const lessonData = interactiveLessons.find(l => l._id === lessonId);
-                              if (!lessonData) return null;
-                              return (
-                                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '20px', padding: '20px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', transition: 'all 0.2s' }}>
-                                  <div style={{ width: '48px', height: '48px', background: '#D1FAE5', color: '#10B981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <IconCheck size={20} />
-                                  </div>
-                                  <div style={{ flexGrow: 1 }}>
-                                    <div style={{ color: '#64748B', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
-                                      {lessonData.subLevel} • Unit {lessonData.unit}
-                                    </div>
-                                    <h4 style={{ margin: 0, fontSize: '1.3rem', color: '#0F172A', fontWeight: '600' }}>{lessonData.title}</h4>
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ marginBottom: '30px' }}>
+                              <BackButton onClick={() => setActiveSubCategory(null)} text="Back to Genres" />
+                              <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeSubCategory}</h3>
+                              <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{bookCategory}</span>
+                            </div>
+                            <div style={styles.grid}>
+                              {displayedReviews.length > 0 ? displayedReviews.map(book => (
+                                <div key={book._id} className="soft-card" style={styles.card}>
+                                  <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
+                                  <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
+                                    {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
+                                    {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
+                                    {book.content && ( <div style={{ width: '100%', marginTop: '20px' }}><button style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button></div> )}
                                   </div>
                                 </div>
-                              )
-                            })}
+                              )) : ( 
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px', color: '#94A3B8', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0' }}>
+                                  <h3 style={{ fontWeight: '600', margin: 0, fontSize: '1.5rem', color: '#475569' }}>No books found</h3>
+                                  <p style={{ margin: '8px 0 0 0', fontSize: '1.1rem' }}>Reviews for this category haven't been published yet.</p>
+                                </div> 
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
+                    } />
 
-                      <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
-                          <h3 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '12px', borderRadius: '12px', display: 'flex' }}><IconStar size={24} /></div>
-                            Official Gradebook
-                          </h3>
-                        </div>
-
-                        <SignedIn>
-                          {officialGrades.length === 0 ? (
-                            <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '40px', textAlign: 'center' }}>
-                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>No official assessments have been recorded yet.</p>
-                            </div>
-                          ) : (
-                            <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
-                              <table className="mobile-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                                <thead>
-                                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
-                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Date</th>
-                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Assessment</th>
-                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Score</th>
-                                    <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Teacher Feedback</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {officialGrades.map((grade, idx) => (
-                                    <tr key={idx} style={{ borderBottom: idx === officialGrades.length - 1 ? 'none' : '1px solid #F1F5F9', transition: 'background 0.2s' }}>
-                                      <td data-label="Date" style={{ padding: '20px 24px', color: '#64748B', fontWeight: '500' }}>
-                                        {new Date(grade.date_recorded).toLocaleDateString()}
-                                      </td>
-                                      <td data-label="Assessment" style={{ padding: '20px 24px', color: '#0F172A', fontWeight: '600', fontSize: '1.1rem' }}>
-                                        {grade.assessment_name}
-                                      </td>
-                                      <td data-label="Score" style={{ padding: '20px 24px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                                          {grade.score.split('\n').map((line: string, i: number) => line.trim() ? (
-                                            <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
-                                              {line}
-                                            </span>
-                                          ) : null)}
-                                        </div>
-                                      </td>
-                                      <td data-label="Feedback" style={{ padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                                        "{grade.feedback || 'Excellent work!'}"
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </SignedIn>
-                        
-                        <SignedOut>
-                          <div style={{ background: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '24px', padding: '50px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                            <div style={{ color: '#94A3B8' }}><IconLock size={20} /></div>
-                            <h4 style={{ margin: 0, fontSize: '1.4rem', color: '#0F172A' }}>Sign In Required</h4>
-                            <p style={{ color: '#64748B', fontSize: '1.1rem', margin: '0 0 10px 0' }}>Official academic records and instructor feedback are only available for enrolled students.</p>
-                            <SignInButton mode="modal">
-                              <button style={{ background: '#10B981', color: '#ffffff', border: 'none', padding: '14px 32px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: 'all 0.2s' }}>View Official Records</button>
-                            </SignInButton>
-                          </div>
-                        </SignedOut>
-                      </div>
-                    </div>
-                  } />
-
-                  {/* --- ROUTE: ADMIN DASHBOARD --- */}
-                  <Route path="/admin" element={
-                    isTeacherAdmin ? <TeacherDashboard /> : <Navigate to="/" />
-                  } />
-
-                  {/* --- ROUTE: BOOK REVIEWS --- */}
-                  <Route path="/reviews" element={
-                    <div>
-                      {!bookCategory ? (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '800px', margin: '0 auto' }}>
-                            <button onClick={() => setBookCategory('Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                              <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconFiction size={40} /></div>
-                              <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Fiction</h3>
-                              <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Novels, short stories, and classics.</p>
-                            </button>
-                            <button onClick={() => setBookCategory('Non-Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                              <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconNonFiction size={40} /></div>
-                              <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Non-Fiction</h3>
-                              <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Essays and educational texts.</p>
-                            </button>
-                          </div>
-                        </div>
-                      ) : !activeSubCategory ? (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ marginBottom: '30px', textAlign: 'center' }}>
-                            <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
-                              <BackButton onClick={() => setBookCategory(null)} text="Back to Library" />
-                              <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Genre</h3>
-                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{bookCategory}</p>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                            {(bookCategory === 'Fiction' ? fictionCategories : nonFictionCategories).map(cat => ( 
-                              <button key={cat} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubCategory(cat)}>{cat}</button> 
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ marginBottom: '30px' }}>
-                            <BackButton onClick={() => setActiveSubCategory(null)} text="Back to Genres" />
-                            <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeSubCategory}</h3>
-                            <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{bookCategory}</span>
-                          </div>
-                          <div style={styles.grid}>
-                            {displayedReviews.length > 0 ? displayedReviews.map(book => (
-                              <div key={book._id} className="soft-card" style={styles.card}>
-                                <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
-                                <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                  <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
-                                  {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
-                                  {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
-                                  {book.content && ( <div style={{ width: '100%', marginTop: '20px' }}><button style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button></div> )}
-                                </div>
-                              </div>
-                            )) : ( 
-                              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px', color: '#94A3B8', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0' }}>
-                                <h3 style={{ fontWeight: '600', margin: 0, fontSize: '1.5rem', color: '#475569' }}>No books found</h3>
-                                <p style={{ margin: '8px 0 0 0', fontSize: '1.1rem' }}>Reviews for this category haven't been published yet.</p>
-                              </div> 
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  } />
-
-                  {/* --- ROUTE: ENGLISH CORNER (HOME) --- */}
-                  <Route path="/" element={
-                    <div>
-                      {!activeLevel ? (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
-                            {LEVELS.map((lvl, index) => {
-                              const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#059669' } ];
-                              return (
-                                <button key={lvl.name} onClick={() => setActiveLevel(lvl.name)} className="soft-card" style={{ flex: '1 1 280px', maxWidth: '320px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                                  <div style={{ background: colors[index].bg, color: colors[index].icon, padding: '24px', borderRadius: '50%', display: 'flex' }}>{React.cloneElement(lvl.icon, { size: 40 })}</div>
-                                  <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>{lvl.name}</h3>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ) : !activeSubLevel ? (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ marginBottom: '30px', textAlign: 'center' }}>
-                            <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
-                              <BackButton onClick={() => setActiveLevel(null)} text="Back to Levels" />
-                              <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Path</h3>
-                              <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{activeLevel} Curriculum</p>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                            {LEVELS.find(l => l.name === activeLevel)?.subLevels.map(sub => (
-                              <button key={sub} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubLevel(sub)}>
-                                {sub}
-                              </button> 
-                            ))}
-                          </div>
-                        </div>
-                      ) : !activeUnit ? (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', flexWrap: 'wrap', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                            <div>
-                              <BackButton onClick={() => setActiveSubLevel(null)} text="Back to Paths" />
-                              <h2 style={{ margin: '16px 0 4px 0', color: '#0F172A', fontWeight: '600', fontSize: '2.5rem' }}>{activeSubLevel} Curriculum</h2>
-                              <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{activeLevel}</span>
-                            </div>
-                            {(() => {
-                              const currentPathAssessments = publishedAssessments.filter(a => a.level === activeLevel && a.subLevel === activeSubLevel);
-                              const uniqueUnitsPublished = new Set(currentPathAssessments.map(a => a.unit)).size;
-                              const isFinalExamUnlocked = uniqueUnitsPublished >= 12;
-
-                              return (
-                                <div className="final-exam-wrapper" style={{ display: 'flex', justifyContent: 'flex-end', flexGrow: 1, minWidth: '280px' }}>
-                                  <button 
-                                    onClick={() => startQuiz(true)} 
-                                    disabled={!isFinalExamUnlocked}
-                                    className="soft-card final-exam-btn"
-                                    style={{ background: '#ffffff', border: isFinalExamUnlocked ? '2px solid #EEF2FF' : '1px solid #E2E8F0', padding: '16px 24px', borderRadius: '20px', cursor: isFinalExamUnlocked ? 'pointer' : 'not-allowed', boxShadow: isFinalExamUnlocked ? '0 10px 20px rgba(79, 70, 229, 0.1)' : '0 2px 5px rgba(15, 23, 42, 0.02)', display: 'flex', alignItems: 'center', gap: '16px', transition: 'all 0.2s', opacity: isFinalExamUnlocked ? 1 : 0.8, maxWidth: '350px', width: '100%' }}
-                                  >
-                                    <div style={{ background: isFinalExamUnlocked ? '#EEF2FF' : '#F1F5F9', color: isFinalExamUnlocked ? '#4F46E5' : '#94A3B8', padding: '14px', borderRadius: '14px', display: 'flex' }}>
-                                      {isFinalExamUnlocked ? <IconStar size={24} /> : <IconLock size={20} />}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
-                                      <span style={{ fontWeight: '700', fontSize: '1.25rem', color: isFinalExamUnlocked ? '#4F46E5' : '#475569', lineHeight: '1.2' }}>Final Exam</span>
-                                      {!isFinalExamUnlocked ? (
-                                        <span style={{ color: '#94A3B8', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Locked • {uniqueUnitsPublished}/12 Units</span>
-                                      ) : (
-                                        <span style={{ color: '#10B981', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Ready to Start</span>
-                                      )}
-                                    </div>
+                    {/* --- ROUTE: ENGLISH CORNER (HOME) --- */}
+                    <Route path="/" element={
+                      <div>
+                        {!activeLevel ? (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
+                              {LEVELS.map((lvl, index) => {
+                                const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#059669' } ];
+                                return (
+                                  <button key={lvl.name} onClick={() => setActiveLevel(lvl.name)} className="soft-card" style={{ flex: '1 1 280px', maxWidth: '320px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
+                                    <div style={{ background: colors[index].bg, color: colors[index].icon, padding: '24px', borderRadius: '50%', display: 'flex' }}>{React.cloneElement(lvl.icon, { size: 40 })}</div>
+                                    <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>{lvl.name}</h3>
                                   </button>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          
-                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-                            {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => {
-                              const meta = getUnitMeta(u);
-                              return ( 
-                                <button key={u} className="soft-card" style={{ flex: '1 1 200px', maxWidth: '280px', padding: '40px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.3s', justifyContent: 'center' }} onClick={() => setActiveUnit(u)}>
-                                  <h3 style={{ margin: '0', fontSize: '2rem', color: '#0F172A', fontWeight: '700', letterSpacing: '-0.5px' }}>Unit {u}</h3>
-                                  {meta.title && (
-                                    <>
-                                      <div style={{ width: '40px', height: '3px', background: '#4F46E5', borderRadius: '2px', margin: '8px 0' }} />
-                                      <span style={{ display: 'block', color: '#64748B', fontWeight: '600', fontSize: '1.1rem', lineHeight: '1.4' }}>{meta.title}</span>
-                                    </>
-                                  )}
-                                </button> 
-                              )
-                            })}
-                          </div>
-
-                        </div>
-                      ) : (
-                        <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                          <div style={{ marginBottom: '30px' }}>
-                            <BackButton onClick={() => setActiveUnit(null)} text="Back to Units" />
-                          </div>
-                          <div style={{ maxWidth: '850px', margin: '0 auto' }}>
-                            
-                            <div style={{ textAlign: 'center', marginBottom: '50px' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', color: '#64748B', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
-                                {activeLevel} • {activeSubLevel}
-                              </span>
-                              <h2 style={{ margin: '0 0 16px', fontWeight: '700', fontSize: '3.5rem', color: '#0F172A', letterSpacing: '-1px', lineHeight: '1.1' }}>
-                                Unit {activeUnit}{getUnitMeta(activeUnit).title ? `: ${getUnitMeta(activeUnit).title}` : ''}
-                              </h2>
-                              {getUnitMeta(activeUnit).desc && (
-                                <p style={{ color: '#64748B', fontSize: '1.2rem', margin: '0 auto', maxWidth: '650px', lineHeight: '1.6' }}>{getUnitMeta(activeUnit).desc}</p>
-                              )}
+                                )
+                              })}
                             </div>
-
-                            {getUnitMeta(activeUnit).objectives.length > 0 && (
-                              <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '30px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
-                                <h3 style={{ margin: '0 0 20px 0', fontSize: '1.4rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div style={{ color: '#4F46E5', display: 'flex' }}><IconTarget size={20} /></div>
-                                  Unit Objectives
-                                </h3>
-                                <ul style={{ margin: 0, paddingLeft: '20px', color: '#475569', fontSize: '1.1rem', lineHeight: '1.8', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                  {getUnitMeta(activeUnit).objectives.map((obj: string, i: number) => <li key={i}>{obj}</li>)}
-                                </ul>
+                          </div>
+                        ) : !activeSubLevel ? (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ marginBottom: '30px', textAlign: 'center' }}>
+                              <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
+                                <BackButton onClick={() => setActiveLevel(null)} text="Back to Levels" />
+                                <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Path</h3>
+                                <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{activeLevel} Curriculum</p>
                               </div>
-                            )}
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                              {unitLessons.length > 0 ? unitLessons.map((lesson, index) => {
-                                const isCompleted = completedLessons.includes(lesson._id);
-                                const isLocked = index > 0 && !completedLessons.includes(unitLessons[index - 1]._id);
-                                let cardBg = '#ffffff'; let border = '2px solid #E2E8F0'; 
-                                if (isCompleted) { border = '2px solid #10B981'; }
-                                else if (!isLocked) { border = '2px solid #4F46E5'; }
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+                              {LEVELS.find(l => l.name === activeLevel)?.subLevels.map(sub => (
+                                <button key={sub} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubLevel(sub)}>
+                                  {sub}
+                                </button> 
+                              ))}
+                            </div>
+                          </div>
+                        ) : !activeUnit ? (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', flexWrap: 'wrap', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+                              <div>
+                                <BackButton onClick={() => setActiveSubLevel(null)} text="Back to Paths" />
+                                <h2 style={{ margin: '16px 0 4px 0', color: '#0F172A', fontWeight: '600', fontSize: '2.5rem' }}>{activeSubLevel} Curriculum</h2>
+                                <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{activeLevel}</span>
+                              </div>
+                              {(() => {
+                                const currentPathAssessments = publishedAssessments.filter(a => a.level === activeLevel && a.subLevel === activeSubLevel);
+                                const uniqueUnitsPublished = new Set(currentPathAssessments.map(a => a.unit)).size;
+                                const isFinalExamUnlocked = uniqueUnitsPublished >= 12;
 
                                 return (
-                                  <div key={lesson._id} className="soft-card lesson-card-wrapper" style={{ background: cardBg, border, borderRadius: '24px', transition: 'all 0.3s', marginBottom: index === unitLessons.length - 1 ? '40px' : '0' }}>
-                                    
-                                    <div className="lesson-info-group">
-                                      <div className="lesson-badge" style={{ background: isCompleted ? '#ECFDF5' : (isLocked ? '#F8FAFC' : '#EEF2FF'), color: isCompleted ? '#10B981' : (isLocked ? '#94A3B8' : '#4F46E5') }}>
-                                        {lesson.lessonOrder}
+                                  <div className="final-exam-wrapper" style={{ display: 'flex', justifyContent: 'flex-end', flexGrow: 1, minWidth: '280px' }}>
+                                    <button 
+                                      onClick={() => startQuiz(true)} 
+                                      disabled={!isFinalExamUnlocked}
+                                      className="soft-card final-exam-btn"
+                                      style={{ background: '#ffffff', border: isFinalExamUnlocked ? '2px solid #EEF2FF' : '1px solid #E2E8F0', padding: '16px 24px', borderRadius: '20px', cursor: isFinalExamUnlocked ? 'pointer' : 'not-allowed', boxShadow: isFinalExamUnlocked ? '0 10px 20px rgba(79, 70, 229, 0.1)' : '0 2px 5px rgba(15, 23, 42, 0.02)', display: 'flex', alignItems: 'center', gap: '16px', transition: 'all 0.2s', opacity: isFinalExamUnlocked ? 1 : 0.8, maxWidth: '350px', width: '100%' }}
+                                    >
+                                      <div style={{ background: isFinalExamUnlocked ? '#EEF2FF' : '#F1F5F9', color: isFinalExamUnlocked ? '#4F46E5' : '#94A3B8', padding: '14px', borderRadius: '14px', display: 'flex' }}>
+                                        {isFinalExamUnlocked ? <IconStar size={24} /> : <IconLock size={20} />}
                                       </div>
-
-                                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                        <h3 style={{ margin: '0 0 6px 0', fontSize: '1.5rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.3' }}>{lesson.title}</h3>
-                                        {lesson.grammarFocus && (
-                                          <p style={{ margin: '0', color: '#475569', fontSize: '1.05rem', lineHeight: '1.5' }}>
-                                            <strong style={{ color: '#94A3B8', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '6px' }}>Focus:</strong>
-                                            {lesson.grammarFocus}
-                                          </p>
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+                                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: isFinalExamUnlocked ? '#4F46E5' : '#475569', lineHeight: '1.2' }}>Final Exam</span>
+                                        {!isFinalExamUnlocked ? (
+                                          <span style={{ color: '#94A3B8', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Locked • {uniqueUnitsPublished}/12 Units</span>
+                                        ) : (
+                                          <span style={{ color: '#10B981', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Ready to Start</span>
                                         )}
                                       </div>
-                                    </div>
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}>
+                              {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => {
+                                const meta = getUnitMeta(u);
+                                return ( 
+                                  <button key={u} className="soft-card" style={{ flex: '1 1 200px', maxWidth: '280px', padding: '40px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.3s', justifyContent: 'center' }} onClick={() => setActiveUnit(u)}>
+                                    <h3 style={{ margin: '0', fontSize: '2rem', color: '#0F172A', fontWeight: '700', letterSpacing: '-0.5px' }}>Unit {u}</h3>
+                                    {meta.title && (
+                                      <>
+                                        <div style={{ width: '40px', height: '3px', background: '#4F46E5', borderRadius: '2px', margin: '8px 0' }} />
+                                        <span style={{ display: 'block', color: '#64748B', fontWeight: '600', fontSize: '1.1rem', lineHeight: '1.4' }}>{meta.title}</span>
+                                      </>
+                                    )}
+                                  </button> 
+                                )
+                              })}
+                            </div>
 
-                                    <div className="lesson-action-group">
-                                      {isCompleted && <span className="status-text"><IconCheck size={16} /> Completed</span>}
-                                      <button 
-                                        onClick={() => { handleMarkLessonComplete(lesson._id); setActiveLessonData(lesson); setIsInteractiveLesson(true); }} 
-                                        style={{ background: isCompleted ? '#F1F5F9' : '#4F46E5', color: isCompleted ? '#475569' : '#ffffff', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', boxShadow: isCompleted ? 'none' : '0 10px 20px -5px rgba(79, 70, 229, 0.3)', whiteSpace: 'nowrap', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: isLocked ? 0.5 : 1 }}
-                                        disabled={isLocked}
-                                      >
-                                        {isLocked ? <><IconLock size={18} /> Locked</> : isCompleted ? 'Review' : 'Start Lesson'}
+                          </div>
+                        ) : (
+                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+                            <div style={{ marginBottom: '30px' }}>
+                              <BackButton onClick={() => setActiveUnit(null)} text="Back to Units" />
+                            </div>
+                            <div style={{ maxWidth: '850px', margin: '0 auto' }}>
+                              
+                              <div style={{ textAlign: 'center', marginBottom: '50px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', color: '#64748B', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
+                                  {activeLevel} • {activeSubLevel}
+                                </span>
+                                <h2 style={{ margin: '0 0 16px', fontWeight: '700', fontSize: '3.5rem', color: '#0F172A', letterSpacing: '-1px', lineHeight: '1.1' }}>
+                                  Unit {activeUnit}{getUnitMeta(activeUnit).title ? `: ${getUnitMeta(activeUnit).title}` : ''}
+                                </h2>
+                                {getUnitMeta(activeUnit).desc && (
+                                  <p style={{ color: '#64748B', fontSize: '1.2rem', margin: '0 auto', maxWidth: '650px', lineHeight: '1.6' }}>{getUnitMeta(activeUnit).desc}</p>
+                                )}
+                              </div>
+
+                              {getUnitMeta(activeUnit).objectives.length > 0 && (
+                                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '30px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
+                                  <h3 style={{ margin: '0 0 20px 0', fontSize: '1.4rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ color: '#4F46E5', display: 'flex' }}><IconTarget size={20} /></div>
+                                    Unit Objectives
+                                  </h3>
+                                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#475569', fontSize: '1.1rem', lineHeight: '1.8', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {getUnitMeta(activeUnit).objectives.map((obj: string, i: number) => <li key={i}>{obj}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {unitLessons.length > 0 ? unitLessons.map((lesson, index) => {
+                                  const isCompleted = completedLessons.includes(lesson._id);
+                                  const isLocked = index > 0 && !completedLessons.includes(unitLessons[index - 1]._id);
+                                  let cardBg = '#ffffff'; let border = '2px solid #E2E8F0'; 
+                                  if (isCompleted) { border = '2px solid #10B981'; }
+                                  else if (!isLocked) { border = '2px solid #4F46E5'; }
+
+                                  return (
+                                    <div key={lesson._id} className="soft-card lesson-card-wrapper" style={{ background: cardBg, border, borderRadius: '24px', transition: 'all 0.3s', marginBottom: index === unitLessons.length - 1 ? '40px' : '0' }}>
+                                      
+                                      <div className="lesson-info-group">
+                                        <div className="lesson-badge" style={{ background: isCompleted ? '#ECFDF5' : (isLocked ? '#F8FAFC' : '#EEF2FF'), color: isCompleted ? '#10B981' : (isLocked ? '#94A3B8' : '#4F46E5') }}>
+                                          {lesson.lessonOrder}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1.5rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.3' }}>{lesson.title}</h3>
+                                          {lesson.grammarFocus && (
+                                            <p style={{ margin: '0', color: '#475569', fontSize: '1.05rem', lineHeight: '1.5' }}>
+                                              <strong style={{ color: '#94A3B8', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '6px' }}>Focus:</strong>
+                                              {lesson.grammarFocus}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="lesson-action-group">
+                                        {isCompleted && <span className="status-text"><IconCheck size={16} /> Completed</span>}
+                                        <button 
+                                          onClick={() => { handleMarkLessonComplete(lesson._id); setActiveLessonData(lesson); setIsInteractiveLesson(true); }} 
+                                          style={{ background: isCompleted ? '#F1F5F9' : '#4F46E5', color: isCompleted ? '#475569' : '#ffffff', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', boxShadow: isCompleted ? 'none' : '0 10px 20px -5px rgba(79, 70, 229, 0.3)', whiteSpace: 'nowrap', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: isLocked ? 0.5 : 1 }}
+                                          disabled={isLocked}
+                                        >
+                                          {isLocked ? <><IconLock size={18} /> Locked</> : isCompleted ? 'Review' : 'Start Lesson'}
+                                        </button>
+                                      </div>
+
+                                    </div>
+                                  )
+                                }) : (
+                                  <div style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '24px', padding: '40px', textAlign: 'center', marginBottom: '40px' }}>
+                                    <span style={{ color: '#94A3B8', fontSize: '1.1rem', fontWeight: '500' }}>No lessons published for this unit yet.</span>
+                                  </div>
+                                )}
+
+                                <div style={{ display: 'flex', alignItems: 'stretch', gap: '24px', opacity: allLessonsCompleted ? 1 : 0.5, pointerEvents: allLessonsCompleted ? 'auto' : 'none', transition: 'all 0.3s' }}>
+                                  <div className="soft-card assessment-card-wrapper" style={{ flexGrow: 1, background: allLessonsCompleted ? '#ffffff' : '#F8FAFC', border: allLessonsCompleted ? '2px solid #4F46E5' : '2px dashed #E2E8F0', borderRadius: '24px', transition: 'all 0.3s' }}>
+                                    
+                                    <div className="lesson-info-group">
+                                       <div className="lesson-badge" style={{ background: allLessonsCompleted ? '#EEF2FF' : '#F1F5F9', color: allLessonsCompleted ? '#4F46E5' : '#94A3B8' }}>
+                                         {allLessonsCompleted ? <IconStar size={24} /> : <IconLock size={20} />}
+                                       </div>
+                                       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.2' }}>Unit Assessment</h3>
+                                          <p style={{ color: '#64748B', margin: 0, fontSize: '1.05rem', lineHeight: '1.5' }}>
+                                            {allLessonsCompleted ? 'You have completed all lessons. You are ready to be tested.' : 'Complete all lessons to unlock the assessment.'}
+                                          </p>
+                                       </div>
+                                    </div>
+                                    
+                                    <div className="assessment-action-group lesson-action-group">
+                                      <button onClick={() => startQuiz(false)} disabled={!allLessonsCompleted} style={{ background: allLessonsCompleted ? '#4F46E5' : '#E2E8F0', color: allLessonsCompleted ? '#ffffff' : '#94A3B8', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: allLessonsCompleted ? 'pointer' : 'not-allowed', boxShadow: allLessonsCompleted ? '0 10px 20px -5px rgba(79, 70, 229, 0.3)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', whiteSpace: 'nowrap', width: '100%' }}>
+                                        <IconQuiz size={18} /> {allLessonsCompleted ? 'Start Assessment' : 'Locked'}
                                       </button>
                                     </div>
 
                                   </div>
-                                )
-                              }) : (
-                                <div style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '24px', padding: '40px', textAlign: 'center', marginBottom: '40px' }}>
-                                  <span style={{ color: '#94A3B8', fontSize: '1.1rem', fontWeight: '500' }}>No lessons published for this unit yet.</span>
                                 </div>
-                              )}
 
-                              <div style={{ display: 'flex', alignItems: 'stretch', gap: '24px', opacity: allLessonsCompleted ? 1 : 0.5, pointerEvents: allLessonsCompleted ? 'auto' : 'none', transition: 'all 0.3s' }}>
-                                <div className="soft-card assessment-card-wrapper" style={{ flexGrow: 1, background: allLessonsCompleted ? '#ffffff' : '#F8FAFC', border: allLessonsCompleted ? '2px solid #4F46E5' : '2px dashed #E2E8F0', borderRadius: '24px', transition: 'all 0.3s' }}>
-                                  
-                                  <div className="lesson-info-group">
-                                     <div className="lesson-badge" style={{ background: allLessonsCompleted ? '#EEF2FF' : '#F1F5F9', color: allLessonsCompleted ? '#4F46E5' : '#94A3B8' }}>
-                                       {allLessonsCompleted ? <IconStar size={24} /> : <IconLock size={20} />}
-                                     </div>
-                                     <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                        <h3 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.2' }}>Unit Assessment</h3>
-                                        <p style={{ color: '#64748B', margin: 0, fontSize: '1.05rem', lineHeight: '1.5' }}>
-                                          {allLessonsCompleted ? 'You have completed all lessons. You are ready to be tested.' : 'Complete all lessons to unlock the assessment.'}
-                                        </p>
-                                     </div>
-                                  </div>
-                                  
-                                  <div className="assessment-action-group lesson-action-group">
-                                    <button onClick={() => startQuiz(false)} disabled={!allLessonsCompleted} style={{ background: allLessonsCompleted ? '#4F46E5' : '#E2E8F0', color: allLessonsCompleted ? '#ffffff' : '#94A3B8', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: allLessonsCompleted ? 'pointer' : 'not-allowed', boxShadow: allLessonsCompleted ? '0 10px 20px -5px rgba(79, 70, 229, 0.3)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', whiteSpace: 'nowrap', width: '100%' }}>
-                                      <IconQuiz size={18} /> {allLessonsCompleted ? 'Start Assessment' : 'Locked'}
-                                    </button>
-                                  </div>
-
-                                </div>
                               </div>
-
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  } />
+                        )}
+                      </div>
+                    } />
 
-                  {/* --- ROUTE: RESOURCES --- */}
-                  <Route path="/resources" element={<ResourceLibrary resources={resources} />} />
-                  
-                  {/* --- ROUTE: ABOUT --- */}
-                  <Route path="/about" element={
-                    <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '800px', margin: '0 auto' }}>
-                      <div className="soft-card adapt-padding" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '60px', border: '1px solid #E2E8F0', boxShadow: '0 20px 40px rgba(0,0,0,0.04)' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderBottom: '2px solid #F1F5F9', paddingBottom: '40px', marginBottom: '40px' }}>
-                          <h2 style={{ margin: '0 0 8px 0', fontSize: '2.6rem', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>Meet Dr. Chouit Abderraouf</h2>
-                          <p style={{ color: '#64748B', fontSize: '1.15rem', margin: '0 0 20px 0', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>Creator & Founder of Lit & Learn</p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
-                            <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>PhD in English Linguistics</span>
-                            <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>TESOL Certified</span>
+                    {/* --- ROUTE: RESOURCES --- */}
+                    <Route path="/resources" element={<ResourceLibrary resources={resources} />} />
+                    
+                    {/* --- ROUTE: ABOUT --- */}
+                    <Route path="/about" element={
+                      <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '800px', margin: '0 auto' }}>
+                        <div className="soft-card adapt-padding" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '60px', border: '1px solid #E2E8F0', boxShadow: '0 20px 40px rgba(0,0,0,0.04)' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderBottom: '2px solid #F1F5F9', paddingBottom: '40px', marginBottom: '40px' }}>
+                            <h2 style={{ margin: '0 0 8px 0', fontSize: '2.6rem', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>Meet Dr. Chouit Abderraouf</h2>
+                            <p style={{ color: '#64748B', fontSize: '1.15rem', margin: '0 0 20px 0', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>Creator & Founder of Lit & Learn</p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
+                              <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>PhD in English Linguistics</span>
+                              <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>TESOL Certified</span>
+                            </div>
+                          </div>
+                          <div style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                             <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Bridging Language and Literature</h3>
+                             <p style={{ margin: 0 }}>Welcome to Lit & Learn. As an educator, I have seen firsthand how frustrating traditional language learning can be when it is reduced to passing tests and studying dry vocabulary lists. I created this platform to offer a different path—one where language mastery is achieved through a dynamic, multifaceted approach.</p>
+                             <p style={{ margin: 0 }}>The foundation of our method is contextual immersion, with a strong emphasis on cultivating reading as a lifelong, evolving skill. Reading is not merely a vehicle for absorbing complex syntax; it is a profound educational journey. Through our curated book reviews and literary analyses, you are not just learning vocabulary in context—you are exploring the rich ideas, diverse cultures, and timeless philosophies embedded in world literature. The literature itself elevates both your mind and your English.</p>
+                             <p style={{ margin: 0 }}>However, Lit & Learn is much more than a library of literary reviews; it is a complete, interactive language center. Your learning journey here bridges the gap between theory and practice. You will move from deep textual analysis to structured lessons in the <strong>English Corner</strong>, where you can actively apply your knowledge through targeted exercises for grammar, pronunciation, and vocabulary. Finally, the <strong>My Progress</strong> dashboard ensures your success is measurable, allowing you to track your daily reviews and official assessments.</p>
+                             <p style={{ margin: 0 }}>Drawing on my PhD in English Linguistics and years of teaching experience, my mission is to continuously evolve this platform. By blending the profound depth of world literature with interactive pedagogical tools, my goal is to guide you to absolute, confident mastery of the English language.</p>
                           </div>
                         </div>
-                        <div style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                           <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Bridging Language and Literature</h3>
-                           <p style={{ margin: 0 }}>Welcome to Lit & Learn. As an educator, I have seen firsthand how frustrating traditional language learning can be when it is reduced to passing tests and studying dry vocabulary lists. I created this platform to offer a different path—one where language mastery is achieved through a dynamic, multifaceted approach.</p>
-                           <p style={{ margin: 0 }}>The foundation of our method is contextual immersion, with a strong emphasis on cultivating reading as a lifelong, evolving skill. Reading is not merely a vehicle for absorbing complex syntax; it is a profound educational journey. Through our curated book reviews and literary analyses, you are not just learning vocabulary in context—you are exploring the rich ideas, diverse cultures, and timeless philosophies embedded in world literature. The literature itself elevates both your mind and your English.</p>
-                           <p style={{ margin: 0 }}>However, Lit & Learn is much more than a library of literary reviews; it is a complete, interactive language center. Your learning journey here bridges the gap between theory and practice. You will move from deep textual analysis to structured lessons in the <strong>English Corner</strong>, where you can actively apply your knowledge through targeted exercises for grammar, pronunciation, and vocabulary. Finally, the <strong>My Progress</strong> dashboard ensures your success is measurable, allowing you to track your daily reviews and official assessments.</p>
-                           <p style={{ margin: 0 }}>Drawing on my PhD in English Linguistics and years of teaching experience, my mission is to continuously evolve this platform. By blending the profound depth of world literature with interactive pedagogical tools, my goal is to guide you to absolute, confident mastery of the English language.</p>
-                        </div>
                       </div>
-                    </div>
-                  } />
+                    } />
 
-                  {/* --- ROUTE: CONTACT --- */}
-                  <Route path="/contact" element={<ContactPage />} />
-                </Routes>
-              )}
-            </>
-          ) : (
-            <>
-              {isQuizMode && <QuizOverlay quizItems={quizItems} isLevelExam={isLevelExam} onClose={() => handleNavigation('/')} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} />}
-              {isInteractiveLesson && activeLessonData && (
-                <InteractiveLesson lessonData={activeLessonData} onClose={() => { setIsInteractiveLesson(false); setActiveLessonData(null); }} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} onComplete={() => handleMarkLessonComplete(activeLessonData._id)} />
-              )}
-            </>
-          )}
-        </div>
-
-        {showNoQuizModal && (
-          <div style={styles.modalOverlay} onClick={() => setShowNoQuizModal(false)}>
-            <div className="responsive-card" style={{...styles.modalContent, maxWidth: '450px', textAlign: 'center', padding: '50px'}} onClick={e => e.stopPropagation()}>
-              <div style={{ width: '80px', height: '80px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px auto' }}>
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              </div>
-              <h2 style={{ fontSize: '2.2rem', marginBottom: '16px', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>No Questions Yet</h2>
-              <p style={{ color: '#64748B', fontSize: '1.15rem', marginBottom: '32px', lineHeight: '1.6' }}>No assessment questions have been published for this unit yet. Check back later!</p>
-              <button onClick={() => setShowNoQuizModal(false)} style={{ background: '#4F46E5', color: '#ffffff', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', width: '100%', transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)' }}>Understood</button>
-            </div>
-          </div>
-        )}
-
-        {selectedBook && (
-          <div style={styles.modalOverlay} onClick={() => setSelectedBook(null)}>
-            <div className="responsive-card" style={{...styles.modalContent, overflowY: 'auto'}} onClick={e => e.stopPropagation()}>
-              <button className="modal-close-btn" onClick={() => setSelectedBook(null)} style={styles.closeButton}>✕</button>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '30px' }}>
-                {selectedBook.coverImage ? (
-                  <img src={urlFor(selectedBook.coverImage).url()} alt={selectedBook.title} style={{ height: '280px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 15px 35px rgba(0,0,0,0.15)' }} />
-                ) : (
-                  <div style={{ height: '280px', width: '190px', background: '#F8FAFC', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', marginBottom: '24px' }}>No Cover</div>
+                    {/* --- ROUTE: CONTACT --- */}
+                    <Route path="/contact" element={<ContactPage />} />
+                  </Routes>
                 )}
-                <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px', lineHeight: '1.2' }}>{selectedBook.title}</h2>
-                {selectedBook.author && <span style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '16px' }}>by {selectedBook.author}</span>}
-                {selectedBook.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 16px', borderRadius: '9999px', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>{selectedBook.level}</span>}
-                <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginTop: '24px' }} />
-              </div>
-              <div className="modal-text-content" style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
-                <TextHighlighter 
-                  text={typeof selectedBook.content === 'string' ? selectedBook.content : Array.isArray(selectedBook.content) ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n') : "Review content is currently being updated."} 
-                  dictionary={dictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
-                />
-              </div>
-            </div>
+              </>
+            ) : (
+              <>
+                {isQuizMode && <QuizOverlay quizItems={quizItems} isLevelExam={isLevelExam} onClose={() => handleNavigation('/')} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} />}
+                {isInteractiveLesson && activeLessonData && (
+                  <InteractiveLesson lessonData={activeLessonData} onClose={() => { setIsInteractiveLesson(false); setActiveLessonData(null); }} dictionary={dictionary} savedWords={savedWords} toggleSaveWord={toggleSaveWord} onComplete={() => handleMarkLessonComplete(activeLessonData._id)} />
+                )}
+              </>
+            )}
           </div>
-        )}
 
-        <footer style={{ background: '#0F172A', color: '#94A3B8', marginTop: '100px', padding: '80px 20px', borderRadius: '40px 40px 0 0' }}>
-          <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 40px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '40px', textAlign: 'center' }}>
-            <div>
-              <h3 style={{ color: '#ffffff', margin: '0 0 20px', fontSize: '2.2rem', fontWeight: '600', letterSpacing: '-1px' }}>Lit & Learn</h3>
-              <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.15rem' }}>Mastering English through global literature — one page at a time.</p>
+          {showNoQuizModal && (
+            <div style={styles.modalOverlay} onClick={() => setShowNoQuizModal(false)}>
+              <div className="responsive-card" style={{...styles.modalContent, maxWidth: '450px', textAlign: 'center', padding: '50px'}} onClick={e => e.stopPropagation()}>
+                <div style={{ width: '80px', height: '80px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px auto' }}>
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <h2 style={{ fontSize: '2.2rem', marginBottom: '16px', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>No Questions Yet</h2>
+                <p style={{ color: '#64748B', fontSize: '1.15rem', marginBottom: '32px', lineHeight: '1.6' }}>No assessment questions have been published for this unit yet. Check back later!</p>
+                <button onClick={() => setShowNoQuizModal(false)} style={{ background: '#4F46E5', color: '#ffffff', padding: '16px 32px', borderRadius: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', width: '100%', transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)' }}>Understood</button>
+              </div>
             </div>
-            <div style={{ fontSize: '1.1rem', fontWeight: '500', paddingTop: '30px' }}>© 2026 Lit & Learn. All rights reserved.</div>
-          </div>
-        </footer>
-      </div>
+          )}
+
+          {selectedBook && (
+            <div style={styles.modalOverlay} onClick={() => setSelectedBook(null)}>
+              <div className="responsive-card" style={{...styles.modalContent, overflowY: 'auto'}} onClick={e => e.stopPropagation()}>
+                <button className="modal-close-btn" onClick={() => setSelectedBook(null)} style={styles.closeButton}>✕</button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '30px' }}>
+                  {selectedBook.coverImage ? (
+                    <img src={urlFor(selectedBook.coverImage).url()} alt={selectedBook.title} style={{ height: '280px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 15px 35px rgba(0,0,0,0.15)' }} />
+                  ) : (
+                    <div style={{ height: '280px', width: '190px', background: '#F8FAFC', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', marginBottom: '24px' }}>No Cover</div>
+                  )}
+                  <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px', lineHeight: '1.2' }}>{selectedBook.title}</h2>
+                  {selectedBook.author && <span style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '16px' }}>by {selectedBook.author}</span>}
+                  {selectedBook.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 16px', borderRadius: '9999px', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>{selectedBook.level}</span>}
+                  <div style={{ height: '4px', width: '40px', backgroundColor: '#4F46E5', borderRadius: '2px', marginTop: '24px' }} />
+                </div>
+                <div className="modal-text-content" style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
+                  <TextHighlighter 
+                    text={typeof selectedBook.content === 'string' ? selectedBook.content : Array.isArray(selectedBook.content) ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n') : "Review content is currently being updated."} 
+                    dictionary={dictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer style={{ background: '#0F172A', color: '#94A3B8', marginTop: '100px', padding: '80px 20px', borderRadius: '40px 40px 0 0' }}>
+            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 40px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '40px', textAlign: 'center' }}>
+              <div>
+                <h3 style={{ color: '#ffffff', margin: '0 0 20px', fontSize: '2.2rem', fontWeight: '600', letterSpacing: '-1px' }}>Lit & Learn</h3>
+                <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.15rem' }}>Mastering English through global literature — one page at a time.</p>
+              </div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '500', paddingTop: '30px' }}>© 2026 Lit & Learn. All rights reserved.</div>
+            </div>
+          </footer>
+        </div>
+      )}
     </>
   );
 }
