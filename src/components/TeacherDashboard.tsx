@@ -98,7 +98,7 @@ export const TeacherDashboard: React.FC = () => {
     }
   }, [selectedProgressStudent]);
 
-  // --- LIVE ARENA REALTIME SUBSCRIPTION (UPDATED) ---
+  // --- LIVE ARENA REALTIME SUBSCRIPTION (LIVE SCORE SYNC MAINTAINED) ---
   useEffect(() => {
     if (!activeSession) return;
 
@@ -126,13 +126,12 @@ export const TeacherDashboard: React.FC = () => {
         .on(
           'postgres_changes', 
           { 
-            event: '*', // <--- CRITICAL FIX: Listen to ALL events (INSERT and UPDATE)
+            event: '*', // <--- Listens for real-time score bumps
             schema: 'public', 
             table: 'live_participants', 
             filter: `session_id=eq.${activeSession.id}` 
           }, 
           (payload) => {
-            console.log("Leaderboard update detected!", payload);
             fetchLatestLeaderboard(); 
           }
         )
@@ -233,7 +232,7 @@ export const TeacherDashboard: React.FC = () => {
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: activeThread.email,
-          studentName: '', // Left blank so you control the greeting
+          studentName: '', 
           messageBody: replyText,
           subject: 'Re: Message from Lit & Learn'
         }
@@ -266,7 +265,6 @@ export const TeacherDashboard: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Strict 4MB limit to prevent Edge Function JSON payload rejection
     if (file.size > 4 * 1024 * 1024) {
       showToast("Attachment is too large. Limit is 4MB.", "error");
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -294,7 +292,6 @@ export const TeacherDashboard: React.FC = () => {
     if (!composeRecipient || !composeText.trim()) return;
 
     const student = students.find(s => s.email === composeRecipient);
-    const studentName = student ? student.full_name : 'Student';
     const studentId = student ? student.id : null;
 
     setIsSendingCompose(true);
@@ -305,7 +302,7 @@ export const TeacherDashboard: React.FC = () => {
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: composeRecipient,
-          studentName: '', // Left blank so you control the greeting manually
+          studentName: '', 
           subject: composeSubject || 'New Message from Lit & Learn',
           messageBody: composeText,
           attachment: composeAttachment
@@ -313,7 +310,6 @@ export const TeacherDashboard: React.FC = () => {
       });
       if (emailError) throw emailError;
       
-      // Add a note in the message history if an attachment was sent
       let dbMessageText = composeText;
       if (composeAttachment) {
         dbMessageText += `\n\n[Attachment sent: ${composeAttachment.filename}]`;
@@ -330,7 +326,6 @@ export const TeacherDashboard: React.FC = () => {
 
       showToast(`Message securely sent!`, 'success');
       
-      // Reset Compose Form
       setComposeText('');
       setComposeRecipient('');
       setComposeSubject('');
@@ -406,7 +401,7 @@ export const TeacherDashboard: React.FC = () => {
       const { error: emailError } = await supabase.functions.invoke('send-email', {
         body: {
           toEmail: selectedStudent.email,
-          studentName: selectedStudent.full_name, // Keeps the nice greeting for automated grades
+          studentName: selectedStudent.full_name,
           subject: `Official Assessment Grade: ${assessmentName}`,
           messageBody: automatedEmailBody
         }
@@ -458,7 +453,6 @@ export const TeacherDashboard: React.FC = () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
       
-      // Generate a random 4 digit PIN
       const pin = Math.floor(1000 + Math.random() * 9000).toString();
 
       const { data, error } = await supabase.from('live_sessions').insert([{
@@ -648,7 +642,7 @@ export const TeacherDashboard: React.FC = () => {
                 )}
               </div>
 
-              {/* RIGHT: LIVE LEADERBOARD */}
+              {/* RIGHT: LIVE LEADERBOARD (NOW WITH MASSIVE TIME VISIBLE) */}
               <div style={{ flex: '1.5', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
                   <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>
@@ -664,21 +658,30 @@ export const TeacherDashboard: React.FC = () => {
                     <div>Waiting for the first student to connect...</div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {liveParticipants.map((player, index) => (
-                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '16px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s' }}>
+                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s' }}>
                         
-                        <div style={{ width: '40px', fontSize: '1.2rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8' }}>
+                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8' }}>
                           #{index + 1}
                         </div>
                         
-                        <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#0F172A', flexGrow: 1 }}>
+                        <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0F172A', flexGrow: 1 }}>
                           {player.nickname}
                         </div>
                         
-                        <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '8px 20px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-                          {player.score} pts
+                        {/* RESTORED: THE MASSIVE SCORE AND TIME BADGES */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          {player.total_time !== undefined && player.total_time !== null && (
+                            <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>
+                              ⏱ {player.total_time}s
+                            </div>
+                          )}
+                          <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>
+                            {player.score} pts
+                          </div>
                         </div>
+
                       </div>
                     ))}
                   </div>
