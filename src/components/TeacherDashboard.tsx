@@ -82,7 +82,6 @@ export const TeacherDashboard: React.FC = () => {
     }
   }, [selectedProgressStudent]);
 
-  // --- LIVE ARENA REALTIME SUBSCRIPTION (RACE-CONDITION PROOF) ---
   useEffect(() => {
     if (!activeSession) return;
 
@@ -92,7 +91,6 @@ export const TeacherDashboard: React.FC = () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
       
-      // We only fetch once at the very beginning
       const fetchInitialLeaderboard = async () => {
         const { data, error } = await supabase
           .from('live_participants')
@@ -105,7 +103,6 @@ export const TeacherDashboard: React.FC = () => {
 
       await fetchInitialLeaderboard();
 
-      // Instead of re-fetching, we inject the live data directly into the React state!
       channel = supabase
         .channel(`arena_${activeSession.id}`) 
         .on(
@@ -533,13 +530,24 @@ export const TeacherDashboard: React.FC = () => {
                           {player.nickname}
                         </div>
                         
-                        {/* RESTORED: THE MASSIVE SCORE AND TIME BADGES */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        {/* RESTORED AND UPGRADED BADGES (Time, Accuracy, Score) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          
+                          {/* ACCURACY BADGE */}
+                          {player.total_questions !== undefined && player.total_questions !== null && (
+                            <div style={{ fontSize: '1.2rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '10px 16px', borderRadius: '12px' }}>
+                              ✓ {player.correct_answers || 0}/{player.total_questions}
+                            </div>
+                          )}
+
+                          {/* TIME BADGE */}
                           {player.total_time !== undefined && player.total_time !== null && (
                             <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>
                               ⏱ {player.total_time}s
                             </div>
                           )}
+
+                          {/* SCORE BADGE */}
                           <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>
                             {player.score} pts
                           </div>

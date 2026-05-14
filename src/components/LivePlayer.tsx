@@ -17,6 +17,9 @@ export const LivePlayer: React.FC = () => {
   const [isFinished, setIsFinished] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   
+  // --- NEW: ACCURACY STATE ---
+  const [correctCount, setCorrectCount] = useState<number>(0);
+
   // --- SPEED TIMER STATES ---
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
   const [timeLeft, setTimeLeft] = useState<number>(20); 
@@ -117,11 +120,9 @@ export const LivePlayer: React.FC = () => {
     }
   }, [currentQuestionIndex, isLoadingQuestions, questions.length, session?.status, isFinished]);
 
-  // --- NEW: THE AUTO-ADVANCE REFEREE ---
-  // If the clock hits 0, force an incorrect answer.
   useEffect(() => {
     if (timeLeft === 0 && session?.status === 'active' && !isFinished) {
-      handleAnswer(null); // 'null' means they ran out of time
+      handleAnswer(null); 
     }
   }, [timeLeft, session?.status, isFinished]);
 
@@ -149,19 +150,20 @@ export const LivePlayer: React.FC = () => {
 
   // --- UPDATED GAMEPLAY LOGIC ---
   const handleAnswer = async (selectedKey: string | null) => {
-    // Prevent double clicking or double timeouts
     if (processingRef.current || isFinished) return;
     processingRef.current = true;
 
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
     
-    // 1. Calculate time spent (maxes out at 20,000ms if they ran out of time)
+    // Track Correct Answers
+    const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
+    if (isCorrect) setCorrectCount(newCorrectCount);
+
     const timeTakenMs = selectedKey === null ? 20000 : (Date.now() - questionStartTime);
     const newTotalTimeMs = totalTimeMs + timeTakenMs;
     setTotalTimeMs(newTotalTimeMs);
 
-    // 2. Calculate Score
     let newScore = score;
     if (isCorrect) {
       const maxTimeMs = 20000; 
@@ -171,29 +173,29 @@ export const LivePlayer: React.FC = () => {
       setScore(newScore);
     }
 
-    // 3. Format time for the Teacher Dashboard
     const formattedSeconds = parseFloat((newTotalTimeMs / 1000).toFixed(1));
 
+    // Push everything (Score, Time, and Accuracy) to Supabase instantly!
     const supabase = getSupabaseClient('');
     await supabase
       .from('live_participants')
       .update({ 
         score: newScore,
-        total_time: formattedSeconds 
+        total_time: formattedSeconds,
+        correct_answers: newCorrectCount,
+        total_questions: questions.length
       })
       .eq('id', participantId);
 
-    // 4. Move to next question or finish
     if (currentQuestionIndex + 1 < questions.length) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
-      processingRef.current = false; // Reset the referee for the next question
+      processingRef.current = false; 
     } else {
       setIsFinished(true);
       await supabase
         .from('live_participants')
         .update({ finished_at: new Date().toISOString() })
         .eq('id', participantId);
-      // We intentionally do NOT reset the referee here because the game is over!
     }
   };
 
