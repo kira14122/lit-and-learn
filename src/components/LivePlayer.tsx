@@ -17,15 +17,16 @@ export const LivePlayer: React.FC = () => {
   const [isFinished, setIsFinished] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   
-  // --- NEW: ACCURACY STATE ---
   const [correctCount, setCorrectCount] = useState<number>(0);
+
+  // --- PEDAGOGICAL FEEDBACK STATE ---
+  const [feedbackState, setFeedbackState] = useState<{ show: boolean, isCorrect: boolean, selectedKey: string | null } | null>(null);
 
   // --- SPEED TIMER STATES ---
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
   const [timeLeft, setTimeLeft] = useState<number>(20); 
   const [totalTimeMs, setTotalTimeMs] = useState<number>(0);
 
-  // A hidden referee to prevent double-clicking and handle timeouts perfectly
   const processingRef = useRef(false);
 
   useEffect(() => {
@@ -70,7 +71,8 @@ export const LivePlayer: React.FC = () => {
                 return {
                   question: cols[0],
                   options: { A: cols[1], B: cols[2], C: cols[3] },
-                  correctAnswer: cols[4].toUpperCase().replace(/[^ABC]/g, '')
+                  correctAnswer: cols[4].toUpperCase().replace(/[^ABC]/g, ''),
+                  explanation: cols[5] || `Make sure to review this grammar rule! The correct answer was ${cols[4].toUpperCase()}.`
                 };
               }
               return null;
@@ -105,7 +107,7 @@ export const LivePlayer: React.FC = () => {
   }, [session]);
 
   useEffect(() => {
-    if (session?.status === 'active' && !isLoadingQuestions && questions.length > 0 && !isFinished) {
+    if (session?.status === 'active' && !isLoadingQuestions && questions.length > 0 && !isFinished && !feedbackState?.show) {
       setQuestionStartTime(Date.now());
       setTimeLeft(20); 
       
@@ -118,13 +120,13 @@ export const LivePlayer: React.FC = () => {
 
       return () => clearInterval(timerInterval);
     }
-  }, [currentQuestionIndex, isLoadingQuestions, questions.length, session?.status, isFinished]);
+  }, [currentQuestionIndex, isLoadingQuestions, questions.length, session?.status, isFinished, feedbackState?.show]);
 
   useEffect(() => {
-    if (timeLeft === 0 && session?.status === 'active' && !isFinished) {
+    if (timeLeft === 0 && session?.status === 'active' && !isFinished && !feedbackState?.show) {
       handleAnswer(null); 
     }
-  }, [timeLeft, session?.status, isFinished]);
+  }, [timeLeft, session?.status, isFinished, feedbackState?.show]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,15 +150,13 @@ export const LivePlayer: React.FC = () => {
     }
   };
 
-  // --- UPDATED GAMEPLAY LOGIC ---
   const handleAnswer = async (selectedKey: string | null) => {
-    if (processingRef.current || isFinished) return;
+    if (processingRef.current || isFinished || feedbackState?.show) return;
     processingRef.current = true;
 
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
     
-    // Track Correct Answers
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
     if (isCorrect) setCorrectCount(newCorrectCount);
 
@@ -175,7 +175,6 @@ export const LivePlayer: React.FC = () => {
 
     const formattedSeconds = parseFloat((newTotalTimeMs / 1000).toFixed(1));
 
-    // Push everything (Score, Time, and Accuracy) to Supabase instantly!
     const supabase = getSupabaseClient('');
     await supabase
       .from('live_participants')
@@ -187,11 +186,22 @@ export const LivePlayer: React.FC = () => {
       })
       .eq('id', participantId);
 
+    setFeedbackState({ show: true, isCorrect, selectedKey });
+    processingRef.current = false; 
+  };
+
+  const handleNextQuestion = async () => {
+    setFeedbackState(null);
+    
+    // FIX: Force the timer to reset instantly so the auto-advance referee doesn't get confused
+    setTimeLeft(20);
+    setQuestionStartTime(Date.now());
+
     if (currentQuestionIndex + 1 < questions.length) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
-      processingRef.current = false; 
     } else {
       setIsFinished(true);
+      const supabase = getSupabaseClient('');
       await supabase
         .from('live_participants')
         .update({ finished_at: new Date().toISOString() })
@@ -262,14 +272,55 @@ export const LivePlayer: React.FC = () => {
                   const optionText = questions[currentQuestionIndex].options[key as 'A' | 'B' | 'C'];
                   if (!optionText) return null;
 
+                  const isSelected = feedbackState?.selectedKey === key;
+                  const isActuallyCorrect = questions[currentQuestionIndex].correctAnswer === key;
+                  
+                  let bgColor = '#F8FAFC';
+                  let borderColor = '#E2E8F0';
+                  let textColor = '#334155';
+                  let opacity = 1;
+
+                  if (feedbackState?.show) {
+                    if (isActuallyCorrect) {
+                      bgColor = '#ECFDF5'; borderColor = '#10B981'; textColor = '#065F46';
+                    } else if (isSelected) {
+                      bgColor = '#FEF2F2'; borderColor = '#EF4444'; textColor = '#991B1B';
+                    } else {
+                      opacity = 0.5;
+                    }
+                  }
+
                   return (
-                    <button key={key} onClick={() => handleAnswer(key)} style={{ background: '#F8FAFC', border: '2px solid #E2E8F0', padding: '20px', borderRadius: '20px', fontSize: '1.2rem', color: '#334155', fontWeight: '600', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', outline: 'none', display: 'flex', alignItems: 'center', gap: '16px' }} onMouseOver={(e) => { e.currentTarget.style.borderColor = '#4F46E5'; e.currentTarget.style.background = '#EEF2FF'; e.currentTarget.style.color = '#4F46E5'; }} onMouseOut={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.color = '#334155'; }}>
+                    <button 
+                      key={key} 
+                      onClick={() => handleAnswer(key)}
+                      disabled={feedbackState?.show}
+                      style={{ background: bgColor, border: `2px solid ${borderColor}`, color: textColor, opacity: opacity, padding: '20px', borderRadius: '20px', fontSize: '1.2rem', fontWeight: '600', textAlign: 'left', cursor: feedbackState?.show ? 'default' : 'pointer', transition: 'all 0.2s', outline: 'none', display: 'flex', alignItems: 'center', gap: '16px' }} 
+                    >
                       <span style={{ background: '#F1F5F9', color: '#64748B', padding: '8px 14px', borderRadius: '12px', fontWeight: '700', fontSize: '1rem' }}>{key}</span>
                       {optionText}
                     </button>
                   );
                 })}
               </div>
+
+              {feedbackState?.show && (
+                <div style={{ background: feedbackState.isCorrect ? '#ECFDF5' : '#FEF2F2', padding: '24px', borderRadius: '20px', border: `2px solid ${feedbackState.isCorrect ? '#10B981' : '#EF4444'}`, marginTop: '24px', animation: 'fadeIn 0.3s ease-out' }}>
+                  <h3 style={{ color: feedbackState.isCorrect ? '#059669' : '#DC2626', margin: '0 0 8px 0', fontSize: '1.4rem' }}>
+                    {feedbackState.isCorrect ? 'Spot on!' : 'Not quite!'}
+                  </h3>
+                  <p style={{ color: '#334155', fontSize: '1.1rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+                    {questions[currentQuestionIndex].explanation}
+                  </p>
+                  <button 
+                    onClick={handleNextQuestion} 
+                    style={{ background: feedbackState.isCorrect ? '#10B981' : '#EF4444', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
+                  >
+                    Next Question →
+                  </button>
+                </div>
+              )}
+
             </div>
           ) : (
             <div style={{ textAlign: 'center', color: '#EF4444', fontWeight: '600', fontSize: '1.2rem' }}>{error || "An error occurred."}</div>

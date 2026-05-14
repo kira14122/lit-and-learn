@@ -6,7 +6,7 @@ import { generateStudentFeedback } from '../aiGenerator';
 // --- ICONS ---
 const IconMail = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
-const IconRefresh = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>);
+const IconRefresh = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>);
 const IconUsers = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>);
 const IconSend = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>);
 const IconReply = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>);
@@ -87,6 +87,15 @@ export const TeacherDashboard: React.FC = () => {
 
     let channel: any;
 
+    const sortPlayers = (players: any[]) => {
+      return [...players].sort((a, b) => {
+        const correctA = a.correct_answers || 0;
+        const correctB = b.correct_answers || 0;
+        if (correctB !== correctA) return correctB - correctA;
+        return (b.score || 0) - (a.score || 0);
+      });
+    };
+
     const setupRealtime = async () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
@@ -96,6 +105,7 @@ export const TeacherDashboard: React.FC = () => {
           .from('live_participants')
           .select('*')
           .eq('session_id', activeSession.id)
+          .order('correct_answers', { ascending: false })
           .order('score', { ascending: false });
         
         if (!error && data) setLiveParticipants(data);
@@ -107,23 +117,17 @@ export const TeacherDashboard: React.FC = () => {
         .channel(`arena_${activeSession.id}`) 
         .on(
           'postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
-            table: 'live_participants', 
-            filter: `session_id=eq.${activeSession.id}` 
-          }, 
+          { event: '*', schema: 'public', table: 'live_participants', filter: `session_id=eq.${activeSession.id}` }, 
           (payload) => {
             if (payload.eventType === 'INSERT') {
               setLiveParticipants(prev => {
                 const exists = prev.find(p => p.id === payload.new.id);
                 if (exists) return prev;
-                return [...prev, payload.new].sort((a, b) => b.score - a.score);
+                return sortPlayers([...prev, payload.new]);
               });
             } else if (payload.eventType === 'UPDATE') {
               setLiveParticipants(prev => {
-                return prev.map(p => p.id === payload.new.id ? payload.new : p)
-                           .sort((a, b) => b.score - a.score);
+                return sortPlayers(prev.map(p => p.id === payload.new.id ? payload.new : p));
               });
             }
           }
@@ -401,6 +405,9 @@ export const TeacherDashboard: React.FC = () => {
 
   const activeThread = threads.find(t => t.email === selectedThreadEmail);
 
+  // Check if the game is currently actively playing or finished (not waiting for players)
+  const isGameActive = activeSession?.status === 'active' || activeSession?.status === 'finished';
+
   return (
     <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1400px', margin: '0 auto', position: 'relative' }}>
       
@@ -488,22 +495,56 @@ export const TeacherDashboard: React.FC = () => {
           {activeSession && (
             <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
               
-              <div style={{ flex: '1', background: '#F8FAFC', padding: '40px', borderRadius: '32px', border: '2px dashed #CBD5E1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px' }}>Join at litnlearn.com/play</h3>
-                <h1 style={{ fontSize: '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px' }}>{activeSession.pin_code}</h1>
+              {/* LEFT: COLLAPSIBLE QR CODE PANEL */}
+              <div style={{ 
+                flex: isGameActive ? '0 0 250px' : '1', 
+                background: '#F8FAFC', 
+                padding: isGameActive ? '32px 24px' : '40px', 
+                borderRadius: '32px', 
+                border: '2px dashed #CBD5E1', 
+                textAlign: 'center', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
+              }}>
+                <h3 style={{ fontSize: isGameActive ? '1rem' : '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px', transition: 'font-size 0.4s ease' }}>
+                  Join at litnlearn.com/play
+                </h3>
+                <h1 style={{ fontSize: isGameActive ? '3.5rem' : '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px', transition: 'font-size 0.4s ease' }}>
+                  {activeSession.pin_code}
+                </h1>
                 
-                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} alt="Join Game QR Code" width={200} height={200} />
+                <div style={{ background: '#ffffff', padding: isGameActive ? '16px' : '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center', transition: 'padding 0.4s ease' }}>
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=${isGameActive ? '120x120' : '200x200'}&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} 
+                    alt="Join Game QR Code" 
+                    width={isGameActive ? 120 : 200} 
+                    height={isGameActive ? 120 : 200} 
+                    style={{ transition: 'all 0.4s ease' }}
+                  />
                 </div>
 
                 {activeSession.status === 'waiting' ? (
-                  <button onClick={handleStartGame} style={{ background: '#10B981', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)' }}>Start Game</button>
+                  <button onClick={handleStartGame} style={{ background: '#10B981', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)', width: '100%' }}>Start Game</button>
                 ) : (
-                  <button onClick={handleEndGame} style={{ background: '#EF4444', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239, 68, 68, 0.3)' }}>End Game</button>
+                  <button onClick={handleEndGame} style={{ background: '#EF4444', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239, 68, 68, 0.3)', width: '100%' }}>End Game</button>
                 )}
               </div>
 
-              <div style={{ flex: '1.5', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto' }}>
+              {/* RIGHT: EXPANDING LEADERBOARD */}
+              <div style={{ 
+                flex: '1', 
+                minWidth: '0', // Allows truncation to work properly inside flex child
+                background: '#ffffff', 
+                borderRadius: '32px', 
+                border: '1px solid #E2E8F0', 
+                padding: '32px', 
+                boxShadow: '0 10px 30px rgba(0,0,0,0.02)', 
+                maxHeight: '700px', 
+                overflowY: 'auto',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
                   <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>
                     {activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}
@@ -520,39 +561,42 @@ export const TeacherDashboard: React.FC = () => {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {liveParticipants.map((player, index) => (
-                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s' }}>
+                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s', gap: '16px' }}>
                         
-                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8' }}>
+                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8', flexShrink: 0 }}>
                           #{index + 1}
                         </div>
                         
-                        <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0F172A', flexGrow: 1 }}>
+                        {/* Name gracefully truncates with ellipsis if it still somehow runs out of room */}
+                        <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0F172A', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {player.nickname}
                         </div>
+
+                        {player.finished_at && (
+                          <div style={{ background: '#10B981', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', flexShrink: 0 }}>
+                            DONE
+                          </div>
+                        )}
                         
-                        {/* RESTORED AND UPGRADED BADGES (Time, Accuracy, Score) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, whiteSpace: 'nowrap' }}>
                           
-                          {/* ACCURACY BADGE */}
                           {player.total_questions !== undefined && player.total_questions !== null && (
                             <div style={{ fontSize: '1.2rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '10px 16px', borderRadius: '12px' }}>
                               ✓ {player.correct_answers || 0}/{player.total_questions}
                             </div>
                           )}
 
-                          {/* TIME BADGE */}
                           {player.total_time !== undefined && player.total_time !== null && (
                             <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>
-                              ⏱ {player.total_time}s
+                              ⏱ {player.total_time >= 60 ? `${Math.floor(player.total_time / 60)}m ${Math.floor(player.total_time % 60)}s` : `${player.total_time}s`}
                             </div>
                           )}
 
-                          {/* SCORE BADGE */}
                           <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>
                             {player.score} pts
                           </div>
-                        </div>
 
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -563,6 +607,7 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* --- TAB: THREADED EMAIL INBOX --- */}
       {adminTab === 'inbox' && (
         <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '32px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', paddingBottom: '20px', borderBottom: '2px solid #F1F5F9' }}>
