@@ -16,10 +16,8 @@ export default function VocabBlock({ block }: { block: any }) {
   const answeredBlanks = Object.keys(blankAnswers).length;
   const allAnswered = (answeredHunt + answeredBlanks) === totalQuestions;
 
-  // THE FIX: Memorize a shuffled version of the word bank so it doesn't give away the answers!
   const shuffledWordBank = useMemo(() => {
     if (!block.wordBank) return [];
-    // The .sort() with Math.random() acts like shuffling a deck of cards
     return [...block.wordBank].sort(() => 0.5 - Math.random());
   }, [block.wordBank]);
 
@@ -119,7 +117,6 @@ export default function VocabBlock({ block }: { block: any }) {
             Fill in the Blanks
           </h3>
 
-          {/* THE INTERACTIVE WORD BANK (Now mapped to the shuffled version!) */}
           {shuffledWordBank.length > 0 && (
             <div style={{ padding: '20px', backgroundColor: '#F8FAFC', borderRadius: '16px', border: '2px dashed #CBD5E1', marginBottom: '30px', minHeight: '80px' }}>
               <p style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Tap a word to place it:</p>
@@ -156,7 +153,10 @@ export default function VocabBlock({ block }: { block: any }) {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {block.fillInTheBlanks.map((q: any, i: number) => {
-              const parts = q.sentence.split('___');
+              
+              // THE FIX: Split on *any* number of consecutive underscores using Regex
+              const parts = q.sentence.split(/_+/);
+              
               const currentWord = blankAnswers[i];
               const isCorrect = currentWord === q.correctWord;
               
@@ -178,8 +178,10 @@ export default function VocabBlock({ block }: { block: any }) {
 
               return (
                 <div key={i} style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #E2E8F0', fontSize: '1.2rem', color: '#334155', lineHeight: '2' }}>
+                  {/* First half of the sentence */}
                   {parts[0]}
                   
+                  {/* The interactive drop-zone button */}
                   <button 
                     onClick={() => handleBlankClick(i)}
                     style={{ 
@@ -200,6 +202,7 @@ export default function VocabBlock({ block }: { block: any }) {
                     {currentWord || ''}
                   </button>
 
+                  {/* Second half of the sentence (safely catches the rest!) */}
                   {parts[1]}
 
                   {isSubmitted && !isCorrect && (
