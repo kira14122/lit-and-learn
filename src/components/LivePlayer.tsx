@@ -195,26 +195,26 @@ export const LivePlayer: React.FC = () => {
       {!session ? (
         <div style={{ background: '#ffffff', padding: '40px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
           <h1 style={{ color: '#0F172A', fontSize: '2.5rem', marginBottom: '8px', fontWeight: '700', letterSpacing: '-1px' }}>Lit <span style={{color: '#4F46E5'}}>&</span> Learn</h1>
-          <p style={{ color: '#64748B', marginBottom: '32px', fontSize: '1.1rem' }}>Enter the Arena</p>
+          <p style={{ color: '#64748B', marginBottom: '32px', fontSize: '1.1rem' }}>Join the Game</p>
           <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <input type="text" placeholder="Game PIN" value={pin} onChange={(e) => setPin(e.target.value.toUpperCase())} required style={{ padding: '16px', borderRadius: '16px', border: '2px solid #E2E8F0', fontSize: '1.4rem', textAlign: 'center', fontWeight: '700', letterSpacing: '4px', outline: 'none' }} />
             <input type="text" placeholder="Nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} required maxLength={15} style={{ padding: '16px', borderRadius: '16px', border: '2px solid #E2E8F0', fontSize: '1.2rem', textAlign: 'center', outline: 'none' }} />
             {error && <div style={{ color: '#EF4444', fontWeight: '600', fontSize: '0.95rem', background: '#FEF2F2', padding: '10px', borderRadius: '8px' }}>{error}</div>}
             <button type="submit" disabled={isJoining || !pin || !nickname} style={{ background: '#0F172A', color: '#ffffff', padding: '18px', borderRadius: '16px', border: 'none', fontSize: '1.2rem', fontWeight: '700', cursor: 'pointer', marginTop: '8px', opacity: (isJoining || !pin || !nickname) ? 0.6 : 1, transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(15, 23, 42, 0.15)' }}>
-              {isJoining ? 'Connecting...' : 'Secure Connection'}
+              {isJoining ? 'Joining...' : 'Join Game'}
             </button>
           </form>
         </div>
       ) : session.status === 'waiting' ? (
         <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
-          <h2 style={{ fontSize: '2.2rem', color: '#0F172A', marginBottom: '16px' }}>Connected, <span style={{color: theme.accent}}>{nickname}</span>.</h2>
-          <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '30px' }}>Look at the smartboard to verify your secure connection.</p>
-          <div style={{ background: '#F8FAFC', color: '#475569', padding: '16px 32px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '600', display: 'inline-block', border: '1px solid #E2E8F0' }}>Awaiting your teacher to start...</div>
+          <h2 style={{ fontSize: '2.2rem', color: '#0F172A', marginBottom: '16px' }}>You're in, <span style={{color: theme.accent}}>{nickname}</span>!</h2>
+          <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '30px' }}>Look at the board to see your name.</p>
+          <div style={{ background: '#F8FAFC', color: '#475569', padding: '16px 32px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '600', display: 'inline-block', border: '1px solid #E2E8F0' }}>Waiting for your teacher to start...</div>
         </div>
       ) : isFinished ? (
         <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
-          <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px' }}>Assessment Complete</h2>
-          <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '30px' }}>Please refer to the smartboard for final analytics.</p>
+          <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px' }}>Finished!</h2>
+          <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '30px' }}>Look at the board to see the final results.</p>
           <div style={{ background: theme.bg, border: `2px solid ${theme.border}`, color: theme.accent, padding: '20px', borderRadius: '24px' }}>
             <div style={{ fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Final Score</div>
             <div style={{ fontSize: '3rem', fontWeight: '800' }}>{score}</div>
@@ -223,7 +223,7 @@ export const LivePlayer: React.FC = () => {
       ) : (
         <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', marginTop: '40px' }}>
           {isLoadingQuestions ? (
-            <div style={{ textAlign: 'center', fontSize: '1.3rem', color: '#64748B', fontWeight: '600' }}>Decrypting module...</div>
+            <div style={{ textAlign: 'center', fontSize: '1.3rem', color: '#64748B', fontWeight: '600' }}>Loading questions...</div>
           ) : questions.length > 0 ? (
             <div style={{ background: '#ffffff', padding: '32px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: `1px solid ${theme.border}` }}>
               
@@ -244,7 +244,7 @@ export const LivePlayer: React.FC = () => {
                 <div style={{ background: isCaptain ? '#0F172A' : '#F8FAFC', color: isCaptain ? '#ffffff' : '#64748B', padding: '16px', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '12px', border: isCaptain ? 'none' : '1px solid #E2E8F0', boxShadow: isCaptain ? '0 10px 20px rgba(15, 23, 42, 0.15)' : 'none' }}>
                   {isCaptain ? <IconCrown /> : <IconUsers />}
                   <div style={{ fontWeight: '600', fontSize: '1.05rem', lineHeight: '1.4' }}>
-                    {isCaptain ? "You are the Captain. Submit the team's final answer." : `Discuss strategy. ${captainName} has the controls.`}
+                    {isCaptain ? "You are the Captain! Choose the answer for your team." : `Discuss! ${captainName} will choose the answer.`}
                   </div>
                 </div>
               )}
@@ -285,10 +285,10 @@ export const LivePlayer: React.FC = () => {
                   
                   {(!showCaptainBanner || isCaptain) ? (
                     <button onClick={handleNextQuestion} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: '12px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.15)' }}>
-                      Proceed to Next Request →
+                      Next Question →
                     </button>
                   ) : (
-                    <div style={{ textAlign: 'center', color: '#64748B', fontWeight: '600', padding: '10px' }}>Waiting for {captainName} to advance protocol...</div>
+                    <div style={{ textAlign: 'center', color: '#64748B', fontWeight: '600', padding: '10px' }}>Waiting for {captainName} to click next...</div>
                   )}
                 </div>
               )}
