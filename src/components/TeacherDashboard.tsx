@@ -4,7 +4,7 @@ import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';
 import { client } from '../sanityClient'; 
 
-// --- ICONS ---
+// --- PREMIUM SVG ICONS ---
 const IconMail = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
 const IconRefresh = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>);
@@ -15,6 +15,9 @@ const IconChart = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="n
 const IconEdit = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>);
 const IconPaperclip = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>);
 const IconPlay = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>);
+const IconTrophy = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4h10M5 4h14v4a7 7 0 01-14 0V4z"></path></svg>);
+const IconSwords = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" y1="19" x2="19" y2="13"></line><line x1="16" y1="16" x2="20" y2="20"></line><line x1="19" y1="21" x2="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" y1="14" x2="9" y2="18"></line><line x1="7" y1="17" x2="4" y2="20"></line><line x1="3" y1="19" x2="5" y2="21"></line></svg>);
+const IconCrown = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="2 16 5 4 12 9 19 4 22 16 2 16"></polygon><line x1="2" y1="20" x2="22" y2="20"></line></svg>);
 
 export const TeacherDashboard: React.FC = () => {
   const { getToken } = useAuth();
@@ -58,19 +61,17 @@ export const TeacherDashboard: React.FC = () => {
 
   // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
-  const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war'>('standard');
+  const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war-all' | 'tug-of-war-captain'>('standard');
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
 
-  // --- SANITY QUIZ FETCHER ---
   const [availableQuizzes, setAvailableQuizzes] = useState<{title: string, category: string}[]>([]);
 
   useEffect(() => { fetchMessages(); fetchStudents(); fetchAllGrades(); }, []);
   useEffect(() => { if (selectedStudent) fetchStudentHistory(selectedStudent.id); else setStudentHistory([]); }, [selectedStudent]);
   useEffect(() => { if (selectedProgressStudent) fetchStudentVocab(selectedProgressStudent.id); else setStudentVocab([]); }, [selectedProgressStudent]);
 
-  // Fetch quizzes dynamically when opening the Arena tab
   useEffect(() => {
     if (adminTab === 'arena') {
       client.fetch('*[_type == "practiceBank"]{ title, category }')
@@ -147,11 +148,7 @@ export const TeacherDashboard: React.FC = () => {
       const { data, error } = await supabase.from('contact_messages').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       setMessages(data || []);
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-    } finally {
-      setIsLoadingMessages(false);
-    }
+    } catch (error) { console.error(error); } finally { setIsLoadingMessages(false); }
   };
 
   const executeDelete = async () => {
@@ -163,21 +160,15 @@ export const TeacherDashboard: React.FC = () => {
       const supabase = getSupabaseClient(token || '');
       if (target.type === 'message') {
         setMessages(prev => prev.filter(msg => msg.id !== target.id));
-        const { error } = await supabase.from('contact_messages').delete().eq('id', target.id);
-        if (error) throw error;
+        await supabase.from('contact_messages').delete().eq('id', target.id);
         showToast('Message deleted', 'success');
       } else if (target.type === 'thread') {
         if (selectedThreadEmail === target.email) setSelectedThreadEmail(null);
         setMessages(prev => prev.filter(msg => msg.email !== target.email));
-        const { error } = await supabase.from('contact_messages').delete().eq('email', target.email);
-        if (error) throw error;
+        await supabase.from('contact_messages').delete().eq('email', target.email);
         showToast('Conversation deleted', 'success');
       }
-    } catch (error) {
-      console.error("Error during deletion:", error);
-      showToast('Failed to delete. Check console.', 'error');
-      fetchMessages();
-    }
+    } catch (error) { showToast('Failed to delete. Check console.', 'error'); fetchMessages(); }
   };
 
   const handleSendReply = async () => {
@@ -188,33 +179,18 @@ export const TeacherDashboard: React.FC = () => {
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
-      const { error: emailError } = await supabase.functions.invoke('send-email', {
-        body: { toEmail: activeThread.email, studentName: '', messageBody: replyText, subject: 'Re: Message from Lit & Learn' }
-      });
-      if (emailError) throw emailError;
-      const { error: dbError } = await supabase.from('contact_messages').insert([{
-        name: 'Dr. Chouit (Reply)', email: activeThread.email, message: replyText, user_id: activeThread.user_id 
-      }]);
-      if (dbError) throw dbError;
+      await supabase.functions.invoke('send-email', { body: { toEmail: activeThread.email, studentName: '', messageBody: replyText, subject: 'Re: Message from Lit & Learn' } });
+      await supabase.from('contact_messages').insert([{ name: 'Dr. Chouit (Reply)', email: activeThread.email, message: replyText, user_id: activeThread.user_id }]);
       showToast(`Reply sent successfully to ${activeThread.name}!`, 'success');
       setReplyText('');
       fetchMessages();
-    } catch (error) {
-      console.error("Error sending email or saving reply:", error);
-      showToast('Failed to send reply. Check console for details.', 'error');
-    } finally {
-      setIsSendingReply(false);
-    }
+    } catch (error) { showToast('Failed to send reply. Check console for details.', 'error'); } finally { setIsSendingReply(false); }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      showToast("Attachment is too large. Limit is 4MB.", "error");
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
+    if (file.size > 4 * 1024 * 1024) { showToast("Attachment is too large. Limit is 4MB.", "error"); if (fileInputRef.current) fileInputRef.current.value = ''; return; }
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64String = (reader.result as string).split(',')[1];
@@ -224,10 +200,7 @@ export const TeacherDashboard: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const removeAttachment = () => {
-    setComposeAttachment(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  const removeAttachment = () => { setComposeAttachment(null); if (fileInputRef.current) fileInputRef.current.value = ''; };
 
   const handleSendCompose = async () => {
     if (!composeRecipient || !composeText.trim()) return;
@@ -237,24 +210,13 @@ export const TeacherDashboard: React.FC = () => {
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
-      const { error: emailError } = await supabase.functions.invoke('send-email', {
-        body: { toEmail: composeRecipient, studentName: '', subject: composeSubject || 'New Message from Lit & Learn', messageBody: composeText, attachment: composeAttachment }
-      });
-      if (emailError) throw emailError;
+      await supabase.functions.invoke('send-email', { body: { toEmail: composeRecipient, studentName: '', subject: composeSubject || 'New Message from Lit & Learn', messageBody: composeText, attachment: composeAttachment } });
       let dbMessageText = composeText;
       if (composeAttachment) dbMessageText += `\n\n[Attachment sent: ${composeAttachment.filename}]`;
-      const { error: dbError } = await supabase.from('contact_messages').insert([{
-        name: 'Dr. Chouit (Sent)', email: composeRecipient, message: dbMessageText, user_id: studentId 
-      }]);
-      if (dbError) throw dbError;
+      await supabase.from('contact_messages').insert([{ name: 'Dr. Chouit (Sent)', email: composeRecipient, message: dbMessageText, user_id: studentId }]);
       showToast(`Message securely sent!`, 'success');
       setComposeText(''); setComposeRecipient(''); setComposeSubject(''); removeAttachment(); setIsComposing(false); fetchMessages(); 
-    } catch (error) {
-      console.error("Error sending composed email:", error);
-      showToast('Failed to send message. Check console for details.', 'error');
-    } finally {
-      setIsSendingCompose(false);
-    }
+    } catch (error) { showToast('Failed to send message.', 'error'); } finally { setIsSendingCompose(false); }
   };
 
   const fetchStudents = async () => {
@@ -296,13 +258,9 @@ export const TeacherDashboard: React.FC = () => {
     if (dbError) { setIsSubmitting(false); showToast(`Database Error: ${dbError.message}`, 'error'); return; }
     try {
       const automatedEmailBody = `Your official assessment results have been posted to your Lit & Learn account.\n\n**Assessment:** ${assessmentName}\n\n**Scores:**\n${scoreText}\n\n**Instructor Feedback:**\n"${feedback || 'Excellent work!'}"\n\nYou can log into your student dashboard at any time to review your complete academic history.`;
-      const { error: emailError } = await supabase.functions.invoke('send-email', { body: { toEmail: selectedStudent.email, studentName: selectedStudent.full_name, subject: `Official Assessment Grade: ${assessmentName}`, messageBody: automatedEmailBody } });
-      if (emailError) throw emailError;
-      showToast(`Grade saved and emailed to ${selectedStudent.full_name}!`, 'success');
-    } catch (emailError) {
-      console.error("Error sending grade email:", emailError);
-      showToast(`Grade saved, but the email failed to send.`, 'error');
-    } finally {
+      await supabase.functions.invoke('send-email', { body: { toEmail: selectedStudent.email, studentName: selectedStudent.full_name, subject: `Official Assessment Grade: ${assessmentName}`, messageBody: automatedEmailBody } });
+      showToast(`Grade saved and emailed!`, 'success');
+    } catch (emailError) { showToast(`Grade saved, but the email failed to send.`, 'error'); } finally {
       setIsSubmitting(false);
       if (insertedGrade) { setAllGrades(prev => [insertedGrade, ...prev]); setStudentHistory(prev => [insertedGrade, ...prev]); }
       setAssessmentName('Midterm Results'); setScoreText('Speaking: \nWriting: \nGrammar: \nListening: \nVocabulary: '); setTeacherNotes(''); setFeedback('');
@@ -317,12 +275,7 @@ export const TeacherDashboard: React.FC = () => {
       const { data, error } = await supabase.from('vocab_vault').select('*').eq('user_id', studentId).order('created_at', { ascending: false });
       if (error) throw error;
       setStudentVocab(data || []);
-    } catch (error) {
-      console.error("Error fetching vocab vault:", error);
-      showToast('Failed to load student vocabulary.', 'error');
-    } finally {
-      setIsFetchingVocab(false);
-    }
+    } catch (error) { showToast('Failed to load student vocabulary.', 'error'); } finally { setIsFetchingVocab(false); }
   };
 
   const handleLaunchLobby = async () => {
@@ -338,8 +291,7 @@ export const TeacherDashboard: React.FC = () => {
       setLiveParticipants([]);
       showToast('Lobby created successfully!', 'success');
     } catch (error) {
-      console.error(error);
-      showToast('Failed to create lobby. Make sure game_mode column exists in Supabase!', 'error');
+      showToast('Failed to create lobby. Ensure game_mode exists in Supabase!', 'error');
     } finally {
       setIsCreatingLobby(false);
     }
@@ -354,9 +306,7 @@ export const TeacherDashboard: React.FC = () => {
       if (error) throw error;
       setActiveSession(data);
       showToast('Game Started!', 'success');
-    } catch (error) {
-      showToast('Failed to start game.', 'error');
-    }
+    } catch (error) { showToast('Failed to start game.', 'error'); }
   };
 
   const handleEndGame = async () => {
@@ -373,6 +323,7 @@ export const TeacherDashboard: React.FC = () => {
   };
 
   const isGameActive = activeSession?.status === 'active' || activeSession?.status === 'finished';
+  const isTugOfWar = activeSession?.game_mode === 'tug-of-war-all' || activeSession?.game_mode === 'tug-of-war-captain';
 
   // --- TUG OF WAR MATH ---
   const bluePoints = liveParticipants.filter(p => p.team === 'blue').reduce((sum, p) => sum + (Number(p.correct_answers) || 0), 0);
@@ -380,7 +331,7 @@ export const TeacherDashboard: React.FC = () => {
   const totalTugPoints = bluePoints + redPoints;
   const bluePercent = totalTugPoints === 0 ? 50 : (bluePoints / totalTugPoints) * 100;
 
-  // --- FILTERED QUIZZES FOR DROPDOWN ---
+  // --- FILTERED QUIZZES ---
   const grammarQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'grammar');
   const vocabQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'vocabulary');
   const pronQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'pronunciation');
@@ -394,17 +345,9 @@ export const TeacherDashboard: React.FC = () => {
       {deleteTarget && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fadeIn 0.2s ease-out' }}>
           <div style={{ background: '#ffffff', borderRadius: '24px', padding: '32px', width: '90%', maxWidth: '400px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-            <div style={{ width: '64px', height: '64px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-              <IconTrash />
-            </div>
-            <h3 style={{ margin: '0 0 12px', color: '#0F172A', fontSize: '1.4rem' }}>
-              {deleteTarget.type === 'thread' ? 'Delete Conversation?' : 'Delete Message?'}
-            </h3>
-            <p style={{ color: '#64748B', margin: '0 0 24px', lineHeight: '1.5' }}>
-              {deleteTarget.type === 'thread' 
-                ? 'Are you sure you want to delete all messages from this student? This action cannot be undone.'
-                : 'Are you sure you want to delete this specific message? This action cannot be undone.'}
-            </p>
+            <div style={{ width: '64px', height: '64px', background: '#FEF2F2', color: '#EF4444', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}><IconTrash /></div>
+            <h3 style={{ margin: '0 0 12px', color: '#0F172A', fontSize: '1.4rem' }}>{deleteTarget.type === 'thread' ? 'Delete Conversation?' : 'Delete Message?'}</h3>
+            <p style={{ color: '#64748B', margin: '0 0 24px', lineHeight: '1.5' }}>This action cannot be undone.</p>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, padding: '12px', background: '#F1F5F9', color: '#475569', borderRadius: '12px', fontWeight: '600', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}>Cancel</button>
               <button onClick={executeDelete} style={{ flex: 1, padding: '12px', background: '#EF4444', color: '#ffffff', borderRadius: '12px', fontWeight: '600', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}>Yes, Delete</button>
@@ -415,11 +358,6 @@ export const TeacherDashboard: React.FC = () => {
 
       {toastMessage && (
         <div style={{ position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)', backgroundColor: toastMessage.type === 'success' ? '#10B981' : '#EF4444', color: '#ffffff', padding: '16px 32px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', zIndex: 9998, display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {toastMessage.type === 'success' ? (
-             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          ) : (
-             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-          )}
           {toastMessage.text}
         </div>
       )}
@@ -437,65 +375,52 @@ export const TeacherDashboard: React.FC = () => {
         <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '40px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
           
           {!activeSession && (
-            <div style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center', padding: '40px 0' }}>
+            <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center', padding: '40px 0' }}>
               <div style={{ background: '#FEF3C7', color: '#D97706', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
                 <IconPlay />
               </div>
               <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '16px', fontWeight: '700' }}>Host a Live Contest</h2>
-              <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '40px', lineHeight: '1.6' }}>Turn your Practice Hub quizzes into a live multiplayer game. Students scan the QR code to join instantly from their phones.</p>
+              <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '40px', lineHeight: '1.6' }}>Select a topic and choose how your students will compete today.</p>
               
-              <div style={{ textAlign: 'left', background: '#F8FAFC', padding: '32px', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
+              <div style={{ textAlign: 'left', background: '#F8FAFC', padding: '32px', borderRadius: '24px', border: '1px solid #E2E8F0' }}>
                 
-                {/* DYNAMIC QUIZ DROPDOWN MENU */}
-                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Select Quiz from Practice Hub</label>
-                <div style={{ position: 'relative', marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Select Practice Hub Quiz</label>
+                <div style={{ position: 'relative', marginBottom: '32px' }}>
                   <select 
                     value={liveQuizTopic}
                     onChange={(e) => setLiveQuizTopic(e.target.value)}
                     style={{ width: '100%', padding: '18px', borderRadius: '12px', border: '2px solid #CBD5E1', fontSize: '1.1rem', outline: 'none', backgroundColor: '#ffffff', cursor: 'pointer', appearance: 'none', color: '#0F172A', fontWeight: '500' }}
                   >
                     <option value="" disabled>-- Choose a Lesson --</option>
-                    
-                    {grammarQuizzes.length > 0 && (
-                      <optgroup label="Grammar">
-                        {grammarQuizzes.map((q, i) => <option key={`g-${i}`} value={q.title}>{q.title}</option>)}
-                      </optgroup>
-                    )}
-                    
-                    {vocabQuizzes.length > 0 && (
-                      <optgroup label="Vocabulary">
-                        {vocabQuizzes.map((q, i) => <option key={`v-${i}`} value={q.title}>{q.title}</option>)}
-                      </optgroup>
-                    )}
-                    
-                    {pronQuizzes.length > 0 && (
-                      <optgroup label="Pronunciation">
-                        {pronQuizzes.map((q, i) => <option key={`p-${i}`} value={q.title}>{q.title}</option>)}
-                      </optgroup>
-                    )}
-
-                    {otherQuizzes.length > 0 && (
-                      <optgroup label="Other Options">
-                        {otherQuizzes.map((q, i) => <option key={`o-${i}`} value={q.title}>{q.title}</option>)}
-                      </optgroup>
-                    )}
+                    {grammarQuizzes.length > 0 && <optgroup label="Grammar">{grammarQuizzes.map((q, i) => <option key={`g-${i}`} value={q.title}>{q.title}</option>)}</optgroup>}
+                    {vocabQuizzes.length > 0 && <optgroup label="Vocabulary">{vocabQuizzes.map((q, i) => <option key={`v-${i}`} value={q.title}>{q.title}</option>)}</optgroup>}
+                    {pronQuizzes.length > 0 && <optgroup label="Pronunciation">{pronQuizzes.map((q, i) => <option key={`p-${i}`} value={q.title}>{q.title}</option>)}</optgroup>}
                   </select>
-                  <div style={{ position: 'absolute', right: '18px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B', fontSize: '1.2rem' }}>
-                    ▼
-                  </div>
+                  <div style={{ position: 'absolute', right: '18px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B', fontSize: '1.2rem' }}>▼</div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px', marginBottom: '32px' }}>
-                  <button onClick={() => setLiveGameMode('standard')} style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveGameMode === 'standard' ? '2px solid #4F46E5' : '2px solid #E2E8F0', background: liveGameMode === 'standard' ? '#EEF2FF' : '#ffffff', color: liveGameMode === 'standard' ? '#4F46E5' : '#64748B', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                    🏆 Individual Brawl
+                {/* PREMIUM 3-MODE SELECTOR */}
+                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Game Format</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+                  <button onClick={() => setLiveGameMode('standard')} style={{ padding: '20px 16px', borderRadius: '16px', border: liveGameMode === 'standard' ? '2px solid #4F46E5' : '1px solid #E2E8F0', background: liveGameMode === 'standard' ? '#EEF2FF' : '#ffffff', color: liveGameMode === 'standard' ? '#4F46E5' : '#64748B', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveGameMode === 'standard' ? '0 10px 20px rgba(79, 70, 229, 0.1)' : 'none' }}>
+                    <IconTrophy />
+                    <div style={{ fontSize: '1.05rem', fontWeight: '700' }}>Individual Brawl</div>
+                    <div style={{ fontSize: '0.85rem', opacity: 0.8, textAlign: 'center', lineHeight: '1.4' }}>Random questions.<br/>Every student for themselves.</div>
                   </button>
-                  <button onClick={() => setLiveGameMode('tug-of-war')} style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveGameMode === 'tug-of-war' ? '2px solid #F59E0B' : '2px solid #E2E8F0', background: liveGameMode === 'tug-of-war' ? '#FEF3C7' : '#ffffff', color: liveGameMode === 'tug-of-war' ? '#D97706' : '#64748B', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                    ⚔️ Tug-of-War
+                  <button onClick={() => setLiveGameMode('tug-of-war-all')} style={{ padding: '20px 16px', borderRadius: '16px', border: liveGameMode === 'tug-of-war-all' ? '2px solid #F59E0B' : '1px solid #E2E8F0', background: liveGameMode === 'tug-of-war-all' ? '#FEF3C7' : '#ffffff', color: liveGameMode === 'tug-of-war-all' ? '#D97706' : '#64748B', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveGameMode === 'tug-of-war-all' ? '0 10px 20px rgba(245, 158, 11, 0.1)' : 'none' }}>
+                    <IconSwords />
+                    <div style={{ fontSize: '1.05rem', fontWeight: '700' }}>Tug-of-War (All Play)</div>
+                    <div style={{ fontSize: '0.85rem', opacity: 0.8, textAlign: 'center', lineHeight: '1.4' }}>Synchronized questions.<br/>Everyone pulls the rope.</div>
+                  </button>
+                  <button onClick={() => setLiveGameMode('tug-of-war-captain')} style={{ padding: '20px 16px', borderRadius: '16px', border: liveGameMode === 'tug-of-war-captain' ? '2px solid #10B981' : '1px solid #E2E8F0', background: liveGameMode === 'tug-of-war-captain' ? '#ECFDF5' : '#ffffff', color: liveGameMode === 'tug-of-war-captain' ? '#059669' : '#64748B', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveGameMode === 'tug-of-war-captain' ? '0 10px 20px rgba(16, 185, 129, 0.1)' : 'none' }}>
+                    <IconCrown />
+                    <div style={{ fontSize: '1.05rem', fontWeight: '700' }}>Tug-of-War (Captain)</div>
+                    <div style={{ fontSize: '0.85rem', opacity: 0.8, textAlign: 'center', lineHeight: '1.4' }}>Synchronized questions.<br/>Only the Captain can answer.</div>
                   </button>
                 </div>
 
-                <button onClick={handleLaunchLobby} disabled={isCreatingLobby || !liveQuizTopic.trim()} style={{ width: '100%', padding: '18px', background: '#F59E0B', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}>
-                  {isCreatingLobby ? 'Creating...' : 'Launch Lobby'}
+                <button onClick={handleLaunchLobby} disabled={isCreatingLobby || !liveQuizTopic.trim()} style={{ width: '100%', padding: '20px', background: '#0F172A', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}>
+                  {isCreatingLobby ? 'Initializing System...' : 'Launch Secure Lobby'}
                 </button>
               </div>
             </div>
@@ -503,11 +428,11 @@ export const TeacherDashboard: React.FC = () => {
 
           {activeSession && (
             <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
-              <div style={{ flex: isGameActive ? '0 0 250px' : '1', background: '#F8FAFC', padding: isGameActive ? '32px 24px' : '40px', borderRadius: '32px', border: '2px dashed #CBD5E1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                <h3 style={{ fontSize: isGameActive ? '1rem' : '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px', transition: 'font-size 0.4s ease' }}>Join at litnlearn.com/play</h3>
-                <h1 style={{ fontSize: isGameActive ? '3.5rem' : '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px', transition: 'font-size 0.4s ease' }}>{activeSession.pin_code}</h1>
-                <div style={{ background: '#ffffff', padding: isGameActive ? '16px' : '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center', transition: 'padding 0.4s ease' }}>
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${isGameActive ? '120x120' : '200x200'}&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} alt="QR" width={isGameActive ? 120 : 200} height={isGameActive ? 120 : 200} style={{ transition: 'all 0.4s ease' }} />
+              <div style={{ flex: isGameActive ? '0 0 250px' : '1', background: '#F8FAFC', padding: isGameActive ? '32px 24px' : '40px', borderRadius: '32px', border: '1px solid #E2E8F0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                <h3 style={{ fontSize: isGameActive ? '1rem' : '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px' }}>Join at litnlearn.com/play</h3>
+                <h1 style={{ fontSize: isGameActive ? '3.5rem' : '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px' }}>{activeSession.pin_code}</h1>
+                <div style={{ background: '#ffffff', padding: isGameActive ? '16px' : '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${isGameActive ? '120x120' : '200x200'}&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} alt="QR" width={isGameActive ? 120 : 200} height={isGameActive ? 120 : 200} />
                 </div>
                 {activeSession.status === 'waiting' ? (
                   <button onClick={handleStartGame} style={{ background: '#10B981', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)', width: '100%' }}>Start Game</button>
@@ -516,54 +441,60 @@ export const TeacherDashboard: React.FC = () => {
                 )}
               </div>
 
-              <div style={{ flex: '1', minWidth: '0', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto', transition: 'all 0.4s' }}>
+              <div style={{ flex: '1', minWidth: '0', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto' }}>
                 
-                {activeSession.game_mode === 'tug-of-war' && (
-                  <div style={{ marginBottom: '40px', padding: '20px', background: '#F8FAFC', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
-                      <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#3B82F6' }}>🟦 Blue Team ({bluePoints})</div>
-                      <div style={{ fontSize: '2rem', fontWeight: '800', color: '#0F172A' }}>⚔️</div>
-                      <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#EF4444' }}>({redPoints}) Red Team 🟥</div>
+                {isTugOfWar && (
+                  <div style={{ marginBottom: '40px', padding: '24px', background: '#F8FAFC', borderRadius: '24px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                      <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '24px', height: '24px', background: '#3B82F6', borderRadius: '6px' }}></div> Team Blue <span style={{opacity: 0.6}}>({bluePoints})</span>
+                      </div>
+                      <div style={{ background: '#E2E8F0', color: '#475569', padding: '6px 16px', borderRadius: '9999px', fontWeight: '800', fontSize: '1rem', letterSpacing: '1px' }}>VS</div>
+                      <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#EF4444', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{opacity: 0.6}}>({redPoints})</span> Team Red <div style={{ width: '24px', height: '24px', background: '#EF4444', borderRadius: '6px' }}></div>
+                      </div>
                     </div>
                     
-                    <div style={{ width: '100%', height: '40px', background: '#EF4444', borderRadius: '20px', position: 'relative', overflow: 'hidden', boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.1)' }}>
-                      <div style={{ height: '100%', width: `${bluePercent}%`, background: '#3B82F6', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)', borderRight: '4px solid #ffffff' }} />
-                      <div style={{ position: 'absolute', top: '50%', left: `${bluePercent}%`, transform: 'translate(-50%, -50%)', fontSize: '1.5rem', transition: 'left 0.5s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 10 }}>🚩</div>
+                    <div style={{ width: '100%', height: '32px', background: '#EF4444', borderRadius: '16px', position: 'relative', overflow: 'hidden', boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.1)' }}>
+                      <div style={{ height: '100%', width: `${bluePercent}%`, background: '#3B82F6', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${bluePercent}%`, width: '6px', background: '#ffffff', transform: 'translateX(-50%)', boxShadow: '0 0 10px rgba(0,0,0,0.5)', transition: 'left 0.6s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 10 }} />
                     </div>
                   </div>
                 )}
 
-                {activeSession.game_mode !== 'tug-of-war' && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
+                {!isTugOfWar && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #E2E8F0', paddingBottom: '16px' }}>
                     <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>{activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}</h3>
                     <span style={{ background: '#F1F5F9', color: '#475569', padding: '8px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem' }}>{liveParticipants.length} Joined</span>
                   </div>
                 )}
 
                 {liveParticipants.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8', fontSize: '1.2rem' }}>Waiting for the first student to connect...</div>
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8', fontSize: '1.2rem', fontWeight: '500' }}>Awaiting secure connections...</div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {liveParticipants.map((player, index) => (
-                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' && activeSession.game_mode !== 'tug-of-war' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' && activeSession.game_mode !== 'tug-of-war' ? '2px solid #F59E0B' : `2px solid ${player.team === 'blue' ? '#BFDBFE' : player.team === 'red' ? '#FECACA' : '#E2E8F0'}`, transition: 'all 0.3s', gap: '16px' }}>
+                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' && !isTugOfWar ? '#FEF3C7' : '#ffffff', padding: '16px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' && !isTugOfWar ? '2px solid #F59E0B' : `1px solid ${player.team === 'blue' ? '#BFDBFE' : player.team === 'red' ? '#FECACA' : '#E2E8F0'}`, transition: 'all 0.3s', gap: '16px' }}>
                         
-                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: player.team === 'blue' ? '#3B82F6' : player.team === 'red' ? '#EF4444' : '#94A3B8', flexShrink: 0 }}>
-                          {activeSession.game_mode === 'tug-of-war' ? (player.team === 'blue' ? '🟦' : player.team === 'red' ? '🟥' : '⬜️') : `#${index + 1}`}
+                        <div style={{ width: '40px', fontSize: '1.2rem', fontWeight: '800', color: player.team === 'blue' ? '#3B82F6' : player.team === 'red' ? '#EF4444' : '#94A3B8', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isTugOfWar ? (
+                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: player.team === 'blue' ? '#3B82F6' : player.team === 'red' ? '#EF4444' : '#E2E8F0' }} />
+                          ) : `#${index + 1}`}
                         </div>
                         
-                        <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0F172A', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#0F172A', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {player.nickname}
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          {player.finished_at && <div style={{ background: '#10B981', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>DONE</div>}
+                          {player.finished_at && <div style={{ background: '#10B981', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Done</div>}
                           {player.total_questions !== undefined && player.total_questions !== null && (
-                            <div style={{ fontSize: '1.2rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '10px 16px', borderRadius: '12px' }}>✓ {player.correct_answers || 0}/{player.total_questions}</div>
+                            <div style={{ fontSize: '1.1rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '8px 16px', borderRadius: '12px' }}>✓ {player.correct_answers || 0}/{player.total_questions}</div>
                           )}
                           {player.total_time !== undefined && player.total_time !== null && (
-                            <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>⏱ {player.total_time >= 60 ? `${Math.floor(player.total_time / 60)}m ${Math.floor(player.total_time % 60)}s` : `${player.total_time}s`}</div>
+                            <div style={{ fontSize: '1.1rem', color: '#64748B', fontWeight: '700', background: '#F1F5F9', padding: '8px 16px', borderRadius: '12px' }}>{player.total_time}s</div>
                           )}
-                          <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>{player.score} pts</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#4F46E5', background: '#EEF2FF', padding: '8px 20px', borderRadius: '12px' }}>{player.score} pts</div>
                         </div>
                       </div>
                     ))}
@@ -575,7 +506,6 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* --- INBOX, GRADING, PROGRESS TABS BELOW --- */}
       {adminTab === 'inbox' && (
         <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '32px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', paddingBottom: '20px', borderBottom: '2px solid #F1F5F9' }}>
@@ -792,8 +722,7 @@ export const TeacherDashboard: React.FC = () => {
               </>
             ) : (
               <div className="soft-card" style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '32px', padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <IconChart />
-                <h3 style={{ margin: '16px 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
+                <h3 style={{ margin: '0 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
                 <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem', lineHeight: '1.6' }}>Click on a student from the directory to review their history and draft new grades.</p>
               </div>
             )}
