@@ -7,6 +7,10 @@ export const LivePlayer: React.FC = () => {
   const [nickname, setNickname] = useState('');
   const [session, setSession] = useState<any | null>(null);
   const [participantId, setParticipantId] = useState<string | null>(null);
+  
+  // --- NEW: TEAM STATE ---
+  const [team, setTeam] = useState<'blue' | 'red' | null>(null); 
+  
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
 
@@ -138,11 +142,24 @@ export const LivePlayer: React.FC = () => {
       const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).eq('status', 'waiting').single();
       if (sessionError || !sessionData) throw new Error('Invalid PIN or the game has already started.');
 
-      const { data: participantData, error: participantError } = await supabase.from('live_participants').insert([{ session_id: sessionData.id, nickname: nickname }]).select().single();
+      // --- NEW: AUTO-ASSIGN TEAM LOGIC ---
+      // Count current players in this lobby to balance teams perfectly
+      const { count } = await supabase.from('live_participants').select('*', { count: 'exact', head: true }).eq('session_id', sessionData.id);
+      const assignedTeam = (count || 0) % 2 === 0 ? 'blue' : 'red';
+
+      // Pass the team to Supabase so the Teacher Dashboard knows who is who!
+      const { data: participantData, error: participantError } = await supabase.from('live_participants').insert([{ 
+        session_id: sessionData.id, 
+        nickname: nickname,
+        team: assignedTeam 
+      }]).select().single();
+      
       if (participantError) throw participantError;
 
       setSession(sessionData);
       setParticipantId(participantData.id);
+      setTeam(assignedTeam); // Save team to local state for UI coloring
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -209,9 +226,22 @@ export const LivePlayer: React.FC = () => {
     }
   };
 
+  // --- NEW: DYNAMIC THEME ---
+  const theme = {
+    bg: team === 'blue' ? '#EFF6FF' : team === 'red' ? '#FEF2F2' : '#F8FAFC',
+    accent: team === 'blue' ? '#3B82F6' : team === 'red' ? '#EF4444' : '#4F46E5'
+  };
+
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: '"Fredoka", sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: '"Fredoka", sans-serif', transition: 'background 0.5s ease' }}>
       
+      {/* TEAM BANNER FOR THE STUDENT */}
+      {team && session?.status !== 'finished' && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, background: theme.accent, color: '#fff', textAlign: 'center', padding: '12px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', boxShadow: '0 4px 10px rgba(0,0,0,0.1)', zIndex: 50 }}>
+          {team === 'blue' ? '🟦 TEAM BLUE' : '🟥 TEAM RED'}
+        </div>
+      )}
+
       {!session ? (
         <div style={{ background: '#ffffff', padding: '40px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
           <h1 style={{ color: '#0F172A', fontSize: '2.5rem', marginBottom: '8px', fontWeight: '700', letterSpacing: '-1px' }}>Lit <span style={{color: '#4F46E5'}}>&</span> Learn</h1>
@@ -227,25 +257,25 @@ export const LivePlayer: React.FC = () => {
           </form>
         </div>
       ) : session.status === 'waiting' ? (
-        <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%' }}>
-          <h2 style={{ fontSize: '2.2rem', color: '#0F172A', marginBottom: '16px' }}>You're in, <span style={{color: '#4F46E5'}}>{nickname}</span>!</h2>
+        <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
+          <h2 style={{ fontSize: '2.2rem', color: '#0F172A', marginBottom: '16px' }}>You're in, <span style={{color: theme.accent}}>{nickname}</span>!</h2>
           <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '30px' }}>See your name on the board?</p>
           <div style={{ background: '#FEF3C7', color: '#D97706', padding: '16px 32px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '700', display: 'inline-block', animation: 'pulse 2s infinite' }}>
             Waiting for teacher to start...
           </div>
         </div>
       ) : isFinished ? (
-        <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%' }}>
+        <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
           <div style={{ fontSize: '4rem', marginBottom: '16px' }}>🏆</div>
           <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px' }}>Finished!</h2>
           <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '30px' }}>Look at the main screen to see your final rank.</p>
-          <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '20px', borderRadius: '24px' }}>
+          <div style={{ background: '#EEF2FF', color: theme.accent, padding: '20px', borderRadius: '24px' }}>
             <div style={{ fontSize: '1rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Final Score</div>
             <div style={{ fontSize: '3rem', fontWeight: '800' }}>{score}</div>
           </div>
         </div>
       ) : (
-        <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', marginTop: '40px' }}>
           {isLoadingQuestions ? (
             <div style={{ textAlign: 'center', fontSize: '1.5rem', color: '#64748B', fontWeight: '600' }}>Loading your challenge...</div>
           ) : questions.length > 0 ? (
@@ -260,7 +290,7 @@ export const LivePlayer: React.FC = () => {
               </div>
 
               <div style={{ width: '100%', height: '8px', background: '#F1F5F9', borderRadius: '4px', marginBottom: '24px', overflow: 'hidden' }}>
-                <div style={{ width: `${(timeLeft / 20) * 100}%`, height: '100%', background: timeLeft > 5 ? '#F59E0B' : '#EF4444', transition: 'width 1s linear, background 0.3s' }} />
+                <div style={{ width: `${(timeLeft / 20) * 100}%`, height: '100%', background: timeLeft > 5 ? theme.accent : '#EF4444', transition: 'width 1s linear, background 0.3s' }} />
               </div>
               
               <h2 style={{ fontSize: '1.8rem', color: '#0F172A', marginBottom: '40px', lineHeight: '1.4' }}>

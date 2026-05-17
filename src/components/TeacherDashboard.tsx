@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';
+import { client } from '../sanityClient'; 
 
 // --- ICONS ---
 const IconMail = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
@@ -55,36 +56,37 @@ export const TeacherDashboard: React.FC = () => {
   const [studentVocab, setStudentVocab] = useState<any[]>([]);
   const [isFetchingVocab, setIsFetchingVocab] = useState(false);
 
+  // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
+  const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war'>('standard');
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
 
-  useEffect(() => {
-    fetchMessages();
-    fetchStudents();
-    fetchAllGrades(); 
-  }, []);
+  // --- SANITY QUIZ FETCHER ---
+  const [availableQuizzes, setAvailableQuizzes] = useState<{title: string, category: string}[]>([]);
 
-  useEffect(() => {
-    if (selectedStudent) {
-      fetchStudentHistory(selectedStudent.id);
-    } else {
-      setStudentHistory([]);
-    }
-  }, [selectedStudent]);
+  useEffect(() => { fetchMessages(); fetchStudents(); fetchAllGrades(); }, []);
+  useEffect(() => { if (selectedStudent) fetchStudentHistory(selectedStudent.id); else setStudentHistory([]); }, [selectedStudent]);
+  useEffect(() => { if (selectedProgressStudent) fetchStudentVocab(selectedProgressStudent.id); else setStudentVocab([]); }, [selectedProgressStudent]);
 
+  // Fetch quizzes dynamically when opening the Arena tab
   useEffect(() => {
-    if (selectedProgressStudent) {
-      fetchStudentVocab(selectedProgressStudent.id);
-    } else {
-      setStudentVocab([]);
+    if (adminTab === 'arena') {
+      client.fetch('*[_type == "practiceBank"]{ title, category }')
+        .then((data) => {
+          const validData = data.filter((d: any) => d.title);
+          setAvailableQuizzes(validData);
+          if (validData.length > 0 && !liveQuizTopic) {
+            setLiveQuizTopic(validData[0].title);
+          }
+        })
+        .catch(err => console.error("Failed to fetch quizzes:", err));
     }
-  }, [selectedProgressStudent]);
+  }, [adminTab]);
 
   useEffect(() => {
     if (!activeSession) return;
-
     let channel: any;
 
     const sortPlayers = (players: any[]) => {
@@ -101,47 +103,27 @@ export const TeacherDashboard: React.FC = () => {
       const supabase = getSupabaseClient(token || '');
       
       const fetchInitialLeaderboard = async () => {
-        const { data, error } = await supabase
-          .from('live_participants')
-          .select('*')
-          .eq('session_id', activeSession.id)
-          .order('correct_answers', { ascending: false })
-          .order('score', { ascending: false });
-        
+        const { data, error } = await supabase.from('live_participants').select('*').eq('session_id', activeSession.id).order('correct_answers', { ascending: false }).order('score', { ascending: false });
         if (!error && data) setLiveParticipants(data);
       };
 
       await fetchInitialLeaderboard();
 
-      channel = supabase
-        .channel(`arena_${activeSession.id}`) 
-        .on(
-          'postgres_changes', 
-          { event: '*', schema: 'public', table: 'live_participants', filter: `session_id=eq.${activeSession.id}` }, 
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              setLiveParticipants(prev => {
-                const exists = prev.find(p => p.id === payload.new.id);
-                if (exists) return prev;
-                return sortPlayers([...prev, payload.new]);
-              });
-            } else if (payload.eventType === 'UPDATE') {
-              setLiveParticipants(prev => {
-                return sortPlayers(prev.map(p => p.id === payload.new.id ? payload.new : p));
-              });
-            }
+      channel = supabase.channel(`arena_${activeSession.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'live_participants', filter: `session_id=eq.${activeSession.id}` }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setLiveParticipants(prev => {
+              if (prev.find(p => p.id === payload.new.id)) return prev;
+              return sortPlayers([...prev, payload.new]);
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setLiveParticipants(prev => sortPlayers(prev.map(p => p.id === payload.new.id ? payload.new : p)));
           }
-        )
-        .subscribe();
+        }).subscribe();
     };
 
     setupRealtime();
-
-    return () => {
-      if (channel) channel.unsubscribe();
-    };
+    return () => { if (channel) channel.unsubscribe(); };
   }, [activeSession, getToken]);
-
 
   const threads = useMemo(() => {
     const grouped = new Map<string, any[]>();
@@ -149,24 +131,13 @@ export const TeacherDashboard: React.FC = () => {
       if (!grouped.has(msg.email)) grouped.set(msg.email, []);
       grouped.get(msg.email)!.push(msg);
     });
-
     return Array.from(grouped.entries()).map(([email, msgs]) => {
       const sorted = [...msgs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      return {
-        email,
-        name: sorted[sorted.length - 1].name, 
-        user_id: sorted[sorted.length - 1].user_id,
-        messages: sorted,
-        latestDate: sorted[sorted.length - 1].created_at
-      };
+      return { email, name: sorted[sorted.length - 1].name, user_id: sorted[sorted.length - 1].user_id, messages: sorted, latestDate: sorted[sorted.length - 1].created_at };
     }).sort((a, b) => new Date(b.latestDate).getTime() - new Date(a.latestDate).getTime()); 
   }, [messages]);
 
-  useEffect(() => {
-    if (selectedThreadEmail && !threads.find(t => t.email === selectedThreadEmail)) {
-      setSelectedThreadEmail(null);
-    }
-  }, [threads, selectedThreadEmail]);
+  useEffect(() => { if (selectedThreadEmail && !threads.find(t => t.email === selectedThreadEmail)) setSelectedThreadEmail(null); }, [threads, selectedThreadEmail]);
 
   const fetchMessages = async () => {
     setIsLoadingMessages(true);
@@ -361,14 +332,14 @@ export const TeacherDashboard: React.FC = () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
       const pin = Math.floor(1000 + Math.random() * 9000).toString();
-      const { data, error } = await supabase.from('live_sessions').insert([{ pin_code: pin, quiz_id: liveQuizTopic, status: 'waiting' }]).select().single();
+      const { data, error } = await supabase.from('live_sessions').insert([{ pin_code: pin, quiz_id: liveQuizTopic, status: 'waiting', game_mode: liveGameMode }]).select().single();
       if (error) throw error;
       setActiveSession(data);
       setLiveParticipants([]);
       showToast('Lobby created successfully!', 'success');
     } catch (error) {
       console.error(error);
-      showToast('Failed to create lobby. PIN might be taken.', 'error');
+      showToast('Failed to create lobby. Make sure game_mode column exists in Supabase!', 'error');
     } finally {
       setIsCreatingLobby(false);
     }
@@ -398,15 +369,24 @@ export const TeacherDashboard: React.FC = () => {
       setLiveParticipants([]);
       setLiveQuizTopic('');
       showToast('Session closed.', 'success');
-    } catch (error) {
-      showToast('Failed to close session.', 'error');
-    }
+    } catch (error) { showToast('Failed to close session.', 'error'); }
   };
 
-  const activeThread = threads.find(t => t.email === selectedThreadEmail);
-
-  // Check if the game is currently actively playing or finished (not waiting for players)
   const isGameActive = activeSession?.status === 'active' || activeSession?.status === 'finished';
+
+  // --- TUG OF WAR MATH ---
+  const bluePoints = liveParticipants.filter(p => p.team === 'blue').reduce((sum, p) => sum + (Number(p.correct_answers) || 0), 0);
+  const redPoints = liveParticipants.filter(p => p.team === 'red').reduce((sum, p) => sum + (Number(p.correct_answers) || 0), 0);
+  const totalTugPoints = bluePoints + redPoints;
+  const bluePercent = totalTugPoints === 0 ? 50 : (bluePoints / totalTugPoints) * 100;
+
+  // --- FILTERED QUIZZES FOR DROPDOWN ---
+  const grammarQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'grammar');
+  const vocabQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'vocabulary');
+  const pronQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'pronunciation');
+  const otherQuizzes = availableQuizzes.filter(q => q.title && !['grammar', 'vocabulary', 'pronunciation'].includes(q.category?.toLowerCase()));
+
+  const activeThread = threads.find(t => t.email === selectedThreadEmail);
 
   return (
     <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '1400px', margin: '0 auto', position: 'relative' }}>
@@ -446,18 +426,10 @@ export const TeacherDashboard: React.FC = () => {
 
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
         <div style={{ display: 'inline-flex', backgroundColor: '#ffffff', padding: '8px', borderRadius: '9999px', boxShadow: '0 10px 30px rgba(0,0,0,0.03)', gap: '8px' }}>
-          <button onClick={() => setAdminTab('inbox')} style={{ background: adminTab === 'inbox' ? '#4F46E5' : 'transparent', color: adminTab === 'inbox' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconMail /> Inbox
-          </button>
-          <button onClick={() => setAdminTab('grading')} style={{ background: adminTab === 'grading' ? '#4F46E5' : 'transparent', color: adminTab === 'grading' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconUsers /> Grading Portal
-          </button>
-          <button onClick={() => setAdminTab('progress')} style={{ background: adminTab === 'progress' ? '#10B981' : 'transparent', color: adminTab === 'progress' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconChart /> Student Progress
-          </button>
-          <button onClick={() => setAdminTab('arena')} style={{ background: adminTab === 'arena' ? '#F59E0B' : 'transparent', color: adminTab === 'arena' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconPlay /> Live Arena
-          </button>
+          <button onClick={() => setAdminTab('inbox')} style={{ background: adminTab === 'inbox' ? '#4F46E5' : 'transparent', color: adminTab === 'inbox' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}><IconMail /> Inbox</button>
+          <button onClick={() => setAdminTab('grading')} style={{ background: adminTab === 'grading' ? '#4F46E5' : 'transparent', color: adminTab === 'grading' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}><IconUsers /> Grading Portal</button>
+          <button onClick={() => setAdminTab('progress')} style={{ background: adminTab === 'progress' ? '#10B981' : 'transparent', color: adminTab === 'progress' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}><IconChart /> Student Progress</button>
+          <button onClick={() => setAdminTab('arena')} style={{ background: adminTab === 'arena' ? '#F59E0B' : 'transparent', color: adminTab === 'arena' ? '#ffffff' : '#64748B', border: 'none', padding: '14px 28px', borderRadius: '9999px', fontWeight: '600', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '8px' }}><IconPlay /> Live Arena</button>
         </div>
       </div>
 
@@ -473,19 +445,56 @@ export const TeacherDashboard: React.FC = () => {
               <p style={{ color: '#64748B', fontSize: '1.2rem', marginBottom: '40px', lineHeight: '1.6' }}>Turn your Practice Hub quizzes into a live multiplayer game. Students scan the QR code to join instantly from their phones.</p>
               
               <div style={{ textAlign: 'left', background: '#F8FAFC', padding: '32px', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
-                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Enter Quiz Topic / ID</label>
-                <input 
-                  type="text" 
-                  value={liveQuizTopic}
-                  onChange={(e) => setLiveQuizTopic(e.target.value)}
-                  placeholder="e.g., Present Continuous vs Simple"
-                  style={{ width: '100%', padding: '18px', borderRadius: '12px', border: '2px solid #CBD5E1', fontSize: '1.1rem', outline: 'none', marginBottom: '24px' }}
-                />
-                <button 
-                  onClick={handleLaunchLobby}
-                  disabled={isCreatingLobby || !liveQuizTopic.trim()}
-                  style={{ width: '100%', padding: '18px', background: '#F59E0B', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}
-                >
+                
+                {/* DYNAMIC QUIZ DROPDOWN MENU */}
+                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Select Quiz from Practice Hub</label>
+                <div style={{ position: 'relative', marginBottom: '24px' }}>
+                  <select 
+                    value={liveQuizTopic}
+                    onChange={(e) => setLiveQuizTopic(e.target.value)}
+                    style={{ width: '100%', padding: '18px', borderRadius: '12px', border: '2px solid #CBD5E1', fontSize: '1.1rem', outline: 'none', backgroundColor: '#ffffff', cursor: 'pointer', appearance: 'none', color: '#0F172A', fontWeight: '500' }}
+                  >
+                    <option value="" disabled>-- Choose a Lesson --</option>
+                    
+                    {grammarQuizzes.length > 0 && (
+                      <optgroup label="Grammar">
+                        {grammarQuizzes.map((q, i) => <option key={`g-${i}`} value={q.title}>{q.title}</option>)}
+                      </optgroup>
+                    )}
+                    
+                    {vocabQuizzes.length > 0 && (
+                      <optgroup label="Vocabulary">
+                        {vocabQuizzes.map((q, i) => <option key={`v-${i}`} value={q.title}>{q.title}</option>)}
+                      </optgroup>
+                    )}
+                    
+                    {pronQuizzes.length > 0 && (
+                      <optgroup label="Pronunciation">
+                        {pronQuizzes.map((q, i) => <option key={`p-${i}`} value={q.title}>{q.title}</option>)}
+                      </optgroup>
+                    )}
+
+                    {otherQuizzes.length > 0 && (
+                      <optgroup label="Other Options">
+                        {otherQuizzes.map((q, i) => <option key={`o-${i}`} value={q.title}>{q.title}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                  <div style={{ position: 'absolute', right: '18px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B', fontSize: '1.2rem' }}>
+                    ▼
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '32px' }}>
+                  <button onClick={() => setLiveGameMode('standard')} style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveGameMode === 'standard' ? '2px solid #4F46E5' : '2px solid #E2E8F0', background: liveGameMode === 'standard' ? '#EEF2FF' : '#ffffff', color: liveGameMode === 'standard' ? '#4F46E5' : '#64748B', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    🏆 Individual Brawl
+                  </button>
+                  <button onClick={() => setLiveGameMode('tug-of-war')} style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveGameMode === 'tug-of-war' ? '2px solid #F59E0B' : '2px solid #E2E8F0', background: liveGameMode === 'tug-of-war' ? '#FEF3C7' : '#ffffff', color: liveGameMode === 'tug-of-war' ? '#D97706' : '#64748B', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    ⚔️ Tug-of-War
+                  </button>
+                </div>
+
+                <button onClick={handleLaunchLobby} disabled={isCreatingLobby || !liveQuizTopic.trim()} style={{ width: '100%', padding: '18px', background: '#F59E0B', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}>
                   {isCreatingLobby ? 'Creating...' : 'Launch Lobby'}
                 </button>
               </div>
@@ -494,37 +503,12 @@ export const TeacherDashboard: React.FC = () => {
 
           {activeSession && (
             <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
-              
-              {/* LEFT: COLLAPSIBLE QR CODE PANEL */}
-              <div style={{ 
-                flex: isGameActive ? '0 0 250px' : '1', 
-                background: '#F8FAFC', 
-                padding: isGameActive ? '32px 24px' : '40px', 
-                borderRadius: '32px', 
-                border: '2px dashed #CBD5E1', 
-                textAlign: 'center', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center',
-                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
-              }}>
-                <h3 style={{ fontSize: isGameActive ? '1rem' : '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px', transition: 'font-size 0.4s ease' }}>
-                  Join at litnlearn.com/play
-                </h3>
-                <h1 style={{ fontSize: isGameActive ? '3.5rem' : '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px', transition: 'font-size 0.4s ease' }}>
-                  {activeSession.pin_code}
-                </h1>
-                
+              <div style={{ flex: isGameActive ? '0 0 250px' : '1', background: '#F8FAFC', padding: isGameActive ? '32px 24px' : '40px', borderRadius: '32px', border: '2px dashed #CBD5E1', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+                <h3 style={{ fontSize: isGameActive ? '1rem' : '1.4rem', color: '#475569', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '1px', transition: 'font-size 0.4s ease' }}>Join at litnlearn.com/play</h3>
+                <h1 style={{ fontSize: isGameActive ? '3.5rem' : '5rem', color: '#0F172A', margin: '0 0 24px 0', fontWeight: '800', letterSpacing: '4px', transition: 'font-size 0.4s ease' }}>{activeSession.pin_code}</h1>
                 <div style={{ background: '#ffffff', padding: isGameActive ? '16px' : '24px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', marginBottom: '32px', display: 'flex', justifyContent: 'center', transition: 'padding 0.4s ease' }}>
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=${isGameActive ? '120x120' : '200x200'}&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} 
-                    alt="Join Game QR Code" 
-                    width={isGameActive ? 120 : 200} 
-                    height={isGameActive ? 120 : 200} 
-                    style={{ transition: 'all 0.4s ease' }}
-                  />
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${isGameActive ? '120x120' : '200x200'}&data=${encodeURIComponent(`https://litnlearn.com/play?pin=${activeSession.pin_code}`)}`} alt="QR" width={isGameActive ? 120 : 200} height={isGameActive ? 120 : 200} style={{ transition: 'all 0.4s ease' }} />
                 </div>
-
                 {activeSession.status === 'waiting' ? (
                   <button onClick={handleStartGame} style={{ background: '#10B981', color: '#ffffff', padding: '16px 40px', fontSize: '1.2rem', fontWeight: '700', borderRadius: '9999px', border: 'none', cursor: 'pointer', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)', width: '100%' }}>Start Game</button>
                 ) : (
@@ -532,70 +516,54 @@ export const TeacherDashboard: React.FC = () => {
                 )}
               </div>
 
-              {/* RIGHT: EXPANDING LEADERBOARD */}
-              <div style={{ 
-                flex: '1', 
-                minWidth: '0', // Allows truncation to work properly inside flex child
-                background: '#ffffff', 
-                borderRadius: '32px', 
-                border: '1px solid #E2E8F0', 
-                padding: '32px', 
-                boxShadow: '0 10px 30px rgba(0,0,0,0.02)', 
-                maxHeight: '700px', 
-                overflowY: 'auto',
-                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
-                  <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>
-                    {activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}
-                  </h3>
-                  <span style={{ background: '#F1F5F9', color: '#475569', padding: '8px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem' }}>
-                    {liveParticipants.length} Joined
-                  </span>
-                </div>
+              <div style={{ flex: '1', minWidth: '0', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto', transition: 'all 0.4s' }}>
+                
+                {activeSession.game_mode === 'tug-of-war' && (
+                  <div style={{ marginBottom: '40px', padding: '20px', background: '#F8FAFC', borderRadius: '24px', border: '2px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
+                      <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#3B82F6' }}>🟦 Blue Team ({bluePoints})</div>
+                      <div style={{ fontSize: '2rem', fontWeight: '800', color: '#0F172A' }}>⚔️</div>
+                      <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#EF4444' }}>({redPoints}) Red Team 🟥</div>
+                    </div>
+                    
+                    <div style={{ width: '100%', height: '40px', background: '#EF4444', borderRadius: '20px', position: 'relative', overflow: 'hidden', boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.1)' }}>
+                      <div style={{ height: '100%', width: `${bluePercent}%`, background: '#3B82F6', transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)', borderRight: '4px solid #ffffff' }} />
+                      <div style={{ position: 'absolute', top: '50%', left: `${bluePercent}%`, transform: 'translate(-50%, -50%)', fontSize: '1.5rem', transition: 'left 0.5s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 10 }}>🚩</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSession.game_mode !== 'tug-of-war' && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
+                    <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>{activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}</h3>
+                    <span style={{ background: '#F1F5F9', color: '#475569', padding: '8px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem' }}>{liveParticipants.length} Joined</span>
+                  </div>
+                )}
 
                 {liveParticipants.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8', fontSize: '1.2rem' }}>
-                    <div>Waiting for the first student to connect...</div>
-                  </div>
+                  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8', fontSize: '1.2rem' }}>Waiting for the first student to connect...</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {liveParticipants.map((player, index) => (
-                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' ? '2px solid #F59E0B' : '1px solid #E2E8F0', transition: 'all 0.3s', gap: '16px' }}>
+                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', background: index === 0 && activeSession.status !== 'waiting' && activeSession.game_mode !== 'tug-of-war' ? '#FEF3C7' : '#F8FAFC', padding: '20px 24px', borderRadius: '16px', border: index === 0 && activeSession.status !== 'waiting' && activeSession.game_mode !== 'tug-of-war' ? '2px solid #F59E0B' : `2px solid ${player.team === 'blue' ? '#BFDBFE' : player.team === 'red' ? '#FECACA' : '#E2E8F0'}`, transition: 'all 0.3s', gap: '16px' }}>
                         
-                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: index === 0 && activeSession.status !== 'waiting' ? '#D97706' : '#94A3B8', flexShrink: 0 }}>
-                          #{index + 1}
+                        <div style={{ width: '40px', fontSize: '1.4rem', fontWeight: '800', color: player.team === 'blue' ? '#3B82F6' : player.team === 'red' ? '#EF4444' : '#94A3B8', flexShrink: 0 }}>
+                          {activeSession.game_mode === 'tug-of-war' ? (player.team === 'blue' ? '🟦' : player.team === 'red' ? '🟥' : '⬜️') : `#${index + 1}`}
                         </div>
                         
-                        {/* Name gracefully truncates with ellipsis if it still somehow runs out of room */}
                         <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#0F172A', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {player.nickname}
                         </div>
 
-                        {player.finished_at && (
-                          <div style={{ background: '#10B981', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', flexShrink: 0 }}>
-                            DONE
-                          </div>
-                        )}
-                        
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                          
+                          {player.finished_at && <div style={{ background: '#10B981', color: '#ffffff', padding: '6px 12px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>DONE</div>}
                           {player.total_questions !== undefined && player.total_questions !== null && (
-                            <div style={{ fontSize: '1.2rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '10px 16px', borderRadius: '12px' }}>
-                              ✓ {player.correct_answers || 0}/{player.total_questions}
-                            </div>
+                            <div style={{ fontSize: '1.2rem', color: '#10B981', fontWeight: '800', background: '#ECFDF5', padding: '10px 16px', borderRadius: '12px' }}>✓ {player.correct_answers || 0}/{player.total_questions}</div>
                           )}
-
                           {player.total_time !== undefined && player.total_time !== null && (
-                            <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>
-                              ⏱ {player.total_time >= 60 ? `${Math.floor(player.total_time / 60)}m ${Math.floor(player.total_time % 60)}s` : `${player.total_time}s`}
-                            </div>
+                            <div style={{ fontSize: '1.2rem', color: '#64748B', fontWeight: '800', background: '#F1F5F9', padding: '10px 16px', borderRadius: '12px' }}>⏱ {player.total_time >= 60 ? `${Math.floor(player.total_time / 60)}m ${Math.floor(player.total_time % 60)}s` : `${player.total_time}s`}</div>
                           )}
-
-                          <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>
-                            {player.score} pts
-                          </div>
-
+                          <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#4F46E5', background: '#ffffff', padding: '10px 24px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(79,70,229,0.1)' }}>{player.score} pts</div>
                         </div>
                       </div>
                     ))}
@@ -607,7 +575,7 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* --- TAB: THREADED EMAIL INBOX --- */}
+      {/* --- INBOX, GRADING, PROGRESS TABS BELOW --- */}
       {adminTab === 'inbox' && (
         <div className="soft-card" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '32px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', paddingBottom: '20px', borderBottom: '2px solid #F1F5F9' }}>
@@ -824,7 +792,8 @@ export const TeacherDashboard: React.FC = () => {
               </>
             ) : (
               <div className="soft-card" style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '32px', padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <h3 style={{ margin: '0 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
+                <IconChart />
+                <h3 style={{ margin: '16px 0 8px 0', color: '#0F172A', fontSize: '1.6rem' }}>Select a Student</h3>
                 <p style={{ margin: 0, color: '#64748B', fontSize: '1.1rem', lineHeight: '1.6' }}>Click on a student from the directory to review their history and draft new grades.</p>
               </div>
             )}
