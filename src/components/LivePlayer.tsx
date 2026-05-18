@@ -26,7 +26,7 @@ export const LivePlayer: React.FC = () => {
 
   const [feedbackState, setFeedbackState] = useState<{ show: boolean, isCorrect: boolean, selectedKey: string | null } | null>(null);
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
-  const [timeLeft, setTimeLeft] = useState<number | null>(null); // NEW: Nullable timer
+  const [timeLeft, setTimeLeft] = useState<number | null>(null); 
   const [totalTimeMs, setTotalTimeMs] = useState<number>(0);
 
   const [broadcastEvent, setBroadcastEvent] = useState<any>(null);
@@ -110,13 +110,12 @@ export const LivePlayer: React.FC = () => {
     }
   }, [session, team]);
 
-  // --- SMART TIMER SETUP ---
   useEffect(() => {
     if (session?.status === 'active' && !isLoadingQuestions && questions.length > 0 && !isFinished && !feedbackState?.show) {
       setQuestionStartTime(Date.now());
       
       if (session.time_limit === null) {
-        setTimeLeft(null); // Unlimited Mode
+        setTimeLeft(null); 
       } else {
         setTimeLeft(session.time_limit);
         const timerInterval = setInterval(() => {
@@ -127,7 +126,6 @@ export const LivePlayer: React.FC = () => {
     }
   }, [currentQuestionIndex, isLoadingQuestions, questions.length, session?.status, isFinished, feedbackState?.show, session?.time_limit]);
 
-  // Only time out if the timer is actually running
   useEffect(() => {
     if (timeLeft === 0 && session?.status === 'active' && !isFinished && !feedbackState?.show) handleAnswer(null); 
   }, [timeLeft, session?.status, isFinished, feedbackState?.show]);
@@ -138,8 +136,9 @@ export const LivePlayer: React.FC = () => {
     setIsJoining(true);
     try {
       const supabase = getSupabaseClient(''); 
-      const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).eq('status', 'waiting').single();
-      if (sessionError || !sessionData) throw new Error('Invalid PIN or game has started.');
+      // NEW FIX: Allows students to join if the game is 'waiting' OR 'active'
+      const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).in('status', ['waiting', 'active']).single();
+      if (sessionError || !sessionData) throw new Error('Invalid PIN or game has finished.');
 
       const { count } = await supabase.from('live_participants').select('*', { count: 'exact', head: true }).eq('session_id', sessionData.id);
       const assignedTeam = (count || 0) % 2 === 0 ? 'blue' : 'red';
@@ -168,7 +167,6 @@ export const LivePlayer: React.FC = () => {
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
     if (isCorrect) setCorrectCount(newCorrectCount);
 
-    // --- SMART SCORING ---
     const maxTimeMs = session?.time_limit ? session.time_limit * 1000 : null;
     const timeTakenMs = selectedKey === null ? (maxTimeMs || 20000) : (Date.now() - questionStartTime);
     const newTotalTimeMs = totalTimeMs + timeTakenMs;
@@ -177,11 +175,9 @@ export const LivePlayer: React.FC = () => {
     let newScore = score;
     if (isCorrect) {
       if (maxTimeMs) {
-        // Speed bonus if timer is active
         const timeRatio = Math.min(timeTakenMs / maxTimeMs, 1); 
         newScore = score + 100 + Math.floor(100 * (1 - timeRatio)); 
       } else {
-        // Flat score for unlimited time
         newScore = score + 100;
       }
       setScore(newScore);
@@ -266,7 +262,6 @@ export const LivePlayer: React.FC = () => {
                 <span style={{ color: theme.accent, fontWeight: '700', fontSize: '1.1rem' }}>{score} pts</span>
               </div>
 
-              {/* Only show progress bar if timer is active */}
               {timeLeft !== null && session.time_limit && (
                 <div style={{ width: '100%', height: '6px', background: '#F1F5F9', borderRadius: '3px', marginBottom: '24px', overflow: 'hidden' }}>
                   <div style={{ width: `${(timeLeft / session.time_limit) * 100}%`, height: '100%', background: timeLeft > 5 ? '#0F172A' : '#EF4444', transition: 'width 1s linear, background 0.3s' }} />
