@@ -62,6 +62,7 @@ export const TeacherDashboard: React.FC = () => {
   // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
   const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war-all' | 'tug-of-war-captain'>('standard');
+  const [liveTimeLimit, setLiveTimeLimit] = useState<number | null>(20); // NEW: Timer Setting
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
@@ -285,13 +286,22 @@ export const TeacherDashboard: React.FC = () => {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
       const pin = Math.floor(1000 + Math.random() * 9000).toString();
-      const { data, error } = await supabase.from('live_sessions').insert([{ pin_code: pin, quiz_id: liveQuizTopic, status: 'waiting', game_mode: liveGameMode }]).select().single();
+      
+      // SEND THE NEW TIME LIMIT TO THE DATABASE
+      const { data, error } = await supabase.from('live_sessions').insert([{ 
+        pin_code: pin, 
+        quiz_id: liveQuizTopic, 
+        status: 'waiting', 
+        game_mode: liveGameMode,
+        time_limit: liveTimeLimit
+      }]).select().single();
+      
       if (error) throw error;
       setActiveSession(data);
       setLiveParticipants([]);
       showToast('Lobby created successfully!', 'success');
     } catch (error) {
-      showToast('Failed to create lobby. Ensure game_mode exists in Supabase!', 'error');
+      showToast('Failed to create lobby. Ensure time_limit exists in Supabase!', 'error');
     } finally {
       setIsCreatingLobby(false);
     }
@@ -331,7 +341,6 @@ export const TeacherDashboard: React.FC = () => {
   const totalTugPoints = bluePoints + redPoints;
   const bluePercent = totalTugPoints === 0 ? 50 : (bluePoints / totalTugPoints) * 100;
 
-  // --- FILTERED QUIZZES ---
   const grammarQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'grammar');
   const vocabQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'vocabulary');
   const pronQuizzes = availableQuizzes.filter(q => q.category?.toLowerCase() === 'pronunciation');
@@ -399,7 +408,6 @@ export const TeacherDashboard: React.FC = () => {
                   <div style={{ position: 'absolute', right: '18px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B', fontSize: '1.2rem' }}>▼</div>
                 </div>
 
-                {/* PREMIUM 3-MODE SELECTOR */}
                 <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Game Format</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
                   <button onClick={() => setLiveGameMode('standard')} style={{ padding: '20px 16px', borderRadius: '16px', border: liveGameMode === 'standard' ? '2px solid #4F46E5' : '1px solid #E2E8F0', background: liveGameMode === 'standard' ? '#EEF2FF' : '#ffffff', color: liveGameMode === 'standard' ? '#4F46E5' : '#64748B', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveGameMode === 'standard' ? '0 10px 20px rgba(79, 70, 229, 0.1)' : 'none' }}>
@@ -417,6 +425,19 @@ export const TeacherDashboard: React.FC = () => {
                     <div style={{ fontSize: '1.05rem', fontWeight: '700' }}>Tug-of-War (Captain)</div>
                     <div style={{ fontSize: '0.85rem', opacity: 0.8, textAlign: 'center', lineHeight: '1.4' }}>Synchronized questions.<br/>Only the Captain can answer.</div>
                   </button>
+                </div>
+
+                <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: '700', color: '#334155', marginBottom: '12px' }}>Time Limit Per Question</label>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '32px' }}>
+                  {[20, 60, null].map((time) => (
+                    <button 
+                      key={time || 'unlimited'} 
+                      onClick={() => setLiveTimeLimit(time)} 
+                      style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveTimeLimit === time ? '2px solid #4F46E5' : '1px solid #E2E8F0', background: liveTimeLimit === time ? '#EEF2FF' : '#ffffff', color: liveTimeLimit === time ? '#4F46E5' : '#64748B', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveTimeLimit === time ? '0 4px 10px rgba(79, 70, 229, 0.1)' : 'none' }}
+                    >
+                      {time ? `⏳ ${time} Seconds` : '♾️ Unlimited Time'}
+                    </button>
+                  ))}
                 </div>
 
                 <button onClick={handleLaunchLobby} disabled={isCreatingLobby || !liveQuizTopic.trim()} style={{ width: '100%', padding: '20px', background: '#0F172A', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '1.2rem', fontWeight: '700', cursor: (isCreatingLobby || !liveQuizTopic.trim()) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: (!liveQuizTopic.trim()) ? 0.5 : 1 }}>
