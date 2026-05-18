@@ -30,7 +30,23 @@ export const LivePlayer: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<number>(20); 
   const [totalTimeMs, setTotalTimeMs] = useState<number>(0);
 
+  // --- BROADCAST STATES ---
+  const [broadcastEvent, setBroadcastEvent] = useState<any>(null);
+  const channelRef = useRef<any>(null);
   const processingRef = useRef(false);
+
+  // --- SMART CAPTAIN LOGIC ---
+  let isCaptain = true;
+  let captainName = '';
+  let showCaptainBanner = false;
+  
+  if (session?.game_mode === 'tug-of-war-captain' && teammates.length > 0) {
+    showCaptainBanner = true;
+    const captainIndex = currentQuestionIndex % teammates.length;
+    const currentCaptain = teammates[captainIndex];
+    isCaptain = currentCaptain.id === participantId;
+    captainName = currentCaptain.nickname;
+  }
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -38,20 +54,34 @@ export const LivePlayer: React.FC = () => {
     if (pinFromUrl) setPin(pinFromUrl);
   }, []);
 
+  // --- INITIALIZE REALTIME SYNC AND BROADCAST LISTENER ---
   useEffect(() => {
-    if (!session) return;
+    if (!session?.id) return;
     const supabase = getSupabaseClient(''); 
-    const subscription = supabase.channel(`session_${session.id}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_sessions', filter: `id=eq.${session.id}` }, (payload) => {
+    
+    // Set up the channel to allow broadcasting
+    const channel = supabase.channel(`session_${session.id}`, {
+      config: { broadcast: { self: false } }
+    });
+    channelRef.current = channel;
+
+    channel
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_sessions', filter: `id=eq.${session.id}` }, (payload) => {
         if (payload.new.status === 'active') setSession(payload.new);
-      }).subscribe();
-    return () => { supabase.removeChannel(subscription); };
-  }, [session]);
+      })
+      // Listen for Captain's Remote Control signals
+      .on('broadcast', { event: 'captain_action' }, (payload) => {
+        setBroadcastEvent({ ...payload.payload, timestamp: Date.now() });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.id]);
 
   useEffect(() => {
     if (session?.status === 'active' && questions.length === 0) {
       setIsLoadingQuestions(true);
       
-      // Fetch roster if in Captain mode
       if (session.game_mode === 'tug-of-war-captain' && team) {
         const supabase = getSupabaseClient('');
         supabase.from('live_participants').select('*').eq('session_id', session.id).eq('team', team).order('nickname', { ascending: true })
@@ -78,7 +108,6 @@ export const LivePlayer: React.FC = () => {
             }
 
             if (uniqueQuestions.length > 0) {
-              // SMART SHUFFLING
               if (session.game_mode === 'standard') {
                 setQuestions(uniqueQuestions.sort(() => 0.5 - Math.random()));
               } else {
@@ -100,6 +129,7 @@ export const LivePlayer: React.FC = () => {
     }
   }, [currentQuestionIndex, isLoadingQuestions, questions.length, session?.status, isFinished, feedbackState?.show]);
 
+  // When timer hits 0
   useEffect(() => {
     if (timeLeft === 0 && session?.status === 'active' && !isFinished && !feedbackState?.show) handleAnswer(null); 
   }, [timeLeft, session?.status, isFinished, feedbackState?.show]);
@@ -125,9 +155,22 @@ export const LivePlayer: React.FC = () => {
     } catch (err: any) { setError(err.message); } finally { setIsJoining(false); }
   };
 
-  const handleAnswer = async (selectedKey: string | null) => {
+  const handleAnswer = async (selectedKey: string | null, isFromBroadcast = false) => {
     if (processingRef.current || isFinished || feedbackState?.show) return;
+    
+    // Safety check: Prevent teammates from jumping ahead or timing out if they aren't the captain
+    if (session?.game_mode === 'tug-of-war-captain' && !isCaptain && !isFromBroadcast) return;
+
     processingRef.current = true;
+
+    // Send the radio signal to teammates if the Captain just answered!
+    if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'captain_action',
+        payload: { action: 'ANSWER', key: selectedKey, team: team }
+      });
+    }
 
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
@@ -151,7 +194,16 @@ export const LivePlayer: React.FC = () => {
     processingRef.current = false; 
   };
 
-  const handleNextQuestion = async () => {
+  const handleNextQuestion = async (isFromBroadcast = false) => {
+    // Send the radio signal to teammates to move to the next screen!
+    if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'captain_action',
+        payload: { action: 'NEXT', team: team }
+      });
+    }
+
     setFeedbackState(null);
     setTimeLeft(20);
     setQuestionStartTime(Date.now());
@@ -164,24 +216,23 @@ export const LivePlayer: React.FC = () => {
     }
   };
 
+  // --- TRIGGER ACTIONS FROM TEAMMATES' BROADCASTS ---
+  useEffect(() => {
+    if (!broadcastEvent || !team) return;
+    if (broadcastEvent.team === team) {
+      if (broadcastEvent.action === 'ANSWER') {
+        handleAnswer(broadcastEvent.key, true);
+      } else if (broadcastEvent.action === 'NEXT') {
+        handleNextQuestion(true);
+      }
+    }
+  }, [broadcastEvent]);
+
   const theme = {
     bg: team === 'blue' ? '#EFF6FF' : team === 'red' ? '#FEF2F2' : '#F8FAFC',
     accent: team === 'blue' ? '#3B82F6' : team === 'red' ? '#EF4444' : '#4F46E5',
     border: team === 'blue' ? '#BFDBFE' : team === 'red' ? '#FECACA' : '#E2E8F0'
   };
-
-  // --- SMART CAPTAIN LOGIC ---
-  let isCaptain = true;
-  let captainName = '';
-  let showCaptainBanner = false;
-  
-  if (session?.game_mode === 'tug-of-war-captain' && teammates.length > 0) {
-    showCaptainBanner = true;
-    const captainIndex = currentQuestionIndex % teammates.length;
-    const currentCaptain = teammates[captainIndex];
-    isCaptain = currentCaptain.id === participantId;
-    captainName = currentCaptain.nickname;
-  }
 
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: '"Fredoka", sans-serif', transition: 'background 0.5s ease' }}>
@@ -239,7 +290,6 @@ export const LivePlayer: React.FC = () => {
                 <div style={{ width: `${(timeLeft / 20) * 100}%`, height: '100%', background: timeLeft > 5 ? '#0F172A' : '#EF4444', transition: 'width 1s linear, background 0.3s' }} />
               </div>
 
-              {/* --- PREMIUM CAPTAIN UI BANNER --- */}
               {showCaptainBanner && !feedbackState?.show && (
                 <div style={{ background: isCaptain ? '#0F172A' : '#F8FAFC', color: isCaptain ? '#ffffff' : '#64748B', padding: '16px', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '12px', border: isCaptain ? 'none' : '1px solid #E2E8F0', boxShadow: isCaptain ? '0 10px 20px rgba(15, 23, 42, 0.15)' : 'none' }}>
                   {isCaptain ? <IconCrown /> : <IconUsers />}
@@ -284,7 +334,7 @@ export const LivePlayer: React.FC = () => {
                   <p style={{ color: '#334155', fontSize: '1.05rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>{questions[currentQuestionIndex].explanation}</p>
                   
                   {(!showCaptainBanner || isCaptain) ? (
-                    <button onClick={handleNextQuestion} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: '12px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.15)' }}>
+                    <button onClick={() => handleNextQuestion(false)} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: '12px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.15)' }}>
                       Next Question →
                     </button>
                   ) : (
