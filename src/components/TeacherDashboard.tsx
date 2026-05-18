@@ -18,6 +18,9 @@ const IconPlay = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="no
 const IconTrophy = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4h10M5 4h14v4a7 7 0 01-14 0V4z"></path></svg>);
 const IconSwords = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" y1="19" x2="19" y2="13"></line><line x1="16" y1="16" x2="20" y2="20"></line><line x1="19" y1="21" x2="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" y1="14" x2="9" y2="18"></line><line x1="7" y1="17" x2="4" y2="20"></line><line x1="3" y1="19" x2="5" y2="21"></line></svg>);
 const IconCrown = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="2 16 5 4 12 9 19 4 22 16 2 16"></polygon><line x1="2" y1="20" x2="22" y2="20"></line></svg>);
+// NEW SVGs FOR THE TIMER
+const IconHourglass = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 22h14"></path><path d="M5 2h14"></path><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path></svg>);
+const IconInfinity = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"></path></svg>);
 
 export const TeacherDashboard: React.FC = () => {
   const { getToken } = useAuth();
@@ -62,7 +65,7 @@ export const TeacherDashboard: React.FC = () => {
   // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
   const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war-all' | 'tug-of-war-captain'>('standard');
-  const [liveTimeLimit, setLiveTimeLimit] = useState<number | null>(20); // NEW: Timer Setting
+  const [liveTimeLimit, setLiveTimeLimit] = useState<number | null>(20); 
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
   const [isCreatingLobby, setIsCreatingLobby] = useState(false);
@@ -287,7 +290,6 @@ export const TeacherDashboard: React.FC = () => {
       const supabase = getSupabaseClient(token || '');
       const pin = Math.floor(1000 + Math.random() * 9000).toString();
       
-      // SEND THE NEW TIME LIMIT TO THE DATABASE
       const { data, error } = await supabase.from('live_sessions').insert([{ 
         pin_code: pin, 
         quiz_id: liveQuizTopic, 
@@ -433,9 +435,9 @@ export const TeacherDashboard: React.FC = () => {
                     <button 
                       key={time || 'unlimited'} 
                       onClick={() => setLiveTimeLimit(time)} 
-                      style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveTimeLimit === time ? '2px solid #4F46E5' : '1px solid #E2E8F0', background: liveTimeLimit === time ? '#EEF2FF' : '#ffffff', color: liveTimeLimit === time ? '#4F46E5' : '#64748B', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', transition: 'all 0.2s', boxShadow: liveTimeLimit === time ? '0 4px 10px rgba(79, 70, 229, 0.1)' : 'none' }}
+                      style={{ flex: 1, padding: '16px', borderRadius: '12px', border: liveTimeLimit === time ? '2px solid #4F46E5' : '1px solid #E2E8F0', background: liveTimeLimit === time ? '#EEF2FF' : '#ffffff', color: liveTimeLimit === time ? '#4F46E5' : '#64748B', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: liveTimeLimit === time ? '0 4px 10px rgba(79, 70, 229, 0.1)' : 'none' }}
                     >
-                      {time ? `⏳ ${time} Seconds` : '♾️ Unlimited Time'}
+                      {time ? <><IconHourglass /> {time} Seconds</> : <><IconInfinity /> Unlimited Time</>}
                     </button>
                   ))}
                 </div>
