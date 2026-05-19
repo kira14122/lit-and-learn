@@ -18,7 +18,6 @@ const IconPlay = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="no
 const IconTrophy = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4h10M5 4h14v4a7 7 0 01-14 0V4z"></path></svg>);
 const IconSwords = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"></polyline><line x1="13" y1="19" x2="19" y2="13"></line><line x1="16" y1="16" x2="20" y2="20"></line><line x1="19" y1="21" x2="21" y2="19"></line><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"></polyline><line x1="5" y1="14" x2="9" y2="18"></line><line x1="7" y1="17" x2="4" y2="20"></line><line x1="3" y1="19" x2="5" y2="21"></line></svg>);
 const IconCrown = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="2 16 5 4 12 9 19 4 22 16 2 16"></polygon><line x1="2" y1="20" x2="22" y2="20"></line></svg>);
-// NEW SVGs FOR THE TIMER
 const IconHourglass = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 22h14"></path><path d="M5 2h14"></path><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path></svg>);
 const IconInfinity = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"></path></svg>);
 
@@ -62,7 +61,6 @@ export const TeacherDashboard: React.FC = () => {
   const [studentVocab, setStudentVocab] = useState<any[]>([]);
   const [isFetchingVocab, setIsFetchingVocab] = useState(false);
 
-  // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
   const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war-all' | 'tug-of-war-captain'>('standard');
   const [liveTimeLimit, setLiveTimeLimit] = useState<number | null>(20); 
@@ -466,7 +464,7 @@ export const TeacherDashboard: React.FC = () => {
 
               <div style={{ flex: '1', minWidth: '0', background: '#ffffff', borderRadius: '32px', border: '1px solid #E2E8F0', padding: '32px', boxShadow: '0 10px 30px rgba(0,0,0,0.02)', maxHeight: '700px', overflowY: 'auto' }}>
                 
-                {isTugOfWar && (
+                {isTugOfWar && activeSession.status !== 'waiting' && (
                   <div style={{ marginBottom: '40px', padding: '24px', background: '#F8FAFC', borderRadius: '24px', border: '1px solid #E2E8F0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                       <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -485,7 +483,7 @@ export const TeacherDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {!isTugOfWar && (
+                {(!isTugOfWar || activeSession.status === 'waiting') && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #E2E8F0', paddingBottom: '16px' }}>
                     <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: 0 }}>{activeSession.status === 'waiting' ? 'Waiting for Players...' : 'Live Leaderboard'}</h3>
                     <span style={{ background: '#F1F5F9', color: '#475569', padding: '8px 16px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem' }}>{liveParticipants.length} Joined</span>

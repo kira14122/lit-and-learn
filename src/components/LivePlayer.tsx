@@ -136,7 +136,6 @@ export const LivePlayer: React.FC = () => {
     setIsJoining(true);
     try {
       const supabase = getSupabaseClient(''); 
-      // NEW FIX: Allows students to join if the game is 'waiting' OR 'active'
       const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).in('status', ['waiting', 'active']).single();
       if (sessionError || !sessionData) throw new Error('Invalid PIN or game has finished.');
 
@@ -158,12 +157,16 @@ export const LivePlayer: React.FC = () => {
 
     processingRef.current = true;
 
+    const currentQ = questions[currentQuestionIndex];
+    const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
+
+    // OPTIMISTIC UI FIX: Show feedback to the student instantly
+    setFeedbackState({ show: true, isCorrect, selectedKey });
+
     if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
       channelRef.current?.send({ type: 'broadcast', event: 'captain_action', payload: { action: 'ANSWER', key: selectedKey, team: team }});
     }
 
-    const currentQ = questions[currentQuestionIndex];
-    const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
     if (isCorrect) setCorrectCount(newCorrectCount);
 
@@ -184,8 +187,9 @@ export const LivePlayer: React.FC = () => {
     }
 
     const supabase = getSupabaseClient('');
+    // SILENT DATABASE SAVE: Happens in the background
     await supabase.from('live_participants').update({ score: newScore, total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)), correct_answers: newCorrectCount, total_questions: questions.length }).eq('id', participantId);
-    setFeedbackState({ show: true, isCorrect, selectedKey });
+    
     processingRef.current = false; 
   };
 
