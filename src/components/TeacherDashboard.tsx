@@ -61,6 +61,7 @@ export const TeacherDashboard: React.FC = () => {
   const [studentVocab, setStudentVocab] = useState<any[]>([]);
   const [isFetchingVocab, setIsFetchingVocab] = useState(false);
 
+  // --- LIVE ARENA STATES ---
   const [liveQuizTopic, setLiveQuizTopic] = useState('');
   const [liveGameMode, setLiveGameMode] = useState<'standard' | 'tug-of-war-all' | 'tug-of-war-captain'>('standard');
   const [liveTimeLimit, setLiveTimeLimit] = useState<number | null>(20); 

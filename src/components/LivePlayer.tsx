@@ -139,15 +139,34 @@ export const LivePlayer: React.FC = () => {
       const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).in('status', ['waiting', 'active']).single();
       if (sessionError || !sessionData) throw new Error('Invalid PIN or game has finished.');
 
-      const { count } = await supabase.from('live_participants').select('*', { count: 'exact', head: true }).eq('session_id', sessionData.id);
-      const assignedTeam = (count || 0) % 2 === 0 ? 'blue' : 'red';
+      // RESUME IDENTITY FIX: Check if this exact nickname is already in the game
+      const { data: existingPlayer } = await supabase
+        .from('live_participants')
+        .select('*')
+        .eq('session_id', sessionData.id)
+        .ilike('nickname', nickname)
+        .maybeSingle();
 
-      const { data: participantData, error: participantError } = await supabase.from('live_participants').insert([{ session_id: sessionData.id, nickname: nickname, team: assignedTeam }]).select().single();
-      if (participantError) throw participantError;
+      if (existingPlayer) {
+        // Welcome back! Restore profile, team, and score.
+        setParticipantId(existingPlayer.id);
+        setTeam(existingPlayer.team);
+        setScore(existingPlayer.score || 0);
+        setCorrectCount(existingPlayer.correct_answers || 0);
+        setTotalTimeMs(existingPlayer.total_time ? existingPlayer.total_time * 1000 : 0);
+      } else {
+        // Brand new player logic
+        const { count } = await supabase.from('live_participants').select('*', { count: 'exact', head: true }).eq('session_id', sessionData.id);
+        const assignedTeam = (count || 0) % 2 === 0 ? 'blue' : 'red';
 
+        const { data: participantData, error: participantError } = await supabase.from('live_participants').insert([{ session_id: sessionData.id, nickname: nickname, team: assignedTeam }]).select().single();
+        if (participantError) throw participantError;
+
+        setParticipantId(participantData.id);
+        setTeam(assignedTeam); 
+      }
+      
       setSession(sessionData);
-      setParticipantId(participantData.id);
-      setTeam(assignedTeam); 
     } catch (err: any) { setError(err.message); } finally { setIsJoining(false); }
   };
 
@@ -160,7 +179,7 @@ export const LivePlayer: React.FC = () => {
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
 
-    // OPTIMISTIC UI FIX: Show feedback to the student instantly
+    // OPTIMISTIC UI FIX: Instant screen update for the student
     setFeedbackState({ show: true, isCorrect, selectedKey });
 
     if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
@@ -187,7 +206,7 @@ export const LivePlayer: React.FC = () => {
     }
 
     const supabase = getSupabaseClient('');
-    // SILENT DATABASE SAVE: Happens in the background
+    // SILENT SAVE: Happens invisibly in the background
     await supabase.from('live_participants').update({ score: newScore, total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)), correct_answers: newCorrectCount, total_questions: questions.length }).eq('id', participantId);
     
     processingRef.current = false; 
