@@ -32,7 +32,7 @@ const IconLibrary = () => (<svg width="48" height="48" viewBox="0 0 24 24" fill=
 const IconFlashcard = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" ry="2"/><path d="M7 15h10"/></svg>);
 
 const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) => (
-  <button onClick={onClick} className="back-btn" style={{ background: '#ffffff', color: '#4F46E5', border: '2px solid #EEF2FF', padding: '10px 20px', borderRadius: '9999px', fontWeight: '600', fontSize: '1rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.05)' }}>
+  <button onClick={onClick} className="back-btn" style={{ background: '#ffffff', color: '#4F46E5', border: '1px solid #E2E8F0', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', fontSize: '1rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     {text}
   </button>
@@ -48,9 +48,9 @@ const styles: any = {
   container: { width: '100%', maxWidth: '1400px', margin: '0 auto', padding: '0 40px' },
   header: { textAlign: 'center', marginBottom: '40px' },
   nav: { display: 'inline-flex', backgroundColor: '#ffffff', padding: '8px', borderRadius: '9999px', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.06)', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' },
-  navButton: (a: boolean) => ({ background: a ? '#4F46E5' : 'transparent', color: a ? '#ffffff' : '#64748B', border: 'none', fontSize: '17px', fontWeight: '600', padding: '14px 28px', borderRadius: '9999px', cursor: 'pointer', transition: 'all 0.3s ease' }),
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '30px' },
-  card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'visible', border: 'none', boxShadow: '0 25px 50px -12px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column' },
+  navButton: (a: boolean) => ({ background: a ? '#4F46E5' : 'transparent', color: a ? '#ffffff' : '#64748B', border: 'none', fontSize: '17px', fontWeight: '600', padding: '14px 28px', borderRadius: '9999px', cursor: 'pointer', transition: 'all 0.3s ease', boxShadow: a ? '0 8px 16px rgba(79, 70, 229, 0.25)' : 'none' }),
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' },
+  card: { backgroundColor: '#ffffff', borderRadius: '32px', overflow: 'visible', border: '1px solid #F1F5F9', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column' },
   actionButton: { background: '#4F46E5', color: '#ffffff', padding: '12px 24px', borderRadius: '9999px', fontWeight: '600', border: 'none', cursor: 'pointer', fontSize: '1.1rem', transition: 'all 0.2s' },
   readMoreBtn: { fontFamily: '"Fredoka", sans-serif', background: '#F8FAFC', border: 'none', color: '#4F46E5', fontWeight: '600', fontSize: '1.05rem', padding: '12px 20px', borderRadius: '16px', marginTop: 'auto', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', textAlign: 'center', justifyContent: 'center', width: '100%' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(12px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' },
@@ -73,9 +73,7 @@ function LitAndLearnMain() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- 🔥 THE FIX: Bulletproof path detection that ignores trailing slashes ---
   const isPlayRoute = location.pathname.startsWith('/play');
-
   const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
 
   const currentTabName = useMemo(() => {
@@ -153,7 +151,6 @@ function LitAndLearnMain() {
     if (activeLessonData) localStorage.setItem('ll_lessonData', JSON.stringify(activeLessonData)); else localStorage.removeItem('ll_lessonData');
   }, [bookCategory, activeSubCategory, activeLevel, activeSubLevel, activeUnit, selectedBook, isInteractiveLesson, activeLessonData]);
 
-  // THE MAGIC DICTIONARY FIX
   useEffect(() => {
     client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
@@ -172,7 +169,6 @@ function LitAndLearnMain() {
 
     client.fetch('*[_type == "dictionaryWord"]').then((data) => {
       const dictMap: Record<string, any> = {};
-      
       data.forEach((item: any) => { 
         if (item.word) {
           const wordData = { 
@@ -263,7 +259,6 @@ function LitAndLearnMain() {
 
     try {
       const exists = savedWords.some(w => w?.word?.trim().toLowerCase() === cleanWord);
-      
       const liveDictionaryMatch = dictionary[cleanWord];
       let secureExample = info.example || (liveDictionaryMatch ? liveDictionaryMatch.example : null) || null;
 
@@ -310,7 +305,6 @@ function LitAndLearnMain() {
     if (userId) {
       const token = await getToken({ template: 'supabase' });
       const supabase = getSupabaseClient(token || '');
-
       await supabase.from('completed_lessons').insert([{ user_id: userId, lesson_id: lessonId }]);
       setCompletedLessons(prev => [...prev, lessonId]);
     } else {
@@ -402,8 +396,8 @@ function LitAndLearnMain() {
           -moz-osx-font-smoothing: grayscale; 
         }
         
-        .soft-card:hover { transform: translateY(-8px); box-shadow: 0 40px 60px -15px rgba(15, 23, 42, 0.1) !important; }
-        .back-btn:hover { background-color: #EEF2FF !important; transform: translateX(-4px); }
+        .soft-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.06) !important; }
+        .back-btn:hover { background-color: #F8FAFC !important; transform: translateX(-4px); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
         .bento-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 40px; align-items: start; }
@@ -534,12 +528,10 @@ function LitAndLearnMain() {
       `}</style>
 
       {isPlayRoute ? (
-        // --- 🚀 NEW: PURE FULL-SCREEN ARENA ROUTE ---
         <Routes>
           <Route path="/play" element={<LivePlayer />} />
         </Routes>
       ) : (
-        // --- THE STANDARD LIT & LEARN INTERFACE ---
         <div style={styles.page}>
           <header style={styles.header}>
             <h1 className="page-header" style={{ fontSize: '4.5rem', fontWeight: '600', color: '#0F172A', margin: '0 0 10px 0' }}>Lit <span style={{ color: '#4F46E5' }}>&</span> Learn</h1>
@@ -597,7 +589,7 @@ function LitAndLearnMain() {
                     <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}><IconSearch size={20} /></div>
                     <input 
                       type="text" placeholder="Search everything..." 
-                      style={{ width: '100%', padding: '16px 16px 16px 48px', fontSize: '1.05rem', fontWeight: '500', borderRadius: '16px', border: '2px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#0F172A', outline: 'none', transition: 'all 0.2s' }} 
+                      style={{ width: '100%', padding: '14px 16px 14px 48px', fontSize: '1.05rem', fontWeight: '500', borderRadius: '16px', border: '1px solid #E2E8F0', backgroundColor: '#ffffff', color: '#0F172A', outline: 'none', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }} 
                       value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} 
                       onFocus={(e) => e.target.style.borderColor = '#4F46E5'} onBlur={(e) => e.target.style.borderColor = '#E2E8F0'}
                     />
@@ -812,13 +804,13 @@ function LitAndLearnMain() {
                         {!bookCategory ? (
                           <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
                             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '800px', margin: '0 auto' }}>
-                              <button onClick={() => setBookCategory('Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                                <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconFiction size={40} /></div>
+                              <button onClick={() => setBookCategory('Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
+                                <div style={{ background: '#EEF2FF', color: '#4F46E5', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconFiction size={32} /></div>
                                 <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Fiction</h3>
                                 <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Novels, short stories, and classics.</p>
                               </button>
-                              <button onClick={() => setBookCategory('Non-Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                                <div style={{ background: '#FEF2F2', color: '#EF4444', padding: '24px', borderRadius: '50%', display: 'flex' }}><IconNonFiction size={40} /></div>
+                              <button onClick={() => setBookCategory('Non-Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
+                                <div style={{ background: '#FEF2F2', color: '#EF4444', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconNonFiction size={32} /></div>
                                 <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Non-Fiction</h3>
                                 <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Essays and educational texts.</p>
                               </button>
@@ -876,10 +868,12 @@ function LitAndLearnMain() {
                           <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
                             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
                               {LEVELS.map((lvl, index) => {
-                                const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#059669' } ];
+                                const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#10B981' } ];
                                 return (
-                                  <button key={lvl.name} onClick={() => setActiveLevel(lvl.name)} className="soft-card" style={{ flex: '1 1 280px', maxWidth: '320px', padding: '50px 40px', backgroundColor: '#ffffff', border: '2px solid #E2E8F0', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s' }}>
-                                    <div style={{ background: colors[index].bg, color: colors[index].icon, padding: '24px', borderRadius: '50%', display: 'flex' }}>{React.cloneElement(lvl.icon, { size: 40 })}</div>
+                                  <button key={lvl.name} onClick={() => setActiveLevel(lvl.name)} className="soft-card" style={{ flex: '1 1 280px', maxWidth: '320px', padding: '40px 40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
+                                    <div style={{ background: colors[index].bg, color: colors[index].icon, width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      {React.cloneElement(lvl.icon, { size: 36 })}
+                                    </div>
                                     <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>{lvl.name}</h3>
                                   </button>
                                 )
