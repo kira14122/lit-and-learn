@@ -279,7 +279,7 @@ async function generateGrammarActivity(
   const { schema, rules } = getQuestionSchema(activityType);
 
   const typeInstructions: Record<string, string> = {
-    'Fill in the Blanks':  `Each blank must require the student to apply "${grammarPoint}". One blank per sentence marked as ___. "answer" is only the missing word/phrase. Vary sentence subjects and contexts.`,
+    'Fill in the Blanks':  `Each blank must require the student to apply "${grammarPoint}". One blank per sentence marked as ___. IMPORTANT: Always include the base form of the verb in parentheses immediately after the blank, like this: "___ (to arrive)". The "answer" is the correctly conjugated form only. Vary sentence subjects and contexts.`,
     'Correct the Errors':  `Each sentence has EXACTLY ONE error related to "${grammarPoint}". Otherwise natural English. "answer" is the COMPLETE corrected sentence. Vary error position across items.`,
     'Multiple Choice':     `Each question tests "${grammarPoint}". All 4 options in the same grammatical category. Distractors represent real student errors. "answer" is the EXACT TEXT of the correct option.`,
   };
