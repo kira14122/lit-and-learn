@@ -477,6 +477,14 @@ export const TeacherDashboard: React.FC = () => {
     setIsCreatingLobby(true);
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
+
+      // Auto-close any stuck active/waiting sessions before launching a new one.
+      // Prevents students from accidentally joining old games from previous classes.
+      await supabase
+        .from('live_sessions')
+        .update({ status: 'finished' })
+        .in('status', ['active', 'waiting']);
+
       const pin = Math.floor(1000+Math.random()*9000).toString();
       const {data,error} = await supabase.from('live_sessions').insert([{pin_code:pin,quiz_id:liveQuizTopic,status:'waiting',game_mode:liveGameMode,time_limit:liveTimeLimit}]).select().single();
       if (error) throw error;
