@@ -78,14 +78,22 @@ export const LivePlayer: React.FC = () => {
           .then(({ data }) => { if (data) setTeammates(data); });
       }
 
-      const query = `*[_type == "practiceBank" && title match "${session.quiz_id}*"][0]`;
+      // FIX 1: Exact title match (==) instead of fuzzy match to prevent
+      // similar quiz titles returning wrong questions
+      const query = `*[_type == "practiceBank" && title == "${session.quiz_id}"][0]`;
+
       client.fetch(query).then((topic) => {
           if (topic && topic.bulkData) {
             const rows = topic.bulkData.replace(/\r/g, '').split('\n').filter((row: string) => row.trim() !== '');
             const rawQuestions = rows.map((row: string) => {
               const cols = row.split('\t').map((c: string) => c.trim());
               if (cols.length >= 5 && cols[0] !== '' && cols[0].toLowerCase() !== 'question') {
-                return { question: cols[0], options: { A: cols[1], B: cols[2], C: cols[3] }, correctAnswer: cols[4].toUpperCase().replace(/[^ABC]/g, ''), explanation: cols[5] || `Review this grammar rule. Correct answer: ${cols[4].toUpperCase()}.` };
+                return {
+                  question: cols[0],
+                  options: { A: cols[1], B: cols[2], C: cols[3] },
+                  correctAnswer: cols[4].toUpperCase().replace(/[^ABC]/g, ''),
+                  explanation: cols[5] || `Review this grammar rule. Correct answer: ${cols[4].toUpperCase()}.`
+                };
               }
               return null;
             }).filter(Boolean); 
@@ -135,11 +143,25 @@ export const LivePlayer: React.FC = () => {
     setError('');
     setIsJoining(true);
     try {
-      const supabase = getSupabaseClient(''); 
-      const { data: sessionData, error: sessionError } = await supabase.from('live_sessions').select('*').eq('pin_code', pin).in('status', ['waiting', 'active']).single();
+      const supabase = getSupabaseClient('');
+
+      // FIX 2: Always fetch the most recent session with this PIN,
+      // created within the last 24 hours, to prevent joining stale old sessions
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('live_sessions')
+        .select('*')
+        .eq('pin_code', pin)
+        .in('status', ['waiting', 'active'])
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
       if (sessionError || !sessionData) throw new Error('Invalid PIN or game has finished.');
 
-      // RESUME IDENTITY FIX: Check if this exact nickname is already in the game
+      // FIX 3: Resume identity check is now scoped strictly to the current
+      // session only — can never accidentally restore a player from an old session
       const { data: existingPlayer } = await supabase
         .from('live_participants')
         .select('*')
@@ -148,18 +170,25 @@ export const LivePlayer: React.FC = () => {
         .maybeSingle();
 
       if (existingPlayer) {
-        // Welcome back! Restore profile, team, and score.
+        // Welcome back — restore score and team for this session only
         setParticipantId(existingPlayer.id);
         setTeam(existingPlayer.team);
         setScore(existingPlayer.score || 0);
         setCorrectCount(existingPlayer.correct_answers || 0);
         setTotalTimeMs(existingPlayer.total_time ? existingPlayer.total_time * 1000 : 0);
       } else {
-        // Brand new player logic
-        const { count } = await supabase.from('live_participants').select('*', { count: 'exact', head: true }).eq('session_id', sessionData.id);
+        // Brand new player — assign team and insert
+        const { count } = await supabase
+          .from('live_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', sessionData.id);
         const assignedTeam = (count || 0) % 2 === 0 ? 'blue' : 'red';
 
-        const { data: participantData, error: participantError } = await supabase.from('live_participants').insert([{ session_id: sessionData.id, nickname: nickname, team: assignedTeam }]).select().single();
+        const { data: participantData, error: participantError } = await supabase
+          .from('live_participants')
+          .insert([{ session_id: sessionData.id, nickname: nickname, team: assignedTeam }])
+          .select()
+          .single();
         if (participantError) throw participantError;
 
         setParticipantId(participantData.id);
@@ -179,7 +208,6 @@ export const LivePlayer: React.FC = () => {
     const currentQ = questions[currentQuestionIndex];
     const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
 
-    // OPTIMISTIC UI FIX: Instant screen update for the student
     setFeedbackState({ show: true, isCorrect, selectedKey });
 
     if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
@@ -206,8 +234,12 @@ export const LivePlayer: React.FC = () => {
     }
 
     const supabase = getSupabaseClient('');
-    // SILENT SAVE: Happens invisibly in the background
-    await supabase.from('live_participants').update({ score: newScore, total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)), correct_answers: newCorrectCount, total_questions: questions.length }).eq('id', participantId);
+    await supabase.from('live_participants').update({
+      score: newScore,
+      total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)),
+      correct_answers: newCorrectCount,
+      total_questions: questions.length
+    }).eq('id', participantId);
     
     processingRef.current = false; 
   };
@@ -235,13 +267,19 @@ export const LivePlayer: React.FC = () => {
     }
   }, [broadcastEvent]);
 
-  const theme = { bg: team === 'blue' ? '#EFF6FF' : team === 'red' ? '#FEF2F2' : '#F8FAFC', accent: team === 'blue' ? '#3B82F6' : team === 'red' ? '#EF4444' : '#4F46E5', border: team === 'blue' ? '#BFDBFE' : team === 'red' ? '#FECACA' : '#E2E8F0' };
+  const theme = {
+    bg:     team === 'blue' ? '#EFF6FF' : team === 'red' ? '#FEF2F2' : '#F8FAFC',
+    accent: team === 'blue' ? '#3B82F6' : team === 'red' ? '#EF4444' : '#4F46E5',
+    border: team === 'blue' ? '#BFDBFE' : team === 'red' ? '#FECACA' : '#E2E8F0'
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: '"Fredoka", sans-serif', transition: 'background 0.5s ease' }}>
       
       {team && session?.status !== 'finished' && session?.game_mode !== 'standard' && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, background: theme.accent, color: '#fff', textAlign: 'center', padding: '14px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 50, fontSize: '0.9rem' }}>Team {team === 'blue' ? 'Blue' : 'Red'}</div>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, background: theme.accent, color: '#fff', textAlign: 'center', padding: '14px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', zIndex: 50, fontSize: '0.9rem' }}>
+          Team {team === 'blue' ? 'Blue' : 'Red'}
+        </div>
       )}
 
       {!session ? (
@@ -252,15 +290,21 @@ export const LivePlayer: React.FC = () => {
             <input type="text" placeholder="Game PIN" value={pin} onChange={(e) => setPin(e.target.value.toUpperCase())} required style={{ padding: '16px', borderRadius: '16px', border: '2px solid #E2E8F0', fontSize: '1.4rem', textAlign: 'center', fontWeight: '700', letterSpacing: '4px', outline: 'none' }} />
             <input type="text" placeholder="Nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} required maxLength={15} style={{ padding: '16px', borderRadius: '16px', border: '2px solid #E2E8F0', fontSize: '1.2rem', textAlign: 'center', outline: 'none' }} />
             {error && <div style={{ color: '#EF4444', fontWeight: '600', fontSize: '0.95rem', background: '#FEF2F2', padding: '10px', borderRadius: '8px' }}>{error}</div>}
-            <button type="submit" disabled={isJoining || !pin || !nickname} style={{ background: '#0F172A', color: '#ffffff', padding: '18px', borderRadius: '16px', border: 'none', fontSize: '1.2rem', fontWeight: '700', cursor: 'pointer', marginTop: '8px', opacity: (isJoining || !pin || !nickname) ? 0.6 : 1, transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(15, 23, 42, 0.15)' }}>{isJoining ? 'Joining...' : 'Join Game'}</button>
+            <button type="submit" disabled={isJoining || !pin || !nickname} style={{ background: '#0F172A', color: '#ffffff', padding: '18px', borderRadius: '16px', border: 'none', fontSize: '1.2rem', fontWeight: '700', cursor: 'pointer', marginTop: '8px', opacity: (isJoining || !pin || !nickname) ? 0.6 : 1, transition: 'all 0.2s', boxShadow: '0 10px 20px rgba(15, 23, 42, 0.15)' }}>
+              {isJoining ? 'Joining...' : 'Join Game'}
+            </button>
           </form>
         </div>
+
       ) : session.status === 'waiting' ? (
         <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
           <h2 style={{ fontSize: '2.2rem', color: '#0F172A', marginBottom: '16px' }}>You're in, <span style={{color: theme.accent}}>{nickname}</span>!</h2>
           <p style={{ color: '#64748B', fontSize: '1.1rem', marginBottom: '30px' }}>Look at the board to see your name.</p>
-          <div style={{ background: '#F8FAFC', color: '#475569', padding: '16px 32px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '600', display: 'inline-block', border: '1px solid #E2E8F0' }}>Waiting for your teacher to start...</div>
+          <div style={{ background: '#F8FAFC', color: '#475569', padding: '16px 32px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '600', display: 'inline-block', border: '1px solid #E2E8F0' }}>
+            Waiting for your teacher to start...
+          </div>
         </div>
+
       ) : isFinished ? (
         <div style={{ textAlign: 'center', background: '#ffffff', padding: '50px 30px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', maxWidth: '400px', width: '100%', marginTop: '40px' }}>
           <h2 style={{ fontSize: '2.5rem', color: '#0F172A', marginBottom: '8px' }}>Finished!</h2>
@@ -270,6 +314,7 @@ export const LivePlayer: React.FC = () => {
             <div style={{ fontSize: '3rem', fontWeight: '800' }}>{score}</div>
           </div>
         </div>
+
       ) : (
         <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', marginTop: '40px' }}>
           {isLoadingQuestions ? (
@@ -300,7 +345,9 @@ export const LivePlayer: React.FC = () => {
                 </div>
               )}
               
-              <h2 style={{ fontSize: '1.6rem', color: '#0F172A', marginBottom: '40px', lineHeight: '1.5', fontWeight: '600' }}>{questions[currentQuestionIndex].question}</h2>
+              <h2 style={{ fontSize: '1.6rem', color: '#0F172A', marginBottom: '40px', lineHeight: '1.5', fontWeight: '600' }}>
+                {questions[currentQuestionIndex].question}
+              </h2>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {['A', 'B', 'C'].map((key) => {
@@ -310,18 +357,26 @@ export const LivePlayer: React.FC = () => {
                   const isSelected = feedbackState?.selectedKey === key;
                   const isActuallyCorrect = questions[currentQuestionIndex].correctAnswer === key;
                   
-                  let bgColor = '#F8FAFC'; let borderColor = '#E2E8F0'; let textColor = '#334155'; let opacity = 1;
+                  let bgColor = '#F8FAFC';
+                  let borderColor = '#E2E8F0';
+                  let textColor = '#334155';
+                  let opacity = 1;
 
                   if (feedbackState?.show) {
                     if (isActuallyCorrect) { bgColor = '#ECFDF5'; borderColor = '#10B981'; textColor = '#065F46'; } 
-                    else if (isSelected) { bgColor = '#FEF2F2'; borderColor = '#EF4444'; textColor = '#991B1B'; } 
-                    else { opacity = 0.4; }
+                    else if (isSelected)   { bgColor = '#FEF2F2'; borderColor = '#EF4444'; textColor = '#991B1B'; } 
+                    else                   { opacity = 0.4; }
                   } else if (showCaptainBanner && !isCaptain) {
                     opacity = 0.5; 
                   }
 
                   return (
-                    <button key={key} onClick={() => handleAnswer(key)} disabled={feedbackState?.show || (showCaptainBanner && !isCaptain)} style={{ background: bgColor, border: `2px solid ${borderColor}`, color: textColor, opacity: opacity, padding: '20px', borderRadius: '20px', fontSize: '1.15rem', fontWeight: '600', textAlign: 'left', cursor: (feedbackState?.show || (showCaptainBanner && !isCaptain)) ? 'default' : 'pointer', transition: 'all 0.2s', outline: 'none', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <button
+                      key={key}
+                      onClick={() => handleAnswer(key)}
+                      disabled={feedbackState?.show || (showCaptainBanner && !isCaptain)}
+                      style={{ background: bgColor, border: `2px solid ${borderColor}`, color: textColor, opacity, padding: '20px', borderRadius: '20px', fontSize: '1.15rem', fontWeight: '600', textAlign: 'left', cursor: (feedbackState?.show || (showCaptainBanner && !isCaptain)) ? 'default' : 'pointer', transition: 'all 0.2s', outline: 'none', display: 'flex', alignItems: 'center', gap: '16px' }}
+                    >
                       <span style={{ background: '#ffffff', color: '#0F172A', border: '1px solid #CBD5E1', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', fontWeight: '700', fontSize: '0.95rem' }}>{key}</span>
                       {optionText}
                     </button>
@@ -331,22 +386,29 @@ export const LivePlayer: React.FC = () => {
 
               {feedbackState?.show && (
                 <div style={{ background: feedbackState.isCorrect ? '#ECFDF5' : '#FEF2F2', padding: '24px', borderRadius: '20px', border: `1px solid ${feedbackState.isCorrect ? '#A7F3D0' : '#FECACA'}`, marginTop: '32px', animation: 'fadeIn 0.3s ease-out' }}>
-                  <h3 style={{ color: feedbackState.isCorrect ? '#059669' : '#DC2626', margin: '0 0 8px 0', fontSize: '1.3rem' }}>{feedbackState.isCorrect ? 'Correct Answer' : 'Incorrect Answer'}</h3>
-                  <p style={{ color: '#334155', fontSize: '1.05rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>{questions[currentQuestionIndex].explanation}</p>
-                  
+                  <h3 style={{ color: feedbackState.isCorrect ? '#059669' : '#DC2626', margin: '0 0 8px 0', fontSize: '1.3rem' }}>
+                    {feedbackState.isCorrect ? 'Correct Answer' : 'Incorrect Answer'}
+                  </h3>
+                  <p style={{ color: '#334155', fontSize: '1.05rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+                    {questions[currentQuestionIndex].explanation}
+                  </p>
                   {(!showCaptainBanner || isCaptain) ? (
                     <button onClick={() => handleNextQuestion(false)} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: '12px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.15)' }}>
                       Next Question →
                     </button>
                   ) : (
-                    <div style={{ textAlign: 'center', color: '#64748B', fontWeight: '600', padding: '10px' }}>Waiting for {captainName} to click next...</div>
+                    <div style={{ textAlign: 'center', color: '#64748B', fontWeight: '600', padding: '10px' }}>
+                      Waiting for {captainName} to click next...
+                    </div>
                   )}
                 </div>
               )}
 
             </div>
           ) : (
-            <div style={{ textAlign: 'center', color: '#EF4444', fontWeight: '600', fontSize: '1.2rem' }}>{error || "An error occurred."}</div>
+            <div style={{ textAlign: 'center', color: '#EF4444', fontWeight: '600', fontSize: '1.2rem' }}>
+              {error || "An error occurred."}
+            </div>
           )}
         </div>
       )}
