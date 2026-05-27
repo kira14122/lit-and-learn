@@ -325,7 +325,8 @@ export const TeacherDashboard: React.FC = () => {
     setIsSendingReply(true);
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
-      await supabase.functions.invoke('send-email',{body:{toEmail:t.email,studentName:'',messageBody:replyText,subject:'Re: Message from Lit & Learn',replyTo:'dr.chouit@litnlearn.com'}});
+      const { error: replyError } = await supabase.functions.invoke('send-email',{body:{toEmail:t.email,studentName:'',messageBody:replyText,subject:'Re: Message from Lit & Learn',replyTo:'dr.chouit@litnlearn.com'}});
+      if (replyError) throw new Error(replyError.message);
       await supabase.from('contact_messages').insert([{name:'Dr. Chouit (Reply)',email:t.email,message:replyText,user_id:t.user_id}]);
       showToast(`Reply sent to ${t.name}!`,'success'); setReplyText(''); fetchMessages();
     } catch {showToast('Failed to send reply.','error');} finally {setIsSendingReply(false);}
@@ -345,7 +346,8 @@ export const TeacherDashboard: React.FC = () => {
     setIsSendingCompose(true);
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
-      await supabase.functions.invoke('send-email',{body:{toEmail:composeRecipient,studentName:'',subject:composeSubject||'New Message from Lit & Learn',messageBody:composeText,attachment:composeAttachment,replyTo:'dr.chouit@litnlearn.com'}});
+      const { error: composeError } = await supabase.functions.invoke('send-email',{body:{toEmail:composeRecipient,studentName:'',subject:composeSubject||'New Message from Lit & Learn',messageBody:composeText,attachment:composeAttachment,replyTo:'dr.chouit@litnlearn.com'}});
+      if (composeError) throw new Error(composeError.message);
       const s = students.find(s=>s.email===composeRecipient);
       await supabase.from('contact_messages').insert([{name:'Dr. Chouit (Sent)',email:composeRecipient,message:composeText+(composeAttachment?`\n\n[Attachment: ${composeAttachment.filename}]`:''),user_id:s?.id||null}]);
       showToast('Message sent!','success'); setComposeText(''); setComposeRecipient(''); setComposeSubject(''); removeAttachment(); setIsComposing(false); fetchMessages();
@@ -447,7 +449,8 @@ export const TeacherDashboard: React.FC = () => {
       const prettyScore = getFormattedScores();
       const statusNote = isAbsent?`**Status:** ABSENT (0%)`:`**Score Breakdown:**\n${prettyScore}`;
       const body = `Hello ${selectedStudent.full_name},\n\nI have finished grading your recent assessment, and your official results are now available. Below is a detailed breakdown of your performance, along with my personal feedback.\n\n**Assessment:** ${assessmentName} (${assessmentWeight}% of Final Grade)\n\n${statusNote}\n\n**Instructor Feedback:**\n"${feedback||'Please review your scores carefully.'}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
-      await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${assessmentName}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
+      const { error: emailError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${assessmentName}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
+      if (emailError) throw new Error(emailError.message);
       showToast(`Grade recorded and emailed to ${selectedStudent.email}!`,'success');
     } catch {showToast('Grade recorded, but email failed.','error');}
     finally {
@@ -466,7 +469,8 @@ export const TeacherDashboard: React.FC = () => {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
       const prettyScore = formatScoreDisplay(rec.score);
       const body = `Hello ${selectedStudent.full_name},\n\nI am resending your official assessment results.\n\n**Assessment:** ${rec.assessment_name}\n\n**Score Breakdown:**\n${prettyScore}\n\n**Instructor Feedback:**\n"${rec.feedback}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
-      await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name} (Resend)`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
+      const { error: resendError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name} (Resend)`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
+      if (resendError) throw new Error(resendError.message);
       showToast(`Grade resent to ${selectedStudent.email}!`,'success');
     } catch {showToast('Failed to resend.','error');} finally {setIsSubmitting(false);}
   };
