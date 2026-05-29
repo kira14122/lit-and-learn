@@ -101,6 +101,7 @@ export const TeacherDashboard: React.FC = () => {
   const [feedback, setFeedback]                 = useState('');
   const [isSubmitting, setIsSubmitting]         = useState(false);
   const [isGenerating, setIsGenerating]         = useState(false);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
 
   // ── Record editor ─────────────────────────────────────────────────────────
   const [editingRecordId, setEditingRecordId]   = useState<string|null>(null);
@@ -536,6 +537,54 @@ export const TeacherDashboard: React.FC = () => {
     <div style={{animation:'fadeInDown 0.3s ease-out',maxWidth:'1400px',margin:'0 auto',position:'relative'}}>
 
       {/* Delete confirmation modal — now handles message, thread, student, AND record */}
+      {showEmailPreview && selectedStudent && (
+  <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(15,23,42,0.5)',backdropFilter:'blur(4px)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+    <div style={{background:'#fff',borderRadius:'24px',width:'100%',maxWidth:'640px',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 40px rgba(0,0,0,0.15)'}}>
+      <div style={{padding:'24px 28px',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <h3 style={{margin:'0 0 4px',fontSize:'1.3rem',color:'#0F172A',fontWeight:'700'}}>📧 Email Preview</h3>
+          <p style={{margin:0,fontSize:'0.85rem',color:'#64748B'}}>Sending to: {selectedStudent.email}</p>
+        </div>
+        <button onClick={()=>setShowEmailPreview(false)} style={{background:'#F1F5F9',border:'none',width:'36px',height:'36px',borderRadius:'50%',cursor:'pointer',fontSize:'1.1rem',color:'#64748B'}}>✕</button>
+      </div>
+      <div style={{overflowY:'auto',padding:'28px',flexGrow:1,fontFamily:'Arial,sans-serif',fontSize:'14px',lineHeight:'1.7',color:'#1e293b'}}>
+        <p>Hello {selectedStudent.full_name},</p>
+        <p>I have finished grading your recent assessment, and your official results are now available.</p>
+        <p><strong>Assessment:</strong> {assessmentName} ({assessmentWeight}% of Final Grade)</p>
+        {isAbsent ? (
+          <p><strong>Status:</strong> ABSENT (0%)</p>
+        ) : (
+          <div style={{background:'#F8FAFC',padding:'16px',borderRadius:'8px',border:'1px solid #E2E8F0',margin:'12px 0'}}>
+            <p style={{margin:'0 0 8px',fontWeight:'700'}}>Score Breakdown:</p>
+            <p style={{margin:'2px 0'}}>Weight: {assessmentWeight}%</p>
+            <p style={{margin:'2px 0'}}>Max Points: {maxPoints}</p>
+            <p style={{margin:'2px 0'}}>Total Raw Score: {calculateTotals().totalPoints}/{maxPoints}</p>
+            <p style={{margin:'2px 0'}}>Earned Weight Contribution: {calculateTotals().earnedWeight.toFixed(1)}% / {assessmentWeight}%</p>
+            <br/>
+            <p style={{margin:'2px 0',fontWeight:'700'}}>Skill Breakdown:</p>
+            <p style={{margin:'2px 0'}}>Listening: {scoreListening||0}/{Number(maxPoints)/5}</p>
+            <p style={{margin:'2px 0'}}>Grammar & Vocab: {scoreGrammar||0}/{Number(maxPoints)/5}</p>
+            <p style={{margin:'2px 0'}}>Reading: {scoreReading||0}/{Number(maxPoints)/5}</p>
+            <p style={{margin:'2px 0'}}>Writing: {scoreWriting||0}/{Number(maxPoints)/5}</p>
+            <p style={{margin:'2px 0'}}>Speaking: {scoreSpeaking||0}/{Number(maxPoints)/5}</p>
+          </div>
+        )}
+        <p><strong>Instructor Feedback:</strong></p>
+        <p style={{fontStyle:'italic',background:'#F8FAFC',padding:'12px',borderRadius:'8px',border:'1px solid #E2E8F0'}}>{feedback||'No feedback written yet.'}</p>
+        <hr style={{margin:'20px 0',borderColor:'#E2E8F0'}}/>
+        <p style={{margin:'4px 0',fontWeight:'700'}}>Dr. Chouit Abderraouf</p>
+        <p style={{margin:'4px 0',color:'#4F46E5'}}>dr.chouit@litnlearn.com</p>
+        <p style={{margin:'4px 0',color:'#4F46E5'}}>litnlearn.com</p>
+      </div>
+      <div style={{padding:'20px 28px',borderTop:'1px solid #E2E8F0',display:'flex',gap:'12px',justifyContent:'flex-end'}}>
+        <button onClick={()=>setShowEmailPreview(false)} style={{padding:'12px 24px',background:'#F1F5F9',color:'#475569',border:'none',borderRadius:'12px',fontWeight:'600',cursor:'pointer'}}>Cancel</button>
+        <button onClick={()=>{setShowEmailPreview(false);submitGrade();}} disabled={isSubmitting} style={{padding:'12px 24px',background:'#10B981',color:'#fff',border:'none',borderRadius:'12px',fontWeight:'600',cursor:'pointer',boxShadow:'0 4px 12px rgba(16,185,129,0.2)'}}>
+          {isSubmitting?'Sending...':'✓ Confirm & Send'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       {deleteTarget && (
         <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(15,23,42,0.4)',backdropFilter:'blur(4px)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn 0.2s ease-out'}}>
           <div style={{background:'#fff',borderRadius:'24px',padding:'32px',width:'90%',maxWidth:'400px',boxShadow:'0 20px 40px rgba(0,0,0,0.1)',textAlign:'center'}}>
@@ -894,7 +943,7 @@ export const TeacherDashboard: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <button onClick={submitGrade} disabled={isSubmitting} style={{width:'100%',background:'#10B981',color:'#fff',border:'none',padding:'18px',borderRadius:'16px',fontWeight:'700',fontSize:'1.15rem',cursor:isSubmitting?'wait':'pointer',marginTop:'10px',boxShadow:'0 10px 20px rgba(0,0,0,0.1)'}}>
+                      <button onClick={()=>setShowEmailPreview(true)} disabled={isSubmitting} style={{width:'100%',background:'#10B981',color:'#fff',border:'none',padding:'18px',borderRadius:'16px',fontWeight:'700',fontSize:'1.15rem',cursor:isSubmitting?'wait':'pointer',marginTop:'10px',boxShadow:'0 10px 20px rgba(0,0,0,0.1)'}}>
                         {isSubmitting?'Submitting...':'Publish Official Grade & Email Student'}
                       </button>
                     )}
