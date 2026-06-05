@@ -88,6 +88,39 @@ export interface GrammarNoticing {
   practice: QAItem[];             // Step 4 — controlled practice
 }
 
+// ── QUICK MODE (Mode 2, no passage) — standalone activity shapes ──────────────
+
+/** A presented vocabulary entry (the words are TAUGHT, not hunted from a text). */
+export interface GlossaryItem {
+  word: string;
+  pos: string;        // "n." | "v." | "adj." | "adv." | "phr."
+  definition: string;
+  example: string;    // a natural example sentence using the word
+}
+
+/** Quick Vocabulary: present (glossary) then practise (matching + gap-fill). */
+export interface QuickVocabActivity {
+  theme: string;
+  glossary: GlossaryItem[];   // ~8 words with meaning + example
+  matching: MatchItem[];      // 5 word↔definition pairs (definitions reworded vs glossary)
+  gaps: GapItem[];            // ~6 self-contained sentences; each answer is a glossary word
+}
+
+/** One drill block inside a Quick Grammar sheet. */
+export interface GrammarExercise {
+  title: string;        // e.g. "Put the verb in the correct form"
+  instruction: string;
+  items: QAItem[];      // q = prompt (use ___ for a single-word blank); answer = key
+}
+
+/** Quick Grammar: a short reminder, then varied drills. NOT a noticing lesson. */
+export interface QuickGrammarActivity {
+  grammarPoint: string;
+  rule: string;         // 1-2 sentence concise reminder
+  examples: string[];   // 2-3 model sentences
+  exercises: GrammarExercise[];  // 2-3 varied practice blocks
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PROVIDER LAYER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -616,6 +649,114 @@ Output ONLY valid JSON, no markdown, no backticks:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// QUICK MODE — standalone activities (no passage)
+// These never reference "the text"; words/structures are taught directly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Quick Vocabulary: present a themed word set, then practise it (matching + gaps). */
+export async function generateQuickVocab(
+  theme: string,
+  level = 'B1'
+): Promise<QuickVocabActivity | null> {
+  const safeTheme = sanitize(theme);
+  const prompt = `You are an expert ESL vocabulary materials writer. Build a STANDALONE vocabulary worksheet on the theme "${safeTheme}" at ${level} CEFR level. There is NO reading passage, so the words must be taught directly — never refer to "the text".
+
+LEVEL (${level}): ${getLevelGuidance(level)}
+
+Produce three parts as JSON:
+1. "glossary": EXACTLY 8 useful, theme-relevant words appropriate for this level. For each: "word", "pos" (n./v./adj./adv./phr.), a clear learner-friendly "definition" that does NOT contain the word itself, and a natural "example" sentence that uses the word in context.
+2. "matching": EXACTLY 5 of those 8 words paired with a CONCISE definition. Reword these so they are NOT identical to the glossary definitions. Each: "word", "pos", "definition".
+3. "gaps": EXACTLY 6 standalone sentences, each containing ONE blank written as ___ . Each blank's "answer" MUST be one of the 8 glossary words, and the sentence must give enough context to choose it. Use 6 DIFFERENT glossary words.
+
+All 8 glossary words must be distinct. Keep everything natural and level-appropriate.
+
+Output ONLY valid JSON, no markdown, no backticks:
+{"glossary":[{"word":"","pos":"","definition":"","example":""}],"matching":[{"word":"","pos":"","definition":""}],"gaps":[{"sentence":"... ___ ...","answer":""}]}`;
+
+  return requestJSON<QuickVocabActivity>(prompt, (p) => {
+    const glossary: GlossaryItem[] = Array.isArray(p?.glossary) ? p.glossary.map((g: any) => ({
+      word: String(g?.word ?? '').trim(),
+      pos: String(g?.pos ?? '').trim(),
+      definition: String(g?.definition ?? '').trim(),
+      example: String(g?.example ?? '').trim(),
+    })).filter((g: GlossaryItem) => g.word && g.definition) : [];
+
+    const matching: MatchItem[] = Array.isArray(p?.matching) ? p.matching.map((m: any) => ({
+      word: String(m?.word ?? '').trim(),
+      pos: String(m?.pos ?? '').trim(),
+      definition: String(m?.definition ?? '').trim(),
+    })).filter((m: MatchItem) => m.word && m.definition) : [];
+
+    const gaps: GapItem[] = Array.isArray(p?.gaps) ? p.gaps.map((g: any) => ({
+      sentence: String(g?.sentence ?? '').trim(),
+      answer: String(g?.answer ?? '').trim(),
+    })).filter((g: GapItem) => g.sentence.includes('___') && g.answer) : [];
+
+    if (glossary.length < 6) return null;
+    if (matching.length < 4) return null;
+    if (gaps.length < 5)     return null;
+
+    const words = glossary.map((g) => g.word.toLowerCase());
+    const goodGaps = gaps.filter((g) => words.includes(g.answer.toLowerCase()));
+    if (goodGaps.length < 5) return null;
+
+    return {
+      theme: safeTheme,
+      glossary: glossary.slice(0, 8),
+      matching: matching.slice(0, 5),
+      gaps: goodGaps.slice(0, 6),
+    };
+  });
+}
+
+/** Quick Grammar: minimal reminder + varied drills (practice-first, not a lesson). */
+export async function generateQuickGrammar(
+  grammarPoint: string,
+  level = 'B1'
+): Promise<QuickGrammarActivity | null> {
+  const point = sanitize(grammarPoint);
+  const prompt = `You are an expert ESL grammar materials writer. Build a STANDALONE, PRACTICE-FOCUSED grammar worksheet on "${point}" at ${level} CEFR level. This is a quick activity, NOT a lesson: keep explanation minimal and spend the space on exercises.
+
+LEVEL (${level}): ${getLevelGuidance(level)}
+
+Produce as JSON:
+- "rule": a concise 1-2 sentence reminder of how "${point}" works (no long lecture).
+- "examples": 2-3 short model sentences showing "${point}" used correctly.
+- "exercises": 2-3 DIFFERENT exercise types that drill "${point}". Choose from: gap-fill / verb-form (a sentence with a ___ blank and the base form in parentheses, e.g. "She ___ (go) every day."), error correction (a sentence with ONE mistake to fix), sentence transformation (a prompt telling the student how to rewrite a sentence), or multiple choice (put the options inside the prompt). For EACH exercise: a short "title", a one-line "instruction", and EXACTLY 5 "items". Each item has "q" (the prompt — put a ___ where the student writes a single word; for correction/transformation, give the sentence to rewrite) and "answer" (the full correct answer for the teacher key).
+
+Output ONLY valid JSON, no markdown, no backticks:
+{"rule":"","examples":["",""],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
+
+  return requestJSON<QuickGrammarActivity>(prompt, (p) => {
+    const rule = String(p?.rule ?? '').trim();
+    const examples: string[] = Array.isArray(p?.examples) ? p.examples.map((s: any) => String(s).trim()).filter(Boolean) : [];
+    const exercisesRaw = Array.isArray(p?.exercises) ? p.exercises : [];
+
+    if (!rule)               return null;
+    if (examples.length < 2) return null;
+    if (exercisesRaw.length < 2) return null;
+
+    const exercises: GrammarExercise[] = exercisesRaw.map((ex: any) => ({
+      title: String(ex?.title ?? '').trim(),
+      instruction: String(ex?.instruction ?? '').trim(),
+      items: (Array.isArray(ex?.items) ? ex.items : []).map((it: any) => ({
+        q: String(it?.q ?? '').trim(),
+        answer: String(it?.answer ?? '').trim(),
+      })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0),
+    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length >= 3);
+
+    if (exercises.length < 2) return null;
+
+    return {
+      grammarPoint: point,
+      rule,
+      examples: examples.slice(0, 3),
+      exercises: exercises.slice(0, 3).map((ex) => ({ ...ex, items: ex.items.slice(0, 6) })),
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // READING — STEP 1: Passage generation  (shared by legacy + structured paths)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -900,24 +1041,56 @@ Output ONLY the sentence — no quotes, no explanation.`;
 // Refined: warm 3-paragraph format, tone scaled to score, rotating resource pool.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Curated pool of FREE practice resources, grouped by skill. EDIT THIS LIST to
-// control which tools the feedback may ever recommend. The generator is told to
-// match the tool to the student's weak skill AND to vary its choices, so no
-// single site gets repeated for every student.
 const RESOURCE_POOL = `
-- Grammar / tenses / prepositions: Perfect English Grammar, Test-English, EnglishClub, British Council LearnEnglish
-- Writing (structure, spelling, punctuation): Cambridge Write & Improve, Hemingway Editor
-- Reading (speed, comprehension, True/False): Breaking News English, News in Levels, ReadTheory
-- Listening: Elllo.org, TED-Ed, Breaking News English (audio)
-- Speaking / pronunciation: Elllo.org, YouGlish, Forvo
-- Vocabulary: Vocabulary.com, Quizlet`;
+- Grammar / tenses / prepositions: EnglishClub (excellent free grammar quizzes and explanations), Perfect English Grammar (clear rules and free exercises), Test-English.com
+- Writing (structure, punctuation, academic style): Cambridge Write & Improve (instant free AI feedback), Hemingway App (free online editor for clarity), Purdue OWL (for academic structure and citations)
+- Reading (comprehension, speed): Engoo Daily News (graded articles updated daily), Breaking News English, ReadTheory (adapts to their reading level automatically)
+- Listening: Elllo.org (massive library of natural conversations with transcripts), BBC 6 Minute English, TED Talks (using the interactive transcript feature), Randall's ESL Cyber Listening Lab
+- Speaking / pronunciation: YouGlish (search any word to hear native speakers use it in YouTube videos), Forvo (native pronunciation of isolated words), Rachel's English (YouTube for US pronunciation)
+- Vocabulary: Oxford Learner's Dictionaries (essential for definitions and word class), Ozdic (free online collocation dictionary for natural word pairings), Vocabulary.com (for context and lists)`;
+
+// Deterministic safety net. Free-tier models occasionally ignore prompt rules, so
+// we tidy a few specific things in code. ONLY edits that cannot break grammar.
+function tidyFeedback(raw: string): string {
+  let t = raw.trim();
+
+  // Safe filler removals (never load-bearing words).
+  t = t
+    .replace(/\bundoubtedly\s+/gi, '')
+    .replace(/\bsignificant\s+(progress|improvement|strides|gains)\b/gi, '$1')
+    .replace(/[ \t]{2,}/g, ' ');
+
+  // Collapse a stacked forward-looking close: if the final paragraph ends with a
+  // forward-looking sentence AND the line before it is also forward-looking — whether
+  // a separate sentence OR a trailing "..., and I'm excited..." clause — keep only the
+  // final (skill-named) line.
+  const fwd = /^\s*(i['’]?m\s+(so\s+)?(excited|thrilled)|i\s+am\s+(so\s+)?(excited|thrilled)|i\s+can['’]?t\s+wait|i\s+look\s+forward|i['’]?m\s+looking\s+forward|i\s+hope)/i;
+  const clause = /,\s*and\s+(?:i['’]?m\s+(?:so\s+)?(?:excited|thrilled)|i\s+am\s+(?:so\s+)?(?:excited|thrilled)|i\s+look\s+forward|i['’]?m\s+looking\s+forward|i\s+hope)\b[^.!?]*([.!?]+["'’)\]]*)\s*$/i;
+  const paras = t.split(/\n{2,}/);
+  const li = paras.length - 1;
+  if (li >= 0) {
+    const last = paras[li];
+    const sentences = last.match(/[^.!?]+[.!?]+["'’)\]]*/g);
+    if (sentences && sentences.length >= 2) {
+      const rebuilt = sentences.join(' ').replace(/\s+/g, ' ').trim();
+      const noLoss = rebuilt.replace(/\s/g, '').length >= last.replace(/\s/g, '').length - 2;
+      const n = sentences.length;
+      if (noLoss && fwd.test(sentences[n - 1].trim())) {
+        if (fwd.test(sentences[n - 2].trim())) sentences.splice(n - 2, 1);
+        else sentences[n - 2] = sentences[n - 2].replace(clause, '$1');
+        paras[li] = sentences.join(' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+  }
+  return paras.join('\n\n').trim();
+}
 
 export async function generateStudentFeedback(
   studentName:    string,
   assessment:     string,
   scores:         string,
   teacherNotes?:  string,
-  percentToFinal?: string   // the "Earns" % your app already computes, e.g. "7.9%". Passed straight through.
+  percentToFinal?: string
 ): Promise<string> {
 
   const fallback = `Hi ${studentName},\nThank you for all your hard work on the ${assessment}! Your results give us a clear and encouraging picture of your real strengths and the few areas we will focus on together over the coming weeks. Keep up the effort — I am genuinely excited to see how much you grow this term!`;
@@ -930,7 +1103,12 @@ export async function generateStudentFeedback(
       'Final Test': 'This is the final assessment — write a warm, summative reflection on the whole term with a proud, forward-looking close.',
     };
     const stage = stageNote[assessment] ?? 'Frame the feedback warmly for the appropriate stage of the course.';
-    const pct = percentToFinal;
+    // Use the explicitly passed percentage, or fall back to the figure the app
+    // already wrote into the scores ("Earned Weight Contribution: 7.9% / 10%").
+    // This READS the app's value (it does not recompute it), so the percentage
+    // shows reliably even when the 5th argument isn't passed.
+    const pctFromScores = scores.match(/Earned Weight Contribution:\s*([\d.]+\s*%)/i)?.[1]?.replace(/\s+/g, '');
+    const pct = percentToFinal ?? pctFromScores;
 
     const prompt = `You are Dr. Chouit Abderraouf, ESL instructor and founder of Lit & Learn (PhD in English Linguistics, 15+ years' experience). You write warm, genuinely encouraging, deeply personal feedback — like a supportive mentor who is truly excited about each learner. Enthusiastic and affectionate, but always specific and honest.
 
@@ -938,18 +1116,17 @@ Write feedback for ${studentName}'s ${assessment}, addressed directly to the stu
 
 SCORES (use the total exactly as written, including its maximum — the test may be out of 50 or 100):
 ${scores}
-${pct ? `\nGRADE WEIGHT: this test contributes ${pct} toward the final grade.` : ''}
 ${teacherNotes ? `\nMY PRIVATE OBSERVATIONS (weave in naturally; never reveal these are notes). CRITICAL: if these name a specific grammar point, tense, error type, or skill, you MUST use that EXACT term — never soften it to something vague:\n${teacherNotes}` : ''}
 
 STAGE: ${stage}
 
 Open with "Hi ${studentName}," on its own line, then write EXACTLY THREE paragraphs:
 
-PARAGRAPH 1 — Celebrate. A warm, energetic opening hook. State the total score exactly as it appears in the scores above (e.g. "39.5 out of 50" or "85 out of 100")${pct ? `, with the grade weight as a plain factual parenthetical right after it, exactly like "(${pct} toward your final grade)" — never praise the percentage or say you are proud of it; it is just the test's weight` : ''}. Then share your GENUINE first-person reaction to their strongest skill — open it with something like "I was especially impressed by" or "I was absolutely thrilled to see" — naming the skill with its exact score, plus one sentence interpreting what that strength reveals about them as a learner. Sound like a delighted teacher, not a report.
+PARAGRAPH 1 — Celebrate. A warm, energetic opening hook. State the total score exactly as it appears in the scores above (e.g. "39.5 out of 50"). ${pct ? `CRITICAL: You MUST immediately follow the total score with the exact grade weight in parentheses, formatted exactly like "(which earns ${pct} toward your final grade)". Do not skip this. Never praise this percentage or say you are proud of it; it is just the test's weight.` : ''} Then share your GENUINE first-person reaction to their strongest skill — open it with something like "I was especially impressed by" or "I was absolutely thrilled to see" — naming the skill with its exact score, plus one sentence interpreting what that strength reveals about them as a learner. Sound like a delighted teacher, not a report.
 
-PARAGRAPH 2 — Grow. Turn warmly to what comes next, but be ACCURATE and TARGETED. Address ONLY (a) any skill that genuinely scored lower and (b) the specific issues listed in MY OBSERVATIONS above. A lower mark in one skill does NOT mean the other skills need work — never imply a strong skill needs improvement, and never invent things to fix. My observations may be grouped by skill area (e.g. GRAMMAR, VOCABULARY, WRITING); when they are, attribute each issue to its stated area — present the grammar points as grammar work, the vocabulary points as vocabulary work, the writing points as writing work — instead of lumping them all under one skill. If a specific issue is flagged inside a skill that otherwise scored well, treat it as a precise point to polish, not a weakness in that skill. If one skill clearly trails, you MAY bridge from a strength ("To help your writing match your strong speaking skills..."); always refer to a strong skill as "your [adjective] [skill] skills" or "your ability to [verb]" — NEVER as a bare phrase like "your wonderful speaking". If several different areas need attention, use a softer transition instead (e.g. "this shows us exactly where to focus our energy next"). Mention any low score only in passing, use my EXACT terms for each issue, and use collaborative "we" for the work ahead.
+PARAGRAPH 2 — Grow. Turn warmly to what comes next, but be ACCURATE and TARGETED. Address ONLY (a) any skill that genuinely scored lower and (b) the specific issues listed in MY OBSERVATIONS above. A lower mark in one skill does NOT mean the other skills need work — never imply a strong skill needs improvement, and never invent things to fix. My observations may be grouped by skill area (e.g. GRAMMAR, VOCABULARY, WRITING); when they are, attribute each issue to its stated area. If one skill clearly trails the others, you MAY bridge from a high-scoring skill to the lowest-scoring skill (e.g., "To help your [low skill] match your strong [high skill]..."). NEVER compare two high-scoring skills to each other. Mention any low score only in passing, use my EXACT terms for each issue, and use collaborative "we" for the work ahead.
 
-PARAGRAPH 3 — Equip & uplift. Recommend 1-3 SPECIFIC online tools that directly target THIS student's weak area, each with a concrete action (what to actually do on it). These are things the STUDENT does at home, so address them with "you" ("you can try...", "I recommend...") — NEVER "we can explore/use"; "we" is only for the shared in-class work. Introduce them warmly and mention they are completely free (e.g. "A wonderful way to practise at home is to use the completely free..."), and suggest a light, doable habit such as "just a few minutes a day". Include the signature idea that practising digitally at home "trains the eye/ear" so the right choices feel natural during the PAPER tests in class. Close on EXACTLY ONE forward-looking sentence that names the specific skill we are growing (e.g. "I can't wait to watch your writing catch up to your wonderful speaking skills!"), and END the entire feedback there. Do NOT add a second forward-looking line before or after it (e.g. no "I'm excited to see how they'll help you grow" stacked on top), and avoid vague filler such as "reach your full potential", "make significant progress", or "watch your skills blossom".
+PARAGRAPH 3 — Equip & uplift. Recommend 1-3 SPECIFIC online tools that directly target THIS student's weak area, each with a concrete action (what to actually do on it). These are things the STUDENT does at home, so address them with "you" ("you can try...", "I recommend...") — NEVER "we can explore/use"; "we" is only for the shared in-class work. Introduce them warmly and mention they are completely free (e.g. "A wonderful way to practise at home is to use the completely free..."), and suggest a light, doable habit such as "just a few minutes a day". Include the signature idea that practising digitally at home "trains the eye/ear" so the right choices feel natural during the PAPER tests in class. Close on EXACTLY ONE forward-looking sentence that names the specific skill we are growing (e.g. "I can't wait to watch your writing catch up to your wonderful speaking skills!"), and END the entire feedback there. Do NOT add a second forward-looking line before or after it, and avoid vague filler.
 
 NEVER label a skill as "your highest-scoring" or "your lowest-scoring skill," and never explain the structure of your own feedback. Praise the strong skill directly and let the weaker one come through naturally via its score, exactly as a thoughtful teacher would.
 
@@ -969,7 +1146,7 @@ STYLE:
 Output ONLY the feedback: the "Hi ${studentName}," line followed by the three paragraphs.`;
 
     const text = await callAI(prompt);
-    return text?.trim() ?? fallback;
+    return text ? tidyFeedback(text) : fallback;
 
   } catch (err) {
     console.error('🚨 generateStudentFeedback error:', err);
