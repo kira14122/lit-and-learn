@@ -16,6 +16,7 @@ import type {
   GrammarNoticing,
   QuickVocabActivity,
   QuickGrammarActivity,
+  GrammarExercise,
 } from '../aiGenerator';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -27,7 +28,6 @@ const IconSpinner = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="
 const IconRefresh = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>;
 const IconShuffle = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>;
 const IconBreak   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 8 3 12 8 16"/><polyline points="16 8 21 12 16 16"/></svg>;
-const IconSave    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
 const IconCheck   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
 const IconEdit    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>;
 const IconLock    = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
@@ -40,7 +40,8 @@ type CompSection  = { id: string; kind: 'comprehension'; pageBreakBefore: boolea
 type VocabSection = { id: string; kind: 'vocab';         pageBreakBefore: boolean; vp: VocabularyPart; wordOrder: number[]; defOrder: number[]; bankOrder: number[] };
 type DiscSection  = { id: string; kind: 'discussion';    pageBreakBefore: boolean; items: string[] };
 type GramSection  = { id: string; kind: 'grammar';       pageBreakBefore: boolean; data: GrammarNoticing };
-type QVocabSection = { id: string; kind: 'quickVocab';   pageBreakBefore: boolean; qv: QuickVocabActivity; wordOrder: number[]; defOrder: number[]; bankOrder: number[] };
+// Quick sections: dynamic flexible exercises
+type QVocabSection = { id: string; kind: 'quickVocab';   pageBreakBefore: boolean; qv: QuickVocabActivity };
 type QGramSection  = { id: string; kind: 'quickGrammar'; pageBreakBefore: boolean; data: QuickGrammarActivity };
 type Section      = TFSection | CompSection | VocabSection | DiscSection | GramSection | QVocabSection | QGramSection;
 
@@ -65,8 +66,6 @@ const INSTR = {
   gaps:      'Complete the sentences using the words from the box.',
   discussion:'Discuss these questions with a partner or in small groups.',
   glossary:  'Study these words, their meanings, and the example sentences.',
-  qMatching: 'Match each word (1-5) with its correct definition (a-e).',
-  qGaps:     'Complete each sentence with the correct word from the box.',
 };
 
 const lbl: React.CSSProperties = { display:'block', fontSize:'0.72rem', fontWeight:700, color:'#64748B', marginBottom:'5px', textTransform:'uppercase', letterSpacing:'0.05em' };
@@ -74,7 +73,6 @@ const inp: React.CSSProperties = { width:'100%', padding:'9px 11px', borderRadiu
 const sel: React.CSSProperties = { ...inp, cursor:'pointer' };
 const btn: React.CSSProperties = { padding:'5px 8px', border:'1px solid #E2E8F0', background:'#fff', borderRadius:'7px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'0.73rem', fontWeight:600, color:'#475569', gap:'4px' };
 
-// section accent colours (consistent with the rest of the dashboard)
 const ACCENT: Record<SectionKind, { bg: string; text: string }> = {
   tf:            { bg:'#EEF2FF', text:'#4F46E5' },
   comprehension: { bg:'#EEF2FF', text:'#4F46E5' },
@@ -129,7 +127,6 @@ const PCSS = `
 const shuffle = <T,>(a: T[]): T[] => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];} return r; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-// Render text with ___ runs turned into underline spans
 const WithBlanks = ({ text, cls = 'gap-blank' }: { text: string; cls?: string }) => {
   const parts = text.split(/_{2,}/g);
   if (parts.length === 1) return <>{text}</>;
@@ -159,12 +156,13 @@ export const ActivityGenerator = () => {
   const [passage, setPassage]         = useState('');
   const [passageApproved, setApproved]= useState(false);
 
-  // quick
+  // quick mode specific focus & themes
   const [quickType, setQuickType]     = useState<QuickType>('vocab');
   const [quickTheme, setQuickTheme]   = useState('');
   const [grammarPoint, setGrammarPoint] = useState('');
+  const [teacherFocus, setTeacherFocus] = useState(''); // NEW override box
 
-  // worksheet
+  // worksheet fields
   const [title, setTitle]             = useState('');
   const [sections, setSections]       = useState<Section[]>([]);
   const [showName, setShowName]       = useState(true);
@@ -173,7 +171,7 @@ export const ActivityGenerator = () => {
   const [showScore, setShowScore]     = useState(false);
 
   // ui
-  const [busy, setBusy]               = useState<string | null>(null); // 'passage' | section kind | null
+  const [busy, setBusy]               = useState<string | null>(null);
   const [restore, setRestore]         = useState<Persisted | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -234,13 +232,6 @@ export const ActivityGenerator = () => {
     bankOrder: shuffle([...vp.gaps.map((_, i) => i), ...vp.distractors.map((_, i) => vp.gaps.length + i)]),
   });
 
-  const buildQuickVocab = (qv: QuickVocabActivity, pb = false): QVocabSection => ({
-    id: uid(), kind: 'quickVocab', pageBreakBefore: pb, qv,
-    wordOrder: shuffle(qv.matching.map((_, i) => i)),
-    defOrder:  shuffle(qv.matching.map((_, i) => i)),
-    bankOrder: shuffle(qv.glossary.map((_, i) => i)),   // bank = all glossary words (unused ones act as distractors)
-  });
-
   const genTF = async () => {
     if (!guardLesson()) return; setBusy('tf');
     const items = await generateTrueFalse(passage, level);
@@ -279,29 +270,28 @@ export const ActivityGenerator = () => {
     setBusy(null);
   };
 
-  // ── quick mode ──────────────────────────────────────────────────────────────
+  // ── quick mode generators ───────────────────────────────────────────────────
   const genQuickVocab = async () => {
-    if (!quickTheme.trim()) return alert('Enter a vocabulary theme.');
+    if (!quickTheme.trim()) return alert('Enter a vocabulary theme or structure.');
     setBusy('quickVocab');
-    const qv = await generateQuickVocab(quickTheme, level);
-    if (qv) { setSections([buildQuickVocab(qv)]); if (!title.trim()) setTitle(`Vocabulary: ${quickTheme.trim()}`); }
+    const qv = await generateQuickVocab(quickTheme, level, teacherFocus);
+    if (qv) { setSections([{ id: uid(), kind: 'quickVocab', pageBreakBefore: false, qv }]); if (!title.trim()) setTitle(`Vocabulary: ${quickTheme.trim()}`); }
     else alert('Vocabulary generation failed. Please try again.');
     setBusy(null);
   };
+  
   const genQuickGrammar = async () => {
     if (!grammarPoint.trim()) return alert('Enter a grammar point.');
     setBusy('quickGrammar');
-    const data = await generateQuickGrammar(grammarPoint, level);
+    const data = await generateQuickGrammar(grammarPoint, level, teacherFocus);
     if (data) { setSections([{ id: uid(), kind: 'quickGrammar', pageBreakBefore: false, data }]); if (!title.trim()) setTitle(`Grammar: ${grammarPoint.trim()}`); }
     else alert('Grammar generation failed. Please try again.');
     setBusy(null);
   };
 
-  // ── reshuffle (client-side, instant) ──────────────────────────────────────────
+  // ── reshuffle (client-side, instant - only for full lesson vocab) ─────────
   const reshuffleMatching = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, wordOrder: shuffle(s.vp.matching.map((_, i) => i)), defOrder: shuffle(s.vp.matching.map((_, i) => i)) } : s));
   const reshuffleBank     = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, bankOrder: shuffle([...s.vp.gaps.map((_, i) => i), ...s.vp.distractors.map((_, i) => s.vp.gaps.length + i)]) } : s));
-  const reshuffleQMatching = (id: string) => setSections(prev => prev.map(s => s.kind === 'quickVocab' && s.id === id ? { ...s, wordOrder: shuffle(s.qv.matching.map((_, i) => i)), defOrder: shuffle(s.qv.matching.map((_, i) => i)) } : s));
-  const reshuffleQBank     = (id: string) => setSections(prev => prev.map(s => s.kind === 'quickVocab' && s.id === id ? { ...s, bankOrder: shuffle(s.qv.glossary.map((_, i) => i)) } : s));
 
   const clearAll = () => { if (window.confirm('Clear the entire worksheet?')) { setPassage(''); setApproved(false); setSections([]); setTitle(''); localStorage.removeItem('ll_ws_v2'); } };
 
@@ -431,7 +421,7 @@ export const ActivityGenerator = () => {
 
   // ── quick-mode renderers ─────────────────────────────────────────────────────
   const renderGlossary = (s: QVocabSection) => (
-    <table className="match-table" style={{ width:'100%', borderCollapse:'collapse' }}>
+    <table className="match-table" style={{ width:'100%', borderCollapse:'collapse', marginBottom: '18px' }}>
       <tbody>{s.qv.glossary.map((g, i) => (
         <tr key={i}>
           <td style={{ fontSize:'14px', verticalAlign:'top', padding:'7px 8px', whiteSpace:'nowrap' }}><strong {...ed}>{g.word}</strong>&nbsp;<span style={{ fontStyle:'italic' }}>({g.pos})</span></td>
@@ -444,39 +434,26 @@ export const ActivityGenerator = () => {
     </table>
   );
 
-  const renderQMatching = (s: QVocabSection) => (
-    <table className="match-table" style={{ width:'100%', borderCollapse:'collapse' }}>
-      <thead><tr>
-        <th style={{ textAlign:'left', fontSize:'12px', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid #000', padding:'4px 8px' }}>Word</th>
-        <th style={{ textAlign:'left', fontSize:'12px', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid #000', padding:'4px 8px' }}>Definition</th>
-      </tr></thead>
-      <tbody>{s.wordOrder.map((wi, row) => {
-        const di = s.defOrder[row];
-        const m = s.qv.matching[wi];
-        const d = s.qv.matching[di];
-        return (
-          <tr key={row}>
-            <td style={{ fontSize:'14px', verticalAlign:'top', padding:'6px 8px' }}><strong>{row + 1}.</strong>&nbsp;<span {...ed}>{m.word}</span>&nbsp;<span style={{ fontStyle:'italic' }}>({m.pos})</span></td>
-            <td style={{ fontSize:'14px', verticalAlign:'top', padding:'6px 8px' }}><strong>{String.fromCharCode(97 + row)}.</strong>&nbsp;<span {...ed}>{d.definition}</span></td>
-          </tr>
-        );
-      })}</tbody>
-    </table>
+  // Universal renderer for dynamic/flexible exercise arrays (Grammar & Quick Vocab)
+  const renderQuickExercises = (exercises: GrammarExercise[], startCharIndex = 65) => (
+    <>
+      {exercises.map((ex, xi) => (
+        <div key={xi} style={{ marginBottom:'18px' }}>
+          {subHead(`${String.fromCharCode(startCharIndex + xi)}. ${ex.title}`)}
+          {ex.instruction && instr(ex.instruction)}
+          {ex.items.map((it, i) => {
+            const inline = it.q.includes('___');
+            return (
+              <div key={i} className="gap-row" style={{ fontSize:'14px', lineHeight: inline ? 2.4 : 1.7, marginBottom: inline ? 0 : '10px' }}>
+                <span {...ed}>{i + 1}.&nbsp;<WithBlanks text={it.q} /></span>
+                {!inline && <div style={{ borderBottom:'1px solid #888', height:'22px', marginTop:'4px' }} />}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
   );
-
-  const renderQGaps = (s: QVocabSection) => {
-    const bank = s.bankOrder.map(i => s.qv.glossary[i].word);
-    return (
-      <>
-        <div className="bank" style={{ border:'1px solid #000', padding:'8px 12px', fontSize:'14px', marginBottom:'16px', textAlign:'center' }}>[&nbsp;{bank.join('  |  ')}&nbsp;]</div>
-        {s.qv.gaps.map((g, i) => (
-          <div key={i} className="gap-row" style={{ fontSize:'14px', lineHeight:2.4 }}>
-            <span {...ed}>{i + 1}.&nbsp;<WithBlanks text={g.sentence} /></span>
-          </div>
-        ))}
-      </>
-    );
-  };
 
   const renderQuickGrammar = (s: QGramSection) => {
     const g = s.data;
@@ -486,21 +463,7 @@ export const ActivityGenerator = () => {
           <div {...ed} style={{ marginBottom:'6px' }}><strong>Remember:</strong>&nbsp;{g.rule}</div>
           {g.examples.map((ex, i) => <div key={i} {...ed} style={{ fontStyle:'italic', color:'#444' }}>•&nbsp;{ex}</div>)}
         </div>
-        {g.exercises.map((ex, xi) => (
-          <div key={xi} style={{ marginBottom:'18px' }}>
-            {subHead(`${String.fromCharCode(65 + xi)}. ${ex.title}`)}
-            {ex.instruction && instr(ex.instruction)}
-            {ex.items.map((it, i) => {
-              const inline = it.q.includes('___');
-              return (
-                <div key={i} className="gap-row" style={{ fontSize:'14px', lineHeight: inline ? 2.4 : 1.7, marginBottom: inline ? 0 : '10px' }}>
-                  <span {...ed}>{i + 1}.&nbsp;<WithBlanks text={it.q} /></span>
-                  {!inline && <div style={{ borderBottom:'1px solid #888', height:'22px', marginTop:'4px' }} />}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+        {renderQuickExercises(g.exercises, 65)} {/* A, B, C... */}
       </>
     );
   };
@@ -525,13 +488,23 @@ export const ActivityGenerator = () => {
 
     const qv = getSection('quickVocab');
     const qg = getSection('quickGrammar');
+    
     if (qv) {
-      blocks.push(<div key="ak-qmatch" style={{ marginBottom:'14px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Matching</div><div className="ak-grid">{qv.wordOrder.map((wi, row) => { const di = qv.defOrder.indexOf(wi); return <div key={row} style={akItem}><strong>{row + 1}.</strong>&nbsp;{String.fromCharCode(97 + di)}</div>; })}</div></div>);
-      blocks.push(<div key="ak-qgaps" style={{ marginBottom:'14px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Fill in the Gaps</div><div className="ak-grid">{qv.qv.gaps.map((g, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{g.answer}</div>)}</div></div>);
+      qv.qv.exercises.forEach((ex, xi) => blocks.push(
+        <div key={`ak-qv-${xi}`} style={{ marginBottom:'14px' }}>
+          <div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>{String.fromCharCode(66 + xi)}. {ex.title}</div>
+          <div className="ak-grid">{ex.items.map((it, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{it.answer}</div>)}</div>
+        </div>
+      ));
     }
-    if (qg) qg.data.exercises.forEach((ex, xi) => blocks.push(
-      <div key={`ak-qg-${xi}`} style={{ marginBottom:'14px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>{String.fromCharCode(65 + xi)}. {ex.title}</div><div className="ak-grid">{ex.items.map((it, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{it.answer}</div>)}</div></div>
-    ));
+    if (qg) {
+      qg.data.exercises.forEach((ex, xi) => blocks.push(
+        <div key={`ak-qg-${xi}`} style={{ marginBottom:'14px' }}>
+          <div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>{String.fromCharCode(65 + xi)}. {ex.title}</div>
+          <div className="ak-grid">{ex.items.map((it, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{it.answer}</div>)}</div>
+        </div>
+      ));
+    }
 
     if (!blocks.length) return null;
     return (
@@ -547,7 +520,6 @@ export const ActivityGenerator = () => {
   const qVocab = getSection('quickVocab'), qGram = getSection('quickGrammar');
   const huntInstr = passage ? INSTR.huntText : INSTR.huntNoTxt;
 
-  // sequential Part numbers based on what's present (lesson mode only)
   let partNo = 0;
   const part = (cond: boolean) => (cond ? ++partNo : partNo);
   const p1 = part(!!tf || !!comp);
@@ -677,17 +649,27 @@ export const ActivityGenerator = () => {
                 </div>
                 {quickType === 'vocab' ? (
                   <>
-                    <label style={lbl}>Theme</label>
-                    <input value={quickTheme} onChange={e => setQuickTheme(e.target.value)} placeholder="e.g., travel and transport" style={{ ...inp, marginBottom:'10px' }} />
-                    <button onClick={genQuickVocab} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FDBA74' : '#EA580C', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>{busy === 'quickVocab' ? <><IconSpinner /> Generating…</> : '+ Generate Vocabulary'}</button>
+                    <label style={lbl}>Theme or Structure</label>
+                    <input value={quickTheme} onChange={e => setQuickTheme(e.target.value)} placeholder="e.g., phrasal verbs, travel" style={{ ...inp, marginBottom:'10px' }} />
                   </>
                 ) : (
                   <>
                     <label style={lbl}>Grammar point</label>
                     <input value={grammarPoint} onChange={e => setGrammarPoint(e.target.value)} placeholder="e.g., second conditional" style={{ ...inp, marginBottom:'10px' }} />
-                    <button onClick={genQuickGrammar} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FCA5A5' : '#DC2626', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>{busy === 'quickGrammar' ? <><IconSpinner /> Generating…</> : '+ Generate Grammar'}</button>
                   </>
                 )}
+                
+                <label style={lbl}>Specific Focus / Instructions (Optional)</label>
+                <input 
+                  value={teacherFocus} 
+                  onChange={e => setTeacherFocus(e.target.value)} 
+                  placeholder="e.g., Focus on missing particles, use time markers..." 
+                  style={{ ...inp, marginBottom:'10px' }} 
+                />
+
+                <button onClick={quickType === 'vocab' ? genQuickVocab : genQuickGrammar} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FDBA74' : '#EA580C', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                  {busy ? <><IconSpinner /> Generating…</> : `+ Generate ${quickType === 'vocab' ? 'Vocabulary' : 'Grammar'}`}
+                </button>
               </div>
             )}
 
@@ -816,15 +798,9 @@ export const ActivityGenerator = () => {
               {qVocab && (
                 <div className={pbCls(qVocab)}>
                   {partHead(0, 'Vocabulary')}
-                  <Tools kind="quickVocab" id={qVocab.id} onRegen={genQuickVocab} extra={
-                    <>
-                      <button onClick={() => reshuffleQMatching(qVocab.id)} disabled={!!busy} title="Shuffle matching columns" style={{ ...btn, padding:'4px 8px' }}><IconShuffle /> B</button>
-                      <button onClick={() => reshuffleQBank(qVocab.id)} disabled={!!busy} title="Shuffle word bank" style={{ ...btn, padding:'4px 8px' }}><IconShuffle /> C</button>
-                    </>
-                  } />
+                  <Tools kind="quickVocab" id={qVocab.id} onRegen={genQuickVocab} />
                   {subHead('A. Word Bank')}{instr(INSTR.glossary)}{renderGlossary(qVocab)}
-                  {subHead('B. Matching')}{instr(INSTR.qMatching)}{renderQMatching(qVocab)}
-                  {subHead('C. Fill in the Gaps')}{instr(INSTR.qGaps)}{renderQGaps(qVocab)}
+                  {renderQuickExercises(qVocab.qv.exercises, 66)} {/* Exercises start at 'B' (66) */}
                 </div>
               )}
 

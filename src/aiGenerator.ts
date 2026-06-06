@@ -98,19 +98,18 @@ export interface GlossaryItem {
   example: string;    // a natural example sentence using the word
 }
 
-/** Quick Vocabulary: present (glossary) then practise (matching + gap-fill). */
-export interface QuickVocabActivity {
-  theme: string;
-  glossary: GlossaryItem[];   // ~8 words with meaning + example
-  matching: MatchItem[];      // 5 word↔definition pairs (definitions reworded vs glossary)
-  gaps: GapItem[];            // ~6 self-contained sentences; each answer is a glossary word
-}
-
-/** One drill block inside a Quick Grammar sheet. */
+/** One drill block inside a Quick sheet. */
 export interface GrammarExercise {
   title: string;        // e.g. "Put the verb in the correct form"
   instruction: string;
   items: QAItem[];      // q = prompt (use ___ for a single-word blank); answer = key
+}
+
+/** Quick Vocabulary: present words/structures, then varied flexible drills. */
+export interface QuickVocabActivity {
+  theme: string;
+  glossary: GlossaryItem[];     // Presentation list (words, affixes, etc.)
+  exercises: GrammarExercise[]; // Flexible varied drills
 }
 
 /** Quick Grammar: a short reminder, then varied drills. NOT a noticing lesson. */
@@ -194,7 +193,6 @@ function sanitize(text: string): string {
 }
 
 // Sanitize AI-generated passage before embedding in prompts
-// Prevents special characters from breaking JSON payloads sent to edge functions
 function sanitizePassage(text: string): string {
   return text
     .replace(/`/g, "'")
@@ -204,21 +202,15 @@ function sanitizePassage(text: string): string {
     .trim();
 }
 
-/** Soft check that a target word actually appears in the passage (allows simple inflection). */
 function wordInText(word: string, text: string): boolean {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return false;
   const t = text.toLowerCase();
   if (t.includes(w)) return true;
-  // tolerate inflected forms (developed -> develop, evolution -> evolv...)
   const stem = w.slice(0, Math.max(4, w.length - 3));
   return t.includes(stem);
 }
 
-/**
- * Generic call → parse → validate → retry helper for the structured generators.
- * `validate` returns the typed object on success, or null to trigger a retry.
- */
 async function requestJSON<T>(
   prompt:   string,
   validate: (parsed: any) => T | null,
@@ -239,10 +231,6 @@ async function requestJSON<T>(
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CEFR LEVEL GUIDANCE
-// ─────────────────────────────────────────────────────────────────────────────
-
 function getLevelGuidance(level: string): string {
   const map: Record<string, string> = {
     A1: 'Use only the 500 most common English words. Present simple and "to be" only. Maximum 8 words per sentence. Concrete, everyday topics only. No idioms.',
@@ -254,10 +242,6 @@ function getLevelGuidance(level: string): string {
   };
   return map[level] ?? map['B1'];
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QUESTION SCHEMAS  (legacy free-form generator)
-// ─────────────────────────────────────────────────────────────────────────────
 
 function getQuestionSchema(activityType: string): { schema: string; rules: string } {
   const schemas: Record<string, { schema: string; rules: string }> = {
@@ -293,10 +277,6 @@ function getQuestionSchema(activityType: string): { schema: string; rules: strin
   return schemas[activityType] ?? schemas['Multiple Choice'];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VALIDATION  (legacy free-form generator)
-// ─────────────────────────────────────────────────────────────────────────────
-
 function validateQuestions(questions: any[], activityType: string, numQ: number): boolean {
   if (!Array.isArray(questions) || questions.length < numQ) {
     console.warn(`⚠️ Expected ${numQ} questions, got ${questions?.length ?? 0}.`);
@@ -331,11 +311,6 @@ function validateQuestions(questions: any[], activityType: string, numQ: number)
 // STRUCTURED-WORKSHEET GENERATORS  (used by the redesigned Activity Generator)
 // ═════════════════════════════════════════════════════════════════════════════
 
-// ─── PASSAGE (Mode 1, text-first) ─────────────────────────────────────────────
-// Thin wrapper over generateReadingPassage with lesson-builder defaults
-// (200+ words, B1+). The passage NEVER bolds vocabulary — target words are
-// selected separately by generateVocabularySet so Vocabulary Hunt stays a hunt.
-
 export async function generateLessonPassage(
   topic: string,
   level = 'B1',
@@ -343,8 +318,6 @@ export async function generateLessonPassage(
 ): Promise<string | null> {
   return generateReadingPassage(sanitize(topic), level, words);
 }
-
-// ─── PART 1A — True / False (5 statements) ────────────────────────────────────
 
 export async function generateTrueFalse(
   passage: string,
@@ -382,8 +355,6 @@ The items array must contain EXACTLY 5 statements.`;
   });
 }
 
-// ─── PART 1B — Comprehension Questions (5, full-sentence answers) ─────────────
-
 export async function generateComprehensionQuestions(
   passage: string,
   level = 'B1'
@@ -420,16 +391,6 @@ The items array must contain EXACTLY 5 questions.`;
   });
 }
 
-// ─── PART 2 — Vocabulary  (three DISTINCT word groups + distractors) ──────────
-// One call produces all of Part 2 so the model can keep every group distinct:
-//   2A Hunt      — 5 passage words (clue -> word)
-//   2B Matching  — 5 DIFFERENT passage words (word -> definition)
-//   2C Gaps      — 5 sentences, each answer a DIFFERENT passage word
-//   distractors  — 3 decoys for the 2C bank (never a correct answer)
-// All 18 words are mutually unique. Mode 1 = words from passage; Mode 2 = theme.
-// Column/bank shuffling happens CLIENT-SIDE in the component, never here.
-
-/** Rough stem for distinctness checks (treats evolve/evolved/evolution as one root). */
 function wordStem(word: string): string {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   return w.length <= 4 ? w : w.slice(0, w.length - 3);
@@ -520,7 +481,6 @@ Output ONLY valid JSON, no markdown, no backticks:
       pos:  String(d.pos ?? '').trim(),
     }));
 
-    // hard requirements ------------------------------------------------------
     for (const h of hunt) {
       if (!h.word || !h.pos || !h.definition) return null;
       if (h.definition.toLowerCase().includes(h.word.toLowerCase())) return null;
@@ -531,12 +491,10 @@ Output ONLY valid JSON, no markdown, no backticks:
     }
     for (const g of gaps) {
       if (!g.answer || !g.sentence.includes('___')) return null;
-      // the answer must not already sit in its own sentence
       if (g.sentence.toLowerCase().includes(g.answer.toLowerCase())) return null;
     }
     if (distractors.some((d) => !d.word || !d.pos)) return null;
 
-    // NO REPEATS across all 18 words (root-aware) ---------------------------
     const allWords = [
       ...hunt.map((h) => h.word),
       ...matching.map((m) => m.word),
@@ -549,7 +507,6 @@ Output ONLY valid JSON, no markdown, no backticks:
       return null;
     }
 
-    // soft check: passage words should be findable (warn only) --------------
     if (fromPassage) {
       const shouldAppear = [...hunt.map((h) => h.word), ...matching.map((m) => m.word), ...gaps.map((g) => g.answer)];
       const missing = shouldAppear.filter((w) => !wordInText(w, safeSource));
@@ -559,8 +516,6 @@ Output ONLY valid JSON, no markdown, no backticks:
     return { hunt, matching, gaps, distractors };
   });
 }
-
-// ─── PART 3 — Critical Thinking & Discussion (2 open questions) ───────────────
 
 export async function generateDiscussion(
   source: string,          // passage (Mode 1) or theme (Mode 2)
@@ -593,8 +548,6 @@ The items array must contain EXACTLY 2 questions.`;
     return two;
   });
 }
-
-// ─── PART 4 — Grammar Noticing (4-step guided discovery) ──────────────────────
 
 export async function generateGrammarNoticing(
   grammarPoint: string,
@@ -653,88 +606,37 @@ Output ONLY valid JSON, no markdown, no backticks:
 // These never reference "the text"; words/structures are taught directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Quick Vocabulary: present a themed word set, then practise it (matching + gaps). */
+/** Quick Vocabulary: Format-aware engine with teacher override. */
 export async function generateQuickVocab(
   theme: string,
-  level = 'B1'
+  level = 'B1',
+  customFocus: string = ''
 ): Promise<QuickVocabActivity | null> {
   const safeTheme = sanitize(theme);
-  const prompt = `You are an expert ESL vocabulary materials writer. Build a STANDALONE vocabulary worksheet on the theme "${safeTheme}" at ${level} CEFR level. There is NO reading passage, so the words must be taught directly — never refer to "the text".
+  const focusInstruction = customFocus ? `\nCRITICAL TEACHER INSTRUCTION: ${customFocus}\nYou MUST strictly follow this instruction above all other stylistic choices.` : '';
+
+  const prompt = `You are an expert ESL vocabulary materials writer. Build a STANDALONE vocabulary worksheet on the topic: "${safeTheme}" at ${level} CEFR level. NO reading passage.
 
 LEVEL (${level}): ${getLevelGuidance(level)}
+${focusInstruction}
 
-Produce three parts as JSON:
-1. "glossary": EXACTLY 8 useful, theme-relevant words appropriate for this level. For each: "word", "pos" (n./v./adj./adv./phr.), a clear learner-friendly "definition" that does NOT contain the word itself, and a natural "example" sentence that uses the word in context.
-2. "matching": EXACTLY 5 of those 8 words paired with a CONCISE definition. Reword these so they are NOT identical to the glossary definitions. Each: "word", "pos", "definition".
-3. "gaps": EXACTLY 6 standalone sentences, each containing ONE blank written as ___ . Each blank's "answer" MUST be one of the 8 glossary words, and the sentence must give enough context to choose it. Use 6 DIFFERENT glossary words.
+CRITICAL TOPIC RULE: The topic ("${safeTheme}") might be a semantic theme (e.g., "Environment") OR a morphological/lexical structure (e.g., "Suffixes", "Phrasal Verbs"). 
+- If semantic, provide 8 related words.
+- If structural, provide 8 words demonstrating the structure, and highlight how the structure changes meaning.
+- CRITICAL GAP-FILL RULE: If the teacher asks to test ONLY a missing particle/affix, the "answer" field MUST still contain the FULL word/phrase for the answer key, but the sentence must have the blank positioned correctly.
 
-All 8 glossary words must be distinct. Keep everything natural and level-appropriate.
+Produce JSON:
+1. "glossary": EXACTLY 8 words. For each: "word", "pos", "definition", and a natural "example".
+2. "exercises": 2-3 DIFFERENT exercise types that drill these words (e.g., matching, gap-fill, word-formation tables, categorization). For EACH: a short "title", a one-line "instruction", and EXACTLY 5-6 "items". Each item has "q" (the prompt/sentence with ___) and "answer".
 
 Output ONLY valid JSON, no markdown, no backticks:
-{"glossary":[{"word":"","pos":"","definition":"","example":""}],"matching":[{"word":"","pos":"","definition":""}],"gaps":[{"sentence":"... ___ ...","answer":""}]}`;
+{"glossary":[{"word":"","pos":"","definition":"","example":""}],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
 
   return requestJSON<QuickVocabActivity>(prompt, (p) => {
-    const glossary: GlossaryItem[] = Array.isArray(p?.glossary) ? p.glossary.map((g: any) => ({
-      word: String(g?.word ?? '').trim(),
-      pos: String(g?.pos ?? '').trim(),
-      definition: String(g?.definition ?? '').trim(),
-      example: String(g?.example ?? '').trim(),
-    })).filter((g: GlossaryItem) => g.word && g.definition) : [];
-
-    const matching: MatchItem[] = Array.isArray(p?.matching) ? p.matching.map((m: any) => ({
-      word: String(m?.word ?? '').trim(),
-      pos: String(m?.pos ?? '').trim(),
-      definition: String(m?.definition ?? '').trim(),
-    })).filter((m: MatchItem) => m.word && m.definition) : [];
-
-    const gaps: GapItem[] = Array.isArray(p?.gaps) ? p.gaps.map((g: any) => ({
-      sentence: String(g?.sentence ?? '').trim(),
-      answer: String(g?.answer ?? '').trim(),
-    })).filter((g: GapItem) => g.sentence.includes('___') && g.answer) : [];
-
-    if (glossary.length < 6) return null;
-    if (matching.length < 4) return null;
-    if (gaps.length < 5)     return null;
-
-    const words = glossary.map((g) => g.word.toLowerCase());
-    const goodGaps = gaps.filter((g) => words.includes(g.answer.toLowerCase()));
-    if (goodGaps.length < 5) return null;
-
-    return {
-      theme: safeTheme,
-      glossary: glossary.slice(0, 8),
-      matching: matching.slice(0, 5),
-      gaps: goodGaps.slice(0, 6),
-    };
-  });
-}
-
-/** Quick Grammar: minimal reminder + varied drills (practice-first, not a lesson). */
-export async function generateQuickGrammar(
-  grammarPoint: string,
-  level = 'B1'
-): Promise<QuickGrammarActivity | null> {
-  const point = sanitize(grammarPoint);
-  const prompt = `You are an expert ESL grammar materials writer. Build a STANDALONE, PRACTICE-FOCUSED grammar worksheet on "${point}" at ${level} CEFR level. This is a quick activity, NOT a lesson: keep explanation minimal and spend the space on exercises.
-
-LEVEL (${level}): ${getLevelGuidance(level)}
-
-Produce as JSON:
-- "rule": a concise 1-2 sentence reminder of how "${point}" works (no long lecture).
-- "examples": 2-3 short model sentences showing "${point}" used correctly.
-- "exercises": 2-3 DIFFERENT exercise types that drill "${point}". Choose from: gap-fill / verb-form (a sentence with a ___ blank and the base form in parentheses, e.g. "She ___ (go) every day."), error correction (a sentence with ONE mistake to fix), sentence transformation (a prompt telling the student how to rewrite a sentence), or multiple choice (put the options inside the prompt). For EACH exercise: a short "title", a one-line "instruction", and EXACTLY 5 "items". Each item has "q" (the prompt — put a ___ where the student writes a single word; for correction/transformation, give the sentence to rewrite) and "answer" (the full correct answer for the teacher key).
-
-Output ONLY valid JSON, no markdown, no backticks:
-{"rule":"","examples":["",""],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
-
-  return requestJSON<QuickGrammarActivity>(prompt, (p) => {
-    const rule = String(p?.rule ?? '').trim();
-    const examples: string[] = Array.isArray(p?.examples) ? p.examples.map((s: any) => String(s).trim()).filter(Boolean) : [];
+    const glossary = Array.isArray(p?.glossary) ? p.glossary : [];
     const exercisesRaw = Array.isArray(p?.exercises) ? p.exercises : [];
-
-    if (!rule)               return null;
-    if (examples.length < 2) return null;
-    if (exercisesRaw.length < 2) return null;
+    
+    if (glossary.length < 6 || exercisesRaw.length < 1) return null;
 
     const exercises: GrammarExercise[] = exercisesRaw.map((ex: any) => ({
       title: String(ex?.title ?? '').trim(),
@@ -742,17 +644,59 @@ Output ONLY valid JSON, no markdown, no backticks:
       items: (Array.isArray(ex?.items) ? ex.items : []).map((it: any) => ({
         q: String(it?.q ?? '').trim(),
         answer: String(it?.answer ?? '').trim(),
-      })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0),
-    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length >= 3);
+      })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0)
+    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length > 0);
 
-    if (exercises.length < 2) return null;
+    if (exercises.length === 0) return null;
 
-    return {
-      grammarPoint: point,
-      rule,
-      examples: examples.slice(0, 3),
-      exercises: exercises.slice(0, 3).map((ex) => ({ ...ex, items: ex.items.slice(0, 6) })),
-    };
+    return { theme: safeTheme, glossary: glossary.slice(0, 8), exercises };
+  });
+}
+
+/** Quick Grammar: Format-aware engine with context locks and teacher override. */
+export async function generateQuickGrammar(
+  grammarPoint: string,
+  level = 'B1',
+  customFocus: string = ''
+): Promise<QuickGrammarActivity | null> {
+  const point = sanitize(grammarPoint);
+  const focusInstruction = customFocus ? `\nCRITICAL TEACHER INSTRUCTION: ${customFocus}\nYou MUST strictly follow this instruction for every exercise.` : '';
+
+  const prompt = `You are an expert ESL grammar materials writer. Build a STANDALONE, PRACTICE-FOCUSED grammar worksheet on "${point}" at ${level} CEFR level.
+
+LEVEL (${level}): ${getLevelGuidance(level)}
+${focusInstruction}
+
+CRITICAL ISOLATION RULE: Strictly isolate "${point}". Do NOT introduce contrasting advanced tenses (e.g., do not use Past Perfect if asked for Past Simple) unless explicitly requested.
+CRITICAL CONTEXT RULE: Do not write sterile, floating sentences. Every single item MUST include rich context clues (specific time markers, semantic context, or mini-dialogues A/B) that makes the grammatical choice obvious and necessary.
+
+Produce JSON:
+- "rule": a concise 1-2 sentence reminder of how "${point}" works.
+- "examples": 2-3 short model sentences.
+- "exercises": 2-3 DIFFERENT exercise types (gap-fill, error correction, transformation, multiple choice). For EACH: a short "title", "instruction", and EXACTLY 5 "items" ("q" and "answer").
+
+Output ONLY valid JSON, no markdown, no backticks:
+{"rule":"","examples":["",""],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
+
+  return requestJSON<QuickGrammarActivity>(prompt, (p) => {
+    const rule = String(p?.rule ?? '').trim();
+    const examples = Array.isArray(p?.examples) ? p.examples : [];
+    const exercisesRaw = Array.isArray(p?.exercises) ? p.exercises : [];
+
+    if (!rule || examples.length < 2 || exercisesRaw.length < 1) return null;
+
+    const exercises: GrammarExercise[] = exercisesRaw.map((ex: any) => ({
+      title: String(ex?.title ?? '').trim(),
+      instruction: String(ex?.instruction ?? '').trim(),
+      items: (Array.isArray(ex?.items) ? ex.items : []).map((it: any) => ({
+        q: String(it?.q ?? '').trim(),
+        answer: String(it?.answer ?? '').trim(),
+      })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0)
+    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length > 0);
+
+    if (exercises.length === 0) return null;
+
+    return { grammarPoint: point, rule, examples: examples.slice(0, 3), exercises };
   });
 }
 
@@ -1038,7 +982,6 @@ Output ONLY the sentence — no quotes, no explanation.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // generateStudentFeedback — Dr. Chouit's voice
-// Refined: warm 3-paragraph format, tone scaled to score, rotating resource pool.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RESOURCE_POOL = `
@@ -1060,10 +1003,7 @@ function tidyFeedback(raw: string): string {
     .replace(/\bsignificant\s+(progress|improvement|strides|gains)\b/gi, '$1')
     .replace(/[ \t]{2,}/g, ' ');
 
-  // Collapse a stacked forward-looking close: if the final paragraph ends with a
-  // forward-looking sentence AND the line before it is also forward-looking — whether
-  // a separate sentence OR a trailing "..., and I'm excited..." clause — keep only the
-  // final (skill-named) line.
+  // Collapse a stacked forward-looking close
   const fwd = /^\s*(i['’]?m\s+(so\s+)?(excited|thrilled)|i\s+am\s+(so\s+)?(excited|thrilled)|i\s+can['’]?t\s+wait|i\s+look\s+forward|i['’]?m\s+looking\s+forward|i\s+hope)/i;
   const clause = /,\s*and\s+(?:i['’]?m\s+(?:so\s+)?(?:excited|thrilled)|i\s+am\s+(?:so\s+)?(?:excited|thrilled)|i\s+look\s+forward|i['’]?m\s+looking\s+forward|i\s+hope)\b[^.!?]*([.!?]+["'’)\]]*)\s*$/i;
   const paras = t.split(/\n{2,}/);
@@ -1103,10 +1043,6 @@ export async function generateStudentFeedback(
       'Final Test': 'This is the final assessment — write a warm, summative reflection on the whole term with a proud, forward-looking close.',
     };
     const stage = stageNote[assessment] ?? 'Frame the feedback warmly for the appropriate stage of the course.';
-    // Use the explicitly passed percentage, or fall back to the figure the app
-    // already wrote into the scores ("Earned Weight Contribution: 7.9% / 10%").
-    // This READS the app's value (it does not recompute it), so the percentage
-    // shows reliably even when the 5th argument isn't passed.
     const pctFromScores = scores.match(/Earned Weight Contribution:\s*([\d.]+\s*%)/i)?.[1]?.replace(/\s+/g, '');
     const pct = percentToFinal ?? pctFromScores;
 
@@ -1132,6 +1068,10 @@ NEVER label a skill as "your highest-scoring" or "your lowest-scoring skill," an
 
 SCORES BELONG TO THE STUDENT: always write "your writing score of 7/10", NEVER "we scored 7/10" or "our score." Use "we" ONLY for the shared work ahead ("we are going to focus on...").
 
+FORBIDDEN WORDS & PHRASES (FATAL ERROR IF USED): testament, delve, utilize, leverage, enhance, foster, embark, undoubtedly, tapestry, underscore, showcase, "room for growth", "indicates that", "solid foundation", "make significant progress". Use plain, warm verbs instead.
+
+CRITICAL ENDING RULE: You must end the entire email on the single "catch up to" sentence. Do not prepend it with "I'm excited to see..." or any other summary.
+
 RESOURCE POOL — pick from these, matching the tool to the weak skill. VARY your picks from student to student; do NOT default to the same website every time:
 ${RESOURCE_POOL}
 
@@ -1141,7 +1081,6 @@ STYLE:
 - Address the student as "you/your" throughout. Use "we" ONLY for the shared in-class work (paragraph 2's focus areas). Home-practice tools in paragraph 3 are always "you," never "we."
 - Vary sentence openings; do not start consecutive sentences with the same word.
 - NO sign-off or signature — end on the final encouraging sentence.
-- Avoid stiff or robotic words and filler (utilize, leverage, enhance, foster, embark, undoubtedly, delve, tapestry, testament, underscore, showcase, "room for growth", "indicates that", "serve as a solid foundation"). Reach for plain, warm verbs instead (use, try, practise, build).
 
 Output ONLY the feedback: the "Hi ${studentName}," line followed by the three paragraphs.`;
 
