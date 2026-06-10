@@ -24,30 +24,22 @@
 
 /** Part 2A — Vocabulary Hunt. Student reads the clue and writes the word found in the passage. */
 export interface VocabHuntItem {
-  /** The target word the student must find/write (the answer-key value). */
   word: string;
-  /** Short POS tag: "v." | "n." | "adj." | "adv." | "phr." */
   pos: string;
-  /** OPTIONAL short morphological clue, e.g. "ending in -ed" or "plural". Omitted when POS alone is enough. */
   hint?: string;
-  /** Full definition shown to the student. Must NOT contain the word or a derivative. */
   definition: string;
 }
 
 /** Part 2B — Matching. A different set of words from the passage, paired to definitions a–e. */
 export interface MatchItem {
-  /** The word shown in the left column (with its POS). */
   word: string;
   pos: string;
-  /** The correct definition (right column). Must NOT contain the word or a derivative. */
   definition: string;
 }
 
 /** Part 2C — Fill the Gaps. One sentence with a single ___; the answer is a passage word. */
 export interface GapItem {
-  /** Sentence containing exactly one ___ blank. */
   sentence: string;
-  /** The word that correctly fills the blank (also placed in the bank). */
   answer: string;
 }
 
@@ -60,13 +52,12 @@ export interface Distractor {
 /**
  * The full Part 2 payload, produced in ONE call so the model can keep all groups distinct.
  * hunt / matching / gap-answers / distractor words are ALL mutually unique.
- * The 2C word bank is built CLIENT-SIDE from gaps[].answer + distractors, then shuffled.
  */
 export interface VocabularyPart {
-  hunt: VocabHuntItem[];      // exactly 5, from the passage
-  matching: MatchItem[];      // exactly 5, DIFFERENT words from the passage
-  gaps: GapItem[];            // exactly 5 sentences; each answer a DIFFERENT passage word
-  distractors: Distractor[];  // exactly 3, plausible but never correct
+  hunt: VocabHuntItem[];
+  matching: MatchItem[];
+  gaps: GapItem[];
+  distractors: Distractor[];
 }
 
 export interface TFItem {
@@ -76,16 +67,16 @@ export interface TFItem {
 
 export interface QAItem {
   q: string;
-  answer: string; // model answer for the teacher key
+  answer: string; 
 }
 
 /** Part 4 — Grammar Noticing (guided discovery). */
 export interface GrammarNoticing {
   grammarPoint: string;
-  targetSentences: string[];      // Step 1
-  observationQuestions: string[]; // Step 2
-  ruleText: string;               // Step 3 — rule with ___ blanks for students to complete
-  practice: QAItem[];             // Step 4 — controlled practice
+  targetSentences: string[];
+  observationQuestions: string[];
+  ruleText: string;
+  practice: QAItem[];
 }
 
 // ── QUICK MODE (Mode 2, no passage) — standalone activity shapes ──────────────
@@ -93,31 +84,31 @@ export interface GrammarNoticing {
 /** A presented vocabulary entry (the words are TAUGHT, not hunted from a text). */
 export interface GlossaryItem {
   word: string;
-  pos: string;        // "n." | "v." | "adj." | "adv." | "phr."
+  pos: string;
   definition: string;
-  example: string;    // a natural example sentence using the word
+  example: string;
 }
 
 /** One drill block inside a Quick sheet. */
 export interface GrammarExercise {
-  title: string;        // e.g. "Put the verb in the correct form"
+  title: string;
   instruction: string;
-  items: QAItem[];      // q = prompt (use ___ for a single-word blank); answer = key
+  items: QAItem[];
 }
 
 /** Quick Vocabulary: present words/structures, then varied flexible drills. */
 export interface QuickVocabActivity {
   theme: string;
-  glossary: GlossaryItem[];     // Presentation list (words, affixes, etc.)
-  exercises: GrammarExercise[]; // Flexible varied drills
+  glossary: GlossaryItem[];
+  exercises: GrammarExercise[];
 }
 
 /** Quick Grammar: a short reminder, then varied drills. NOT a noticing lesson. */
 export interface QuickGrammarActivity {
   grammarPoint: string;
-  rule: string;         // 1-2 sentence concise reminder
-  examples: string[];   // 2-3 model sentences
-  exercises: GrammarExercise[];  // 2-3 varied practice blocks
+  rule: string;
+  examples: string[];
+  exercises: GrammarExercise[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,7 +183,6 @@ function sanitize(text: string): string {
   return text.replace(/[\n\r\t]+/g, ' ').replace(/"/g, "'").trim();
 }
 
-// Sanitize AI-generated passage before embedding in prompts
 function sanitizePassage(text: string): string {
   return text
     .replace(/`/g, "'")
@@ -305,9 +295,7 @@ function validateQuestions(questions: any[], activityType: string, numQ: number)
     }
   }
   return true;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
+}// ═════════════════════════════════════════════════════════════════════════════
 // STRUCTURED-WORKSHEET GENERATORS  (used by the redesigned Activity Generator)
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -397,7 +385,7 @@ function wordStem(word: string): string {
 }
 
 export async function generateVocabularySet(
-  source: string,           // passage (Mode 1) or theme (Mode 2)
+  source: string,           
   level = 'B1',
   fromPassage = true
 ): Promise<VocabularyPart | null> {
@@ -518,7 +506,7 @@ Output ONLY valid JSON, no markdown, no backticks:
 }
 
 export async function generateDiscussion(
-  source: string,          // passage (Mode 1) or theme (Mode 2)
+  source: string,          
   level = 'B1'
 ): Promise<string[] | null> {
   const safeSource = sanitizePassage(source);
@@ -552,7 +540,7 @@ The items array must contain EXACTLY 2 questions.`;
 export async function generateGrammarNoticing(
   grammarPoint: string,
   level = 'B1',
-  passage?: string          // optional — extract target sentences from it when present
+  passage?: string          
 ): Promise<GrammarNoticing | null> {
   const point = sanitize(grammarPoint);
   const sourceBlock = passage
@@ -606,7 +594,7 @@ Output ONLY valid JSON, no markdown, no backticks:
 // These never reference "the text"; words/structures are taught directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Quick Vocabulary: Format-aware engine with teacher override. */
+/** Quick Vocabulary: Format-aware engine with teacher override and few-shot formatting. */
 export async function generateQuickVocab(
   theme: string,
   level = 'B1',
@@ -623,11 +611,19 @@ ${focusInstruction}
 CRITICAL TOPIC RULE: The topic ("${safeTheme}") might be a semantic theme (e.g., "Environment") OR a morphological/lexical structure (e.g., "Suffixes", "Phrasal Verbs"). 
 - If semantic, provide 8 related words.
 - If structural, provide 8 words demonstrating the structure, and highlight how the structure changes meaning.
-- CRITICAL GAP-FILL RULE: If the teacher asks to test ONLY a missing particle/affix, the "answer" field MUST still contain the FULL word/phrase for the answer key, but the sentence must have the blank positioned correctly.
+- CRITICAL LINGUISTIC RULE: Every single sentence generated MUST be grammatically perfect. Check the required part of speech for every single blank before writing the sentence.
+
+FORMATTING EXAMPLES (MIMIC THESE EXACTLY IN THE "q" FIELD):
+- For standard Gap-Fill: "He was very ___ with his money." (DO NOT generate a word bank text in the prompt. The UI already handles the word bank at the top of the page).
+- For inline Multiple Choice: "If you don't know the word, you should ___ in a dictionary. (look it up / point it out / put it off)" (Provide EXACTLY 3 or 4 plausible options inside the parentheses, NOT all 8 words).
+- For Affixes/Word Formation: "The ___ (hope) in her eyes was inspiring."
+- For Sentence Transformation: "The box is empty; it has no ___ (use)."
 
 Produce JSON:
 1. "glossary": EXACTLY 8 words. For each: "word", "pos", "definition", and a natural "example".
-2. "exercises": 2-3 DIFFERENT exercise types that drill these words (e.g., matching, gap-fill, word-formation tables, categorization). For EACH: a short "title", a one-line "instruction", and EXACTLY 5-6 "items". Each item has "q" (the prompt/sentence with ___) and "answer".
+2. "exercises": 2-3 DIFFERENT exercise types that drill these words. 
+   - CRITICAL RENDERER RULE: Choose ONLY linear list formats matching the examples above. Do NOT use matching columns or tables. Do NOT repeat the same exercise type twice.
+   - For EACH exercise: a short "title", a one-line "instruction", and EXACTLY 5-6 "items". Each item has "q" (the formatted prompt) and "answer".
 
 Output ONLY valid JSON, no markdown, no backticks:
 {"glossary":[{"word":"","pos":"","definition":"","example":""}],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
@@ -636,7 +632,7 @@ Output ONLY valid JSON, no markdown, no backticks:
     const glossary = Array.isArray(p?.glossary) ? p.glossary : [];
     const exercisesRaw = Array.isArray(p?.exercises) ? p.exercises : [];
     
-    if (glossary.length < 6 || exercisesRaw.length < 1) return null;
+    if (glossary.length < 6 || exercisesRaw.length < 2) return null;
 
     const exercises: GrammarExercise[] = exercisesRaw.map((ex: any) => ({
       title: String(ex?.title ?? '').trim(),
@@ -645,15 +641,15 @@ Output ONLY valid JSON, no markdown, no backticks:
         q: String(it?.q ?? '').trim(),
         answer: String(it?.answer ?? '').trim(),
       })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0)
-    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length > 0);
+    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length >= 4);
 
-    if (exercises.length === 0) return null;
+    if (exercises.length < 2) return null;
 
     return { theme: safeTheme, glossary: glossary.slice(0, 8), exercises };
   });
 }
 
-/** Quick Grammar: Format-aware engine with context locks and teacher override. */
+/** Quick Grammar: Format-aware engine with context locks and few-shot formatting. */
 export async function generateQuickGrammar(
   grammarPoint: string,
   level = 'B1',
@@ -670,10 +666,16 @@ ${focusInstruction}
 CRITICAL ISOLATION RULE: Strictly isolate "${point}". Do NOT introduce contrasting advanced tenses (e.g., do not use Past Perfect if asked for Past Simple) unless explicitly requested.
 CRITICAL CONTEXT RULE: Do not write sterile, floating sentences. Every single item MUST include rich context clues (specific time markers, semantic context, or mini-dialogues A/B) that makes the grammatical choice obvious and necessary.
 
+FORMATTING EXAMPLES (MIMIC THESE EXACTLY IN THE "q" FIELD):
+- For Verb Tense Gap Fill: "Although Maria usually ___ (take) the subway to the academy, this month she ___ (walk) to enjoy the spring weather."
+- For Error Correction: "I will see the optometrist on Friday at 2:00 PM because I booked the appointment yesterday.\\nCorrection: "
+- For Sentence Transformation: "Direct: Where did they leave the projector?\\nIndirect: I was wondering "
+- For Inline Multiple Choice: "Despite the heavy rain, the hikers managed to reach the summit ___ noon. (in / at / on)"
+
 Produce JSON:
 - "rule": a concise 1-2 sentence reminder of how "${point}" works.
 - "examples": 2-3 short model sentences.
-- "exercises": 2-3 DIFFERENT exercise types (gap-fill, error correction, transformation, multiple choice). For EACH: a short "title", "instruction", and EXACTLY 5 "items" ("q" and "answer").
+- "exercises": 2-3 DIFFERENT exercise types formatted exactly like the examples above. Do NOT use matching columns or tables. Do NOT repeat the same exercise type twice. For EACH: a short "title", "instruction", and EXACTLY 5 "items" ("q" and "answer").
 
 Output ONLY valid JSON, no markdown, no backticks:
 {"rule":"","examples":["",""],"exercises":[{"title":"","instruction":"","items":[{"q":"","answer":""}]}]}`;
@@ -683,7 +685,7 @@ Output ONLY valid JSON, no markdown, no backticks:
     const examples = Array.isArray(p?.examples) ? p.examples : [];
     const exercisesRaw = Array.isArray(p?.exercises) ? p.exercises : [];
 
-    if (!rule || examples.length < 2 || exercisesRaw.length < 1) return null;
+    if (!rule || examples.length < 2 || exercisesRaw.length < 2) return null;
 
     const exercises: GrammarExercise[] = exercisesRaw.map((ex: any) => ({
       title: String(ex?.title ?? '').trim(),
@@ -692,15 +694,13 @@ Output ONLY valid JSON, no markdown, no backticks:
         q: String(it?.q ?? '').trim(),
         answer: String(it?.answer ?? '').trim(),
       })).filter((it: QAItem) => it.q.length > 1 && it.answer.length > 0)
-    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length > 0);
+    })).filter((ex: GrammarExercise) => ex.title.length > 0 && ex.items.length >= 4);
 
-    if (exercises.length === 0) return null;
+    if (exercises.length < 2) return null;
 
     return { grammarPoint: point, rule, examples: examples.slice(0, 3), exercises };
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+}// ─────────────────────────────────────────────────────────────────────────────
 // READING — STEP 1: Passage generation  (shared by legacy + structured paths)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -978,7 +978,6 @@ Output ONLY the sentence — no quotes, no explanation.`;
     return null;
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // generateStudentFeedback — Dr. Chouit's voice

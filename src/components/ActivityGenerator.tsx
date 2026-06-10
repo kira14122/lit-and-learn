@@ -31,31 +31,166 @@ const IconBreak   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="
 const IconCheck   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
 const IconEdit    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>;
 const IconLock    = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const IconPuzzle  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.908-.329-1.25-.768-1.022-1.31-3.033-1.066-3.738.455-.386.832-.016 1.83.826 2.218.361.168.618.498.718.887l.423 1.623c.205.787-.042 1.63-.647 2.235-.606.606-1.448.852-2.235.647l-1.623-.423a1.002 1.002 0 0 0-.887.051c-.443.25-.783.655-.968 1.135-.558 1.45-2.613 1.67-3.483.374-.356-.527-.925-.8-1.543-.768a.98.98 0 0 1-.837-.276l-1.611-1.611c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.568-1.568c.23-.23.338-.556.289-.878-.066-.438-.306-.84-.691-1.157-1.154-.949-1.154-2.735 0-3.684.385-.317-.625-.719-.691-1.157.049-.322-.059-.648-.289-.878l-1.568-1.568c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.611-1.611c.23-.23.535-.333.837-.276.47.07.908.329 1.25.768 1.022 1.31 3.033 1.066 3.738-.455.386-.832.016-1.83-.826-2.218-.361-.168-.618-.498-.718-.887l-.423-1.623c-.205-.787.042-1.63.647-2.235s1.448-.852 2.235-.647l1.623.423c.321.084.66.012.887-.051.443-.25.783-.655.968-1.135.558-1.45 2.613-1.67 3.483-.374.356.527.925.8 1.543.768.23.23.535.333.837.276l1.611 1.611c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.568 1.568c-.23.23-.338.556-.289.878.066.438.306.84.691 1.157 1.154.949 1.154 2.735 0 3.684-.385.317-.625.719-.691 1.157z"/></svg>;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type SectionKind = 'tf' | 'comprehension' | 'vocab' | 'discussion' | 'grammar' | 'quickVocab' | 'quickGrammar';
+// ─── Native Crossword Algorithm ───────────────────────────────────────────────
+type Direction = 'across' | 'down';
+export interface PlacedWord { word: string; clue: string; row: number; col: number; direction: Direction; num: number; }
+
+function generateCrosswordLayout(items: {word: string, clue: string}[]): PlacedWord[] | null {
+  const GRID_SIZE = 100;
+  const CENTER = 50;
+  
+  const cleanItems = items.map(it => ({...it, clean: it.word.toUpperCase().replace(/[^A-Z]/g, '')})).filter(it => it.clean.length > 2);
+  if (cleanItems.length === 0) return null;
+
+  let bestLayout: PlacedWord[] = [];
+  let maxPlaced = 0;
+  let minArea = Infinity;
+
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const shuffled = [...cleanItems].sort(() => Math.random() - 0.5);
+    if (attempt === 0) shuffled.sort((a,b) => b.clean.length - a.clean.length);
+
+    const grid: string[][] = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(''));
+    const placed: PlacedWord[] = [];
+
+    const canPlace = (word: string, row: number, col: number, dir: Direction) => {
+      if (dir === 'across' && col + word.length >= GRID_SIZE) return false;
+      if (dir === 'down' && row + word.length >= GRID_SIZE) return false;
+      if (row < 0 || col < 0) return false;
+
+      if (dir === 'across') {
+        if (col > 0 && grid[row][col - 1] !== '') return false;
+        if (col + word.length < GRID_SIZE && grid[row][col + word.length] !== '') return false;
+      } else {
+        if (row > 0 && grid[row - 1][col] !== '') return false;
+        if (row + word.length < GRID_SIZE && grid[row + word.length][col] !== '') return false;
+      }
+
+      for (let i = 0; i < word.length; i++) {
+        const r = row + (dir === 'down' ? i : 0);
+        const c = col + (dir === 'across' ? i : 0);
+        const cell = grid[r][c];
+        
+        if (cell !== '' && cell !== word[i]) return false; 
+        
+        if (cell === '') {
+          if (dir === 'across') {
+            if (r > 0 && grid[r - 1][c] !== '') return false;
+            if (r < GRID_SIZE - 1 && grid[r + 1][c] !== '') return false;
+          } else {
+            if (c > 0 && grid[r][c - 1] !== '') return false;
+            if (c < GRID_SIZE - 1 && grid[r][c + 1] !== '') return false;
+          }
+        }
+      }
+      return true;
+    };
+
+    const placeWord = (word: string, clue: string, row: number, col: number, dir: Direction) => {
+      for (let i = 0; i < word.length; i++) {
+        grid[row + (dir === 'down' ? i : 0)][col + (dir === 'across' ? i : 0)] = word[i];
+      }
+      placed.push({ word, clue, row, col, direction: dir, num: 0 });
+    };
+
+    const first = shuffled[0];
+    placeWord(first.clean, first.clue, CENTER, CENTER - Math.floor(first.clean.length/2), 'across');
+
+    for (let i = 1; i < shuffled.length; i++) {
+      const { clean, clue } = shuffled[i];
+      let bestPlacement = null;
+
+      for (const p of placed) {
+        for (let j = 0; j < p.word.length; j++) {
+          const intersectChar = p.word[j];
+          const matchIndexes = [];
+          for(let k=0; k<clean.length; k++) if(clean[k] === intersectChar) matchIndexes.push(k);
+
+          for (const k of matchIndexes) {
+            const r = p.row + (p.direction === 'down' ? j : 0);
+            const c = p.col + (p.direction === 'across' ? j : 0);
+            
+            const newDir = p.direction === 'across' ? 'down' : 'across';
+            const startR = r - (newDir === 'down' ? k : 0);
+            const startC = c - (newDir === 'across' ? k : 0);
+
+            if (canPlace(clean, startR, startC, newDir)) {
+              if (!bestPlacement || (Math.abs(startR - CENTER) + Math.abs(startC - CENTER)) < (Math.abs(bestPlacement.r - CENTER) + Math.abs(bestPlacement.c - CENTER))) {
+                bestPlacement = { r: startR, c: startC, dir: newDir };
+              }
+            }
+          }
+        }
+      }
+
+      if (bestPlacement) placeWord(clean, clue, bestPlacement.r, bestPlacement.c, bestPlacement.dir);
+    }
+
+    if (placed.length > maxPlaced) {
+      maxPlaced = placed.length;
+      bestLayout = JSON.parse(JSON.stringify(placed));
+    } else if (placed.length === maxPlaced && placed.length > 0) {
+      let minR = GRID_SIZE, maxR = 0, minC = GRID_SIZE, maxC = 0;
+      for (const p of placed) {
+        minR = Math.min(minR, p.row);
+        maxR = Math.max(maxR, p.row + (p.direction === 'down' ? p.word.length : 1));
+        minC = Math.min(minC, p.col);
+        maxC = Math.max(maxC, p.col + (p.direction === 'across' ? p.word.length : 1));
+      }
+      const area = (maxR - minR) * (maxC - minC);
+      if (area < minArea) {
+        minArea = area;
+        bestLayout = JSON.parse(JSON.stringify(placed));
+      }
+    }
+  }
+
+  if (bestLayout.length === 0) return null;
+  
+  let minR = 100, minC = 100;
+  for (const p of bestLayout) {
+    minR = Math.min(minR, p.row);
+    minC = Math.min(minC, p.col);
+  }
+  
+  bestLayout.forEach(p => { p.row -= minR; p.col -= minC; });
+  bestLayout.sort((a, b) => a.row !== b.row ? a.row - b.row : a.col - b.col);
+
+  let num = 1;
+  for (let i = 0; i < bestLayout.length; i++) {
+    const current = bestLayout[i];
+    const sameStart = bestLayout.find(p => p !== current && p.row === current.row && p.col === current.col && p.num > 0);
+    current.num = sameStart ? sameStart.num : num++;
+  }
+
+  return bestLayout;
+}
+
+// ─── Types & Constants ─────────────────────────────────────────────────────────
+type SectionKind = 'tf' | 'comprehension' | 'vocab' | 'discussion' | 'grammar' | 'crossword' | 'quickVocab' | 'quickGrammar';
 
 type TFSection    = { id: string; kind: 'tf';            pageBreakBefore: boolean; items: TFItem[] };
 type CompSection  = { id: string; kind: 'comprehension'; pageBreakBefore: boolean; items: QAItem[] };
 type VocabSection = { id: string; kind: 'vocab';         pageBreakBefore: boolean; vp: VocabularyPart; wordOrder: number[]; defOrder: number[]; bankOrder: number[] };
 type DiscSection  = { id: string; kind: 'discussion';    pageBreakBefore: boolean; items: string[] };
 type GramSection  = { id: string; kind: 'grammar';       pageBreakBefore: boolean; data: GrammarNoticing };
-// Quick sections: dynamic flexible exercises
+type CrossSection = { id: string; kind: 'crossword';     pageBreakBefore: boolean; layout: PlacedWord[] };
 type QVocabSection = { id: string; kind: 'quickVocab';   pageBreakBefore: boolean; qv: QuickVocabActivity };
 type QGramSection  = { id: string; kind: 'quickGrammar'; pageBreakBefore: boolean; data: QuickGrammarActivity };
-type Section      = TFSection | CompSection | VocabSection | DiscSection | GramSection | QVocabSection | QGramSection;
+type Section      = TFSection | CompSection | VocabSection | DiscSection | GramSection | CrossSection | QVocabSection | QGramSection;
 
 type Mode      = 'lesson' | 'quick';
 type Source    = 'topic' | 'paste';
-type QuickType = 'vocab' | 'grammar';
+type QuickType = 'vocab' | 'grammar' | 'crossword';
 
 type Persisted = {
   mode: Mode; title: string; level: string; passage: string; passageApproved: boolean;
   sections: Section[]; showName: boolean; showDate: boolean; showClass: boolean; showScore: boolean;
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const ORDER: Record<SectionKind, number> = { tf: 0, comprehension: 1, vocab: 2, discussion: 3, grammar: 4, quickVocab: 2, quickGrammar: 4 };
+const ORDER: Record<SectionKind, number> = { tf: 0, comprehension: 1, vocab: 2, discussion: 3, grammar: 4, crossword: 5, quickVocab: 2, quickGrammar: 4 };
 
 const INSTR = {
   tf:        'Read the statements below and decide if they are true (T) or false (F) based on the text.',
@@ -66,6 +201,7 @@ const INSTR = {
   gaps:      'Complete the sentences using the words from the box.',
   discussion:'Discuss these questions with a partner or in small groups.',
   glossary:  'Study these words, their meanings, and the example sentences.',
+  crossword: 'Complete the crossword puzzle below using the clues provided.',
 };
 
 const lbl: React.CSSProperties = { display:'block', fontSize:'0.72rem', fontWeight:700, color:'#64748B', marginBottom:'5px', textTransform:'uppercase', letterSpacing:'0.05em' };
@@ -79,14 +215,14 @@ const ACCENT: Record<SectionKind, { bg: string; text: string }> = {
   vocab:         { bg:'#FFF7ED', text:'#EA580C' },
   discussion:    { bg:'#F0FDF4', text:'#16A34A' },
   grammar:       { bg:'#FEF2F2', text:'#DC2626' },
+  crossword:     { bg:'#F3E8FF', text:'#6D28D9' },
   quickVocab:    { bg:'#FFF7ED', text:'#EA580C' },
   quickGrammar:  { bg:'#FEF2F2', text:'#DC2626' },
 };
 
-// ─── Print CSS ────────────────────────────────────────────────────────────────
 const PCSS = `
   @page { size: A4 portrait; margin: 18mm 20mm; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: 'Times New Roman', serif; color:#000; line-height:1.6; background:#fff; margin:0; padding:0; font-size:14px; }
   .ws-fields { display:flex; flex-wrap:wrap; gap:28px; font-size:13.5px; margin-bottom:8px; }
   .ws-divider { border:none; border-top:1.5px solid #000; margin:0 0 22px; }
@@ -123,7 +259,6 @@ const PCSS = `
   .no-print { display:none !important; }
 `;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const shuffle = <T,>(a: T[]): T[] => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];} return r; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -140,9 +275,7 @@ const WithBlanks = ({ text, cls = 'gap-blank' }: { text: string; cls?: string })
       ))}
     </>
   );
-};
-
-// ─── Main Component ─────────────────────────────────────────────────────────────
+};// ─── Main Component ─────────────────────────────────────────────────────────────
 export const ActivityGenerator = () => {
   const [tab, setTab]                 = useState<'build' | 'settings'>('build');
   const [mode, setMode]               = useState<Mode>('lesson');
@@ -156,11 +289,12 @@ export const ActivityGenerator = () => {
   const [passage, setPassage]         = useState('');
   const [passageApproved, setApproved]= useState(false);
 
-  // quick mode specific focus & themes
+  // quick mode & custom crossword
   const [quickType, setQuickType]     = useState<QuickType>('vocab');
   const [quickTheme, setQuickTheme]   = useState('');
   const [grammarPoint, setGrammarPoint] = useState('');
-  const [teacherFocus, setTeacherFocus] = useState(''); // NEW override box
+  const [teacherFocus, setTeacherFocus] = useState('');
+  const [customCrosswordInput, setCustomCrosswordInput] = useState('');
 
   // worksheet fields
   const [title, setTitle]             = useState('');
@@ -195,7 +329,6 @@ export const ActivityGenerator = () => {
     setRestore(null);
   };
 
-  // ── section helpers ───────────────────────────────────────────────────────────
   const getSection = <K extends SectionKind>(k: K) => sections.find(s => s.kind === k) as Extract<Section, { kind: K }> | undefined;
   const upsert = (sec: Section) => setSections(prev => {
     const rest = prev.filter(s => s.kind !== sec.kind);
@@ -206,7 +339,6 @@ export const ActivityGenerator = () => {
 
   const hasContent = !!passage || sections.length > 0;
 
-  // ── passage ─────────────────────────────────────────────────────────────────
   const genPassage = async () => {
     if (!topic.trim()) return alert('Please enter a topic for the passage.');
     setBusy('passage');
@@ -222,7 +354,6 @@ export const ActivityGenerator = () => {
   const approvePassage = () => { if (!passage.trim()) return; setApproved(true); };
   const editPassage    = () => setApproved(false);
 
-  // ── section generators (lesson) ───────────────────────────────────────────────
   const guardLesson = () => { if (mode === 'lesson' && !passageApproved) { alert('Approve a passage first, then build the activities on it.'); return false; } return true; };
 
   const buildVocab = (vp: VocabularyPart, pb = false): VocabSection => ({
@@ -262,7 +393,7 @@ export const ActivityGenerator = () => {
   };
   const genGrammar = async () => {
     if (!guardLesson()) return;
-    if (!grammarPoint.trim()) return alert('Enter a grammar point for Part 4 (e.g. "present perfect").');
+    if (!grammarPoint.trim()) return alert('Enter a grammar point for Part 4.');
     setBusy('grammar');
     const data = await generateGrammarNoticing(grammarPoint, level, passage);
     if (data) upsert({ id: getSection('grammar')?.id ?? uid(), kind: 'grammar', pageBreakBefore: getSection('grammar')?.pageBreakBefore ?? false, data });
@@ -270,7 +401,53 @@ export const ActivityGenerator = () => {
     setBusy(null);
   };
 
-  // ── quick mode generators ───────────────────────────────────────────────────
+  const genCrossword = () => {
+    const vocab = getSection('vocab');
+    if (!vocab) return alert('Please generate Part 2 · Vocabulary first so the crossword has words to use!');
+    
+    setBusy('crossword');
+    setTimeout(() => {
+      const items = [
+        ...vocab.vp.hunt.map(h => ({ word: h.word, clue: h.definition })),
+        ...vocab.vp.matching.map(m => ({ word: m.word, clue: m.definition }))
+      ];
+      const layout = generateCrosswordLayout(items);
+      if (layout) {
+        upsert({ id: getSection('crossword')?.id ?? uid(), kind: 'crossword', pageBreakBefore: false, layout });
+      } else {
+        alert('Could not generate a crossword layout with these specific words. This happens rarely if letters do not intersect well.');
+      }
+      setBusy(null);
+    }, 50);
+  };
+
+  const genCustomCrossword = () => {
+    if (!customCrosswordInput.trim()) return alert('Please paste some words and clues.');
+    
+    const lines = customCrosswordInput.split('\n');
+    const items: {word: string, clue: string}[] = [];
+    
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const match = line.match(/^([^:-]+)[:\-](.+)$/);
+      if (match) items.push({ word: match[1].trim(), clue: match[2].trim() });
+    }
+    
+    if (items.length < 2) return alert('Please provide at least 2 valid pairs formatted as "Word : Clue".');
+
+    setBusy('crossword');
+    setTimeout(() => {
+      const layout = generateCrosswordLayout(items);
+      if (layout) {
+        setSections([{ id: uid(), kind: 'crossword', pageBreakBefore: false, layout }]);
+        if (!title.trim()) setTitle(quickTheme.trim() || 'Custom Crossword Puzzle');
+      } else {
+        alert('Could not generate a crossword layout with these words. Try adding more options to increase intersections.');
+      }
+      setBusy(null);
+    }, 50);
+  };
+
   const genQuickVocab = async () => {
     if (!quickTheme.trim()) return alert('Enter a vocabulary theme or structure.');
     setBusy('quickVocab');
@@ -289,25 +466,21 @@ export const ActivityGenerator = () => {
     setBusy(null);
   };
 
-  // ── reshuffle (client-side, instant - only for full lesson vocab) ─────────
   const reshuffleMatching = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, wordOrder: shuffle(s.vp.matching.map((_, i) => i)), defOrder: shuffle(s.vp.matching.map((_, i) => i)) } : s));
   const reshuffleBank     = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, bankOrder: shuffle([...s.vp.gaps.map((_, i) => i), ...s.vp.distractors.map((_, i) => s.vp.gaps.length + i)]) } : s));
-
   const clearAll = () => { if (window.confirm('Clear the entire worksheet?')) { setPassage(''); setApproved(false); setSections([]); setTitle(''); localStorage.removeItem('ll_ws_v2'); } };
 
-  // ── export ────────────────────────────────────────────────────────────────────
   const cleanHTML = () => { const c = printRef.current?.cloneNode(true) as HTMLElement; if (!c) return ''; c.querySelectorAll('.no-print').forEach(e => e.remove()); return c.innerHTML; };
   const doPrint = () => { const w = window.open('', '', 'width=960,height=1080'); if (!w) return; w.document.write(`<html><head><title>${title || 'Worksheet'}</title><style>${PCSS}</style></head><body>${cleanHTML()}</body></html>`); w.document.close(); setTimeout(() => { w.print(); w.close(); }, 600); };
   const doWord = () => { const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'><style>${PCSS} body{margin:2cm 2.5cm}</style></head><body>${cleanHTML()}</body></html>`; const b = new Blob(['\ufeff', html], { type: 'application/msword' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `${(title || 'worksheet').replace(/\s+/g, '-')}.doc`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u); };
 
-  // ── small UI atom: per-section toolbar (screen only) ──────────────────────────
   const Tools = ({ kind, id, onRegen, extra }: { kind: SectionKind; id: string; onRegen: () => void; extra?: React.ReactNode }) => {
     const sec = sections.find(s => s.id === id);
-    const isBusy = busy === kind;
+    const isBusy = busy === kind || (busy === 'crossword' && kind === 'crossword');
     const a = ACCENT[kind];
     return (
       <div className="no-print" style={{ display:'flex', gap:'4px', alignItems:'center', marginBottom:'8px', flexWrap:'wrap' }}>
-        <span style={{ fontSize:'10px', fontWeight:800, textTransform:'uppercase', padding:'2px 7px', borderRadius:'5px', background:a.bg, color:a.text }}>{kind === 'tf' ? 'True / False' : kind === 'comprehension' ? 'Comprehension' : kind === 'vocab' || kind === 'quickVocab' ? 'Vocabulary' : kind === 'discussion' ? 'Discussion' : 'Grammar'}</span>
+        <span style={{ fontSize:'10px', fontWeight:800, textTransform:'uppercase', padding:'2px 7px', borderRadius:'5px', background:a.bg, color:a.text }}>{kind === 'tf' ? 'True / False' : kind === 'comprehension' ? 'Comprehension' : kind === 'vocab' || kind === 'quickVocab' ? 'Vocabulary' : kind === 'discussion' ? 'Discussion' : kind === 'crossword' ? 'Crossword' : 'Grammar'}</span>
         <div style={{ flex:1 }} />
         {extra}
         <button onClick={onRegen} disabled={!!busy} title="Regenerate this section" style={{ ...btn, padding:'4px 8px', color: isBusy ? a.text : '#475569' }}>{isBusy ? <IconSpinner /> : <IconRefresh />}&nbsp;Regenerate</button>
@@ -315,10 +488,7 @@ export const ActivityGenerator = () => {
         <button onClick={() => removeSection(kind)} title="Remove section" style={{ ...btn, padding:'4px 6px', background:'#FEF2F2', color:'#EF4444', border:'none' }}><IconTrash /></button>
       </div>
     );
-  };
-
-  // ── renderers ────────────────────────────────────────────────────────────────
-  const ed = { contentEditable: true, suppressContentEditableWarning: true, style: { outline:'none' as const } };
+  };const ed = { contentEditable: true, suppressContentEditableWarning: true, style: { outline:'none' as const } };
 
   const renderTF = (s: TFSection) => (
     <>{s.items.map((it, i) => (
@@ -419,7 +589,53 @@ export const ActivityGenerator = () => {
     );
   };
 
-  // ── quick-mode renderers ─────────────────────────────────────────────────────
+  const renderCrossword = (s: CrossSection) => {
+    const layout = s.layout;
+    let maxR = 0, maxC = 0;
+    layout.forEach(p => {
+      maxR = Math.max(maxR, p.row + (p.direction === 'down' ? p.word.length : 1));
+      maxC = Math.max(maxC, p.col + (p.direction === 'across' ? p.word.length : 1));
+    });
+
+    const grid = Array(maxR).fill(null).map(() => Array(maxC).fill(null));
+    layout.forEach(p => {
+      for(let i=0; i<p.word.length; i++){
+        const r = p.row + (p.direction === 'down' ? i : 0);
+        const c = p.col + (p.direction === 'across' ? i : 0);
+        if (!grid[r][c]) grid[r][c] = { char: p.word[i], num: null };
+      }
+      grid[p.row][p.col].num = p.num;
+    });
+
+    const across = layout.filter(p => p.direction === 'across').sort((a,b) => a.num - b.num);
+    const down = layout.filter(p => p.direction === 'down').sort((a,b) => a.num - b.num);
+
+    const cellSize = maxC > 22 ? '20px' : maxC > 18 ? '24px' : '30px';
+    const fontSize = maxC > 18 ? '8px' : '10px';
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${maxC}, ${cellSize})`, gap: '0', margin: '0 auto' }}>
+          {grid.flatMap((row, ri) => row.map((cell, ci) => (
+            <div key={`${ri}-${ci}`} style={{ width: cellSize, height: cellSize, background: cell ? '#fff' : 'transparent', position: 'relative', border: cell ? '1.5px solid #000' : 'none' }}>
+              {cell?.num && <span style={{ position: 'absolute', top: '2px', left: '3px', fontSize: fontSize, fontWeight: 'bold', lineHeight: 1 }}>{cell.num}</span>}
+            </div>
+          )))}
+        </div>
+        <div style={{ display: 'flex', gap: '40px', width: '100%', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '4px' }}>Across</div>
+            {across.map(p => <div key={p.num} style={{ fontSize: '13px', marginBottom: '6px', lineHeight: 1.4 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '4px' }}>Down</div>
+            {down.map(p => <div key={p.num} style={{ fontSize: '13px', marginBottom: '6px', lineHeight: 1.4 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderGlossary = (s: QVocabSection) => (
     <table className="match-table" style={{ width:'100%', borderCollapse:'collapse', marginBottom: '18px' }}>
       <tbody>{s.qv.glossary.map((g, i) => (
@@ -434,7 +650,6 @@ export const ActivityGenerator = () => {
     </table>
   );
 
-  // Universal renderer for dynamic/flexible exercise arrays (Grammar & Quick Vocab)
   const renderQuickExercises = (exercises: GrammarExercise[], startCharIndex = 65) => (
     <>
       {exercises.map((ex, xi) => (
@@ -463,19 +678,17 @@ export const ActivityGenerator = () => {
           <div {...ed} style={{ marginBottom:'6px' }}><strong>Remember:</strong>&nbsp;{g.rule}</div>
           {g.examples.map((ex, i) => <div key={i} {...ed} style={{ fontStyle:'italic', color:'#444' }}>•&nbsp;{ex}</div>)}
         </div>
-        {renderQuickExercises(g.exercises, 65)} {/* A, B, C... */}
+        {renderQuickExercises(g.exercises, 65)} 
       </>
     );
-  };
-
-  // ── answer key ──────────────────────────────────────────────────────────────
-  const akItem: React.CSSProperties = { fontSize:'13px', padding:'3px 4px', borderBottom:'1px solid #ddd' };
+  };const akItem: React.CSSProperties = { fontSize:'13px', padding:'3px 4px', borderBottom:'1px solid #ddd' };
   const renderAnswerKey = () => {
     const blocks: React.ReactNode[] = [];
     const tf = getSection('tf');
     const comp = getSection('comprehension');
     const vocab = getSection('vocab');
     const gram = getSection('grammar');
+    const cw = getSection('crossword');
 
     if (tf) blocks.push(<div key="ak-tf" style={{ marginBottom:'18px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>True or False</div><div className="ak-grid">{tf.items.map((it, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{it.answer === 'True' ? 'T' : 'F'}</div>)}</div></div>);
     if (comp) blocks.push(<div key="ak-comp" style={{ marginBottom:'18px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Comprehension (model answers)</div>{comp.items.map((it, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{it.answer}</div>)}</div>);
@@ -485,6 +698,17 @@ export const ActivityGenerator = () => {
       blocks.push(<div key="ak-gaps" style={{ marginBottom:'14px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Fill in the Gaps</div><div className="ak-grid">{vocab.vp.gaps.map((g, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{g.answer}</div>)}</div></div>);
     }
     if (gram) blocks.push(<div key="ak-gram" style={{ marginBottom:'14px' }}><div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Grammar — Practice</div>{gram.data.practice.map((p, i) => <div key={i} style={akItem}><strong>{i + 1}.</strong>&nbsp;{p.answer}</div>)}</div>);
+    
+    if (cw) {
+      blocks.push(
+        <div key="ak-cw" style={{ marginBottom:'14px' }}>
+          <div style={{ fontSize:'12px', fontWeight:700, textTransform:'uppercase', color:'#555', marginBottom:'6px' }}>Crossword Answers</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+            {cw.layout.sort((a,b)=>a.num-b.num).map(p => <div key={`${p.direction}-${p.num}`} style={akItem}><strong>{p.num} {p.direction === 'across' ? '(A)' : '(D)'}.</strong>&nbsp;{p.word}</div>)}
+          </div>
+        </div>
+      );
+    }
 
     const qv = getSection('quickVocab');
     const qg = getSection('quickGrammar');
@@ -515,8 +739,7 @@ export const ActivityGenerator = () => {
     );
   };
 
-  // ── part / sub-section rendering ──────────────────────────────────────────────
-  const tf = getSection('tf'), comp = getSection('comprehension'), vocab = getSection('vocab'), disc = getSection('discussion'), gram = getSection('grammar');
+  const tf = getSection('tf'), comp = getSection('comprehension'), vocab = getSection('vocab'), disc = getSection('discussion'), gram = getSection('grammar'), cw = getSection('crossword');
   const qVocab = getSection('quickVocab'), qGram = getSection('quickGrammar');
   const huntInstr = passage ? INSTR.huntText : INSTR.huntNoTxt;
 
@@ -526,6 +749,7 @@ export const ActivityGenerator = () => {
   const p2 = part(!!vocab);
   const p3 = part(!!disc);
   const p4 = part(!!gram);
+  const p5 = part(!!cw);
   const showParts = mode === 'lesson';
 
   const partHead = (n: number, label: string) => <div className="part-head" {...ed} style={{ fontSize:'15px', fontWeight:'bold', margin:'26px 0 6px', outline:'none' }}>{showParts ? `Part ${n}: ` : ''}{label}</div>;
@@ -533,7 +757,6 @@ export const ActivityGenerator = () => {
   const instr    = (t: string) => <div className="instr" {...ed} style={{ fontSize:'13px', fontStyle:'italic', color:'#333', margin:'0 0 12px', outline:'none' }}>{t}</div>;
   const pbCls    = (s?: Section) => s?.pageBreakBefore ? 'blk pbefore' : 'blk';
 
-  // ── sidebar: section button (lesson) ──────────────────────────────────────────
   const SectionBtn = ({ kind, label, onClick }: { kind: SectionKind; label: string; onClick: () => void }) => {
     const exists = !!getSection(kind);
     const isBusy = busy === kind;
@@ -547,15 +770,10 @@ export const ActivityGenerator = () => {
     );
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display:'flex', gap:'28px', alignItems:'flex-start' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-
-      {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
       <div style={{ flex:'0 0 320px', background:'#fff', borderRadius:'26px', padding:'22px', border:'1px solid #E2E8F0', boxShadow:'0 8px 24px rgba(0,0,0,0.04)', position:'sticky', top:'20px', maxHeight:'calc(100vh - 40px)', overflowY:'auto' }}>
-
-        {/* tabs */}
         <div style={{ display:'flex', gap:'4px', background:'#F1F5F9', padding:'4px', borderRadius:'12px', marginBottom:'18px' }}>
           {(['build', 'settings'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'7px', border:'none', borderRadius:'8px', fontWeight:700, fontSize:'0.74rem', cursor:'pointer', background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#0F172A' : '#64748B', boxShadow: tab === t ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
@@ -566,7 +784,6 @@ export const ActivityGenerator = () => {
 
         {tab === 'build' && (
           <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
-            {/* mode */}
             <div style={{ display:'flex', gap:'4px', background:'#F1F5F9', padding:'4px', borderRadius:'10px' }}>
               {(['lesson', 'quick'] as const).map(m => (
                 <button key={m} onClick={() => setMode(m)} style={{ flex:1, padding:'7px', border:'none', borderRadius:'7px', fontSize:'0.74rem', fontWeight:700, cursor:'pointer', background: mode === m ? '#fff' : 'transparent', color: mode === m ? '#4F46E5' : '#64748B', boxShadow: mode === m ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
@@ -577,7 +794,6 @@ export const ActivityGenerator = () => {
 
             <div><label style={lbl}>CEFR Level</label><select value={level} onChange={e => setLevel(e.target.value)} style={sel}>{['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(l => <option key={l}>{l}</option>)}</select></div>
 
-            {/* ─── LESSON MODE ─────────────────────────────────────────────── */}
             {mode === 'lesson' && (
               <>
                 <div style={{ borderTop:'1px solid #E2E8F0', paddingTop:'14px' }}>
@@ -606,7 +822,6 @@ export const ActivityGenerator = () => {
                     </>
                   )}
 
-                  {/* approval gate */}
                   {passage && (
                     passageApproved ? (
                       <div style={{ marginTop:'10px', display:'flex', alignItems:'center', justifyContent:'space-between', background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:'10px', padding:'8px 11px' }}>
@@ -619,13 +834,16 @@ export const ActivityGenerator = () => {
                   )}
                 </div>
 
-                {/* Step 2 — activities */}
                 <div style={{ borderTop:'1px solid #E2E8F0', paddingTop:'14px' }}>
                   <label style={{ ...lbl, display:'flex', alignItems:'center', gap:'6px' }}>Step 2 — Activities {!passageApproved && <span style={{ color:'#94A3B8', display:'inline-flex', alignItems:'center', gap:'3px', textTransform:'none', letterSpacing:0, fontWeight:600 }}><IconLock /> approve passage first</span>}</label>
                   <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
                     <SectionBtn kind="tf" label="Part 1A · True / False" onClick={genTF} />
                     <SectionBtn kind="comprehension" label="Part 1B · Comprehension" onClick={genComp} />
                     <SectionBtn kind="vocab" label="Part 2 · Vocabulary" onClick={genVocab} />
+                    {vocab && <button onClick={genCrossword} disabled={!!busy} style={{ width:'100%', padding:'10px 12px', borderRadius:'10px', border:`1.5px solid ${cw ? '#6D28D9' : '#E2E8F0'}`, background: cw ? '#F3E8FF' : '#fff', color: cw ? '#6D28D9' : '#475569', fontWeight:700, fontSize:'0.82rem', cursor: busy ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px', marginLeft: '12px', width: 'calc(100% - 12px)' }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:'6px' }}><IconPuzzle /> Crossword Puzzle</span>
+                      <span style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'0.7rem', fontWeight:600 }}>{busy === 'crossword' ? <IconSpinner /> : cw ? <><IconRefresh /> Regenerate</> : <>+ Generate</>}</span>
+                    </button>}
                     <SectionBtn kind="discussion" label="Part 3 · Discussion" onClick={genDisc} />
                     <div style={{ borderTop:'1px dashed #E2E8F0', paddingTop:'8px' }}>
                       <label style={lbl}>Part 4 · Grammar Noticing (optional)</label>
@@ -637,39 +855,54 @@ export const ActivityGenerator = () => {
               </>
             )}
 
-            {/* ─── QUICK MODE ──────────────────────────────────────────────── */}
             {mode === 'quick' && (
               <div style={{ borderTop:'1px solid #E2E8F0', paddingTop:'14px' }}>
                 <div style={{ display:'flex', gap:'4px', background:'#F1F5F9', padding:'4px', borderRadius:'10px', marginBottom:'12px' }}>
-                  {(['vocab', 'grammar'] as const).map(qt => (
+                  {(['vocab', 'grammar', 'crossword'] as const).map(qt => (
                     <button key={qt} onClick={() => setQuickType(qt)} style={{ flex:1, padding:'6px', border:'none', borderRadius:'7px', fontSize:'0.72rem', fontWeight:600, cursor:'pointer', background: quickType === qt ? '#fff' : 'transparent', color: quickType === qt ? '#4F46E5' : '#64748B', boxShadow: quickType === qt ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-                      {qt === 'vocab' ? 'Vocabulary' : 'Grammar'}
+                      {qt === 'vocab' ? 'Vocabulary' : qt === 'grammar' ? 'Grammar' : 'Crossword'}
                     </button>
                   ))}
                 </div>
-                {quickType === 'vocab' ? (
+                
+                {quickType === 'vocab' && (
                   <>
                     <label style={lbl}>Theme or Structure</label>
                     <input value={quickTheme} onChange={e => setQuickTheme(e.target.value)} placeholder="e.g., phrasal verbs, travel" style={{ ...inp, marginBottom:'10px' }} />
+                    <label style={lbl}>Specific Focus / Instructions (Optional)</label>
+                    <input value={teacherFocus} onChange={e => setTeacherFocus(e.target.value)} placeholder="e.g., Focus on missing particles..." style={{ ...inp, marginBottom:'10px' }} />
+                    <button onClick={genQuickVocab} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FDBA74' : '#EA580C', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                      {busy === 'quickVocab' ? <><IconSpinner /> Generating…</> : `+ Generate Vocabulary`}
+                    </button>
                   </>
-                ) : (
+                )}
+
+                {quickType === 'grammar' && (
                   <>
                     <label style={lbl}>Grammar point</label>
                     <input value={grammarPoint} onChange={e => setGrammarPoint(e.target.value)} placeholder="e.g., second conditional" style={{ ...inp, marginBottom:'10px' }} />
+                    <label style={lbl}>Specific Focus / Instructions (Optional)</label>
+                    <input value={teacherFocus} onChange={e => setTeacherFocus(e.target.value)} placeholder="e.g., use time markers..." style={{ ...inp, marginBottom:'10px' }} />
+                    <button onClick={genQuickGrammar} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FCA5A5' : '#DC2626', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                      {busy === 'quickGrammar' ? <><IconSpinner /> Generating…</> : `+ Generate Grammar`}
+                    </button>
                   </>
                 )}
-                
-                <label style={lbl}>Specific Focus / Instructions (Optional)</label>
-                <input 
-                  value={teacherFocus} 
-                  onChange={e => setTeacherFocus(e.target.value)} 
-                  placeholder="e.g., Focus on missing particles, use time markers..." 
-                  style={{ ...inp, marginBottom:'10px' }} 
-                />
 
-                <button onClick={quickType === 'vocab' ? genQuickVocab : genQuickGrammar} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FDBA74' : '#EA580C', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
-                  {busy ? <><IconSpinner /> Generating…</> : `+ Generate ${quickType === 'vocab' ? 'Vocabulary' : 'Grammar'}`}
-                </button>
+                {quickType === 'crossword' && (
+                  <>
+                    <label style={lbl}>Crossword Title (Optional)</label>
+                    <input value={quickTheme} onChange={e => setQuickTheme(e.target.value)} placeholder="e.g., Animals Vocabulary" style={{ ...inp, marginBottom:'10px' }} />
+                    
+                    <label style={lbl}>Words & Clues</label>
+                    <div style={{ fontSize:'0.7rem', color:'#64748B', marginBottom:'4px' }}>Format each line as: <strong>Word : Clue</strong></div>
+                    <textarea value={customCrosswordInput} onChange={e => setCustomCrosswordInput(e.target.value)} placeholder="apple : a red fruit&#10;dog : a common pet" rows={6} style={{ ...inp, resize:'vertical', marginBottom:'10px' }} />
+                    
+                    <button onClick={genCustomCrossword} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#D8B4FE' : '#6D28D9', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+                      {busy === 'crossword' ? <><IconSpinner /> Generating…</> : `+ Generate Crossword`}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -688,12 +921,11 @@ export const ActivityGenerator = () => {
                 </label>
               ))}
             </div>
-            <div style={{ fontSize:'0.74rem', color:'#94A3B8', lineHeight:1.5 }}>Tip: you can click any text in the preview (passage, questions, definitions) to edit it before exporting.</div>
+            <div style={{ fontSize:'0.74rem', color:'#94A3B8', lineHeight:1.5 }}>Tip: you can click any text in the preview to edit it before exporting.</div>
           </div>
         )}
       </div>
 
-      {/* ── PREVIEW ─────────────────────────────────────────────────────────── */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', gap:'12px', minWidth:0 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div style={{ fontSize:'0.78rem', color:'#94A3B8', fontWeight:600 }}>{sections.length > 0 && `${sections.length} section${sections.length !== 1 ? 's' : ''}`}</div>
@@ -713,7 +945,6 @@ export const ActivityGenerator = () => {
           </div>
         )}
 
-        {/* paper */}
         <div style={{ background:'#fff', padding:'44px 52px', borderRadius:'18px', border:'1px solid #E2E8F0', boxShadow:'0 16px 40px rgba(0,0,0,0.04)', minHeight:'842px', maxWidth:'860px', width:'100%', margin:'0 auto', color:'#0F172A', position:'relative' }}>
           {!hasContent && (
             <div style={{ display:'flex', height:'560px', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'10px', color:'#CBD5E1', textAlign:'center' }}>
@@ -724,7 +955,6 @@ export const ActivityGenerator = () => {
 
           {hasContent && (
             <div ref={printRef} style={{ fontFamily:'"Times New Roman", serif' }}>
-              {/* header */}
               {(showName || showDate || showClass || showScore) && (
                 <>
                   <div className="ws-fields" style={{ display:'flex', flexWrap:'wrap', gap:'28px', fontSize:'13.5px', marginBottom:'8px' }}>
@@ -737,30 +967,20 @@ export const ActivityGenerator = () => {
                 </>
               )}
 
-              {/* title */}
               {title && <h1 className="ws-title" {...ed} style={{ textAlign:'center', fontSize:'21px', fontWeight:'bold', margin:'0 0 22px', outline:'none' }}>{title}</h1>}
 
-              {/* passage */}
               {passage && (
                 <p className="passage-text" {...ed} style={{ fontSize:'14px', lineHeight:1.85, textAlign:'justify', margin:'0 0 26px', outline:'none', whiteSpace:'pre-wrap' }}>{passage}</p>
               )}
 
-              {/* PART 1 */}
               {(tf || comp) && (
                 <div className={pbCls(tf || comp)}>
                   {partHead(p1, 'Comprehension Activities')}
-                  {tf && (<>
-                    <Tools kind="tf" id={tf.id} onRegen={genTF} />
-                    {subHead('A. True or False?')}{instr(INSTR.tf)}{renderTF(tf)}
-                  </>)}
-                  {comp && (<>
-                    <Tools kind="comprehension" id={comp.id} onRegen={genComp} />
-                    {subHead('B. Comprehension Questions')}{instr(INSTR.comp)}{renderComp(comp)}
-                  </>)}
+                  {tf && (<><Tools kind="tf" id={tf.id} onRegen={genTF} />{subHead('A. True or False?')}{instr(INSTR.tf)}{renderTF(tf)}</>)}
+                  {comp && (<><Tools kind="comprehension" id={comp.id} onRegen={genComp} />{subHead('B. Comprehension Questions')}{instr(INSTR.comp)}{renderComp(comp)}</>)}
                 </div>
               )}
 
-              {/* PART 2 */}
               {vocab && (
                 <div className={pbCls(vocab)}>
                   {partHead(p2, 'Vocabulary Activities')}
@@ -776,7 +996,14 @@ export const ActivityGenerator = () => {
                 </div>
               )}
 
-              {/* PART 3 */}
+              {cw && (
+                <div className={pbCls(cw)}>
+                  {partHead(p5, 'Crossword Puzzle')}
+                  <Tools kind="crossword" id={cw.id} onRegen={mode === 'quick' ? genCustomCrossword : genCrossword} />
+                  {instr(INSTR.crossword)}{renderCrossword(cw)}
+                </div>
+              )}
+
               {disc && (
                 <div className={pbCls(disc)}>
                   {partHead(p3, 'Critical Thinking & Discussion')}
@@ -785,7 +1012,6 @@ export const ActivityGenerator = () => {
                 </div>
               )}
 
-              {/* PART 4 */}
               {gram && (
                 <div className={pbCls(gram)}>
                   {partHead(p4, 'Grammar Noticing')}
@@ -794,17 +1020,15 @@ export const ActivityGenerator = () => {
                 </div>
               )}
 
-              {/* QUICK VOCABULARY (standalone, no passage) */}
               {qVocab && (
                 <div className={pbCls(qVocab)}>
                   {partHead(0, 'Vocabulary')}
                   <Tools kind="quickVocab" id={qVocab.id} onRegen={genQuickVocab} />
                   {subHead('A. Word Bank')}{instr(INSTR.glossary)}{renderGlossary(qVocab)}
-                  {renderQuickExercises(qVocab.qv.exercises, 66)} {/* Exercises start at 'B' (66) */}
+                  {renderQuickExercises(qVocab.qv.exercises, 66)} 
                 </div>
               )}
 
-              {/* QUICK GRAMMAR (standalone, no passage) */}
               {qGram && (
                 <div className={pbCls(qGram)}>
                   {partHead(0, 'Grammar Practice')}
