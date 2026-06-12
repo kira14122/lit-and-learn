@@ -1384,6 +1384,13 @@ Output ONLY valid JSON, no markdown, no backticks:
       if (tokenOverlap(incorrectSentence, correctSentence) < 0.75) continue;
       if (tokenOverlap(correctSentence, incorrectSentence) < 0.75) continue;
 
+      // Length-delta guard: a real grammar correction changes the sentence by
+      // at most ONE token ("would arrived" -> "would have arrived"). A bigger
+      // shift means content was added or dropped (e.g. a key correction
+      // containing "in Paris" that the student's sentence never had).
+      const tokCount = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean).length;
+      if (Math.abs(tokCount(correctSentence) - tokCount(incorrectSentence)) >= 2) continue;
+
       // Deterministic lint for conditionals: the "correct" sentence must never
       // have "would" inside the if-clause (the classic error models produce).
       const pointLC = point.toLowerCase();
