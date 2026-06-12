@@ -8,8 +8,6 @@ import {
   generateGrammarNoticing,
   generateQuickVocab,
   generateQuickGrammar,
-  generateRawVocab,
-  generateRawGrammar,
 } from '../aiGenerator';
 import type {
   TFItem,
@@ -19,8 +17,6 @@ import type {
   QuickVocabActivity,
   QuickGrammarActivity,
   GrammarExercise,
-  RawVocabData,
-  RawGrammarData,
 } from '../aiGenerator';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -116,7 +112,7 @@ function generateCrosswordLayout(items: {word: string, clue: string}[]): PlacedW
             const r = p.row + (p.direction === 'down' ? j : 0);
             const c = p.col + (p.direction === 'across' ? j : 0);
             
-            const newDir: Direction = p.direction === 'across' ? 'down' : 'across';
+            const newDir = p.direction === 'across' ? 'down' : 'across';
             const startR = r - (newDir === 'down' ? k : 0);
             const startC = c - (newDir === 'across' ? k : 0);
 
@@ -201,7 +197,7 @@ const INSTR = {
   comp:      'Answer the following questions in full sentences.',
   huntText:  'Find the exact word in the text that matches each of the definitions below.',
   huntNoTxt: 'Read each definition and write the word it describes.',
-  matching:  'Match each word from the text with its correct definition. Write the letter next to the number.',
+  matching:  'Match the words from the text (1-5) with their correct definitions (a-e).',
   gaps:      'Complete the sentences using the words from the box.',
   discussion:'Discuss these questions with a partner or in small groups.',
   glossary:  'Study these words, their meanings, and the example sentences.',
@@ -266,135 +262,6 @@ const PCSS = `
 const shuffle = <T,>(a: T[]): T[] => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];} return r; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-// ─── Quick Activity v2: deterministic exercise assembly ────────────────────────
-// The raw engines return only validated facts (target, distractors, ONE context
-// sentence with a [TARGET] placeholder). These assemblers turn them into the
-// existing QuickVocabActivity / QuickGrammarActivity shapes IN CODE, so the
-// exercise formatting can never be malformed by the model.
-
-type VocabExType   = 'gap-fill' | 'multiple-choice' | 'own-sentence';
-type GrammarExType = 'gap-fill' | 'multiple-choice' | 'error-correction';
-
-const VOCAB_EX_OPTIONS: { id: VocabExType; label: string }[] = [
-  { id: 'gap-fill',        label: 'Gap-Fill (from Word Bank)' },
-  { id: 'multiple-choice', label: 'Multiple Choice' },
-  { id: 'own-sentence',    label: 'Write Your Own Sentence' },
-];
-const GRAMMAR_EX_OPTIONS: { id: GrammarExType; label: string }[] = [
-  { id: 'gap-fill',         label: 'Contextual Gap-Fill' },
-  { id: 'multiple-choice',  label: 'Multiple Choice' },
-  { id: 'error-correction', label: 'Error Correction' },
-];
-
-/** Split `total` items across `parts` blocks as evenly as possible (no waste). */
-const distribute = (total: number, parts: number): number[] => {
-  if (parts <= 0) return [];
-  const base = Math.floor(total / parts);
-  const rem  = total % parts;
-  return Array.from({ length: parts }, (_, i) => base + (i < rem ? 1 : 0));
-};
-
-function assembleQuickVocab(raw: RawVocabData, types: VocabExType[]): QuickVocabActivity {
-  const glossary = raw.items.map(it => ({
-    word: it.target,
-    pos: it.pos,
-    definition: it.definition,
-    example: it.example, // dedicated model sentence — never the exercise sentence (may be '')
-  }));
-
-  const sizes = distribute(raw.items.length, types.length);
-  const exercises: GrammarExercise[] = [];
-  let cursor = 0;
-
-  types.forEach((t, i) => {
-    const slice = raw.items.slice(cursor, cursor + sizes[i]);
-    cursor += sizes[i];
-    if (slice.length === 0) return;
-
-    if (t === 'gap-fill') {
-      exercises.push({
-        title: 'Fill in the Gaps',
-        instruction: 'Complete each sentence with the correct word or phrase from the Word Bank above.',
-        items: slice.map(it => ({ q: it.contextSentence.replace('[TARGET]', '___'), answer: it.target })),
-      });
-    } else if (t === 'multiple-choice') {
-      exercises.push({
-        title: 'Choose the Correct Option',
-        instruction: 'Circle the option that best completes each sentence.',
-        items: slice.map(it => ({
-          q: `${it.contextSentence.replace('[TARGET]', '___')} (${shuffle([it.target, ...it.distractors]).join(' / ')})`,
-          answer: it.target,
-        })),
-      });
-    } else {
-      exercises.push({
-        title: 'Write Your Own Sentence',
-        instruction: 'Write an original sentence using each word or phrase. Make the meaning clear.',
-        items: slice.map(it => ({ q: `${it.target} — ${it.definition}`, answer: 'Answers will vary.' })),
-      });
-    }
-  });
-
-  return { theme: raw.theme, glossary, exercises };
-}
-
-function assembleQuickGrammar(raw: RawGrammarData, types: GrammarExType[]): QuickGrammarActivity {
-  // Reserve items as model examples only when we can afford it: 2 when plentiful,
-  // 1 when moderate, 0 when scarce — the drills always come first. Reserved
-  // examples never appear in exercises, so they can't give answers away.
-  const reserve = raw.items.length >= 10 ? 2 : raw.items.length >= 8 ? 1 : 0;
-  const exampleItems = raw.items.slice(0, reserve);
-  const pool = raw.items.slice(reserve);
-  const examples = exampleItems.map(it => it.contextSentence.replace('[TARGET]', it.targetPhrase));
-
-  const sizes = distribute(pool.length, types.length);
-  const exercises: GrammarExercise[] = [];
-  let cursor = 0;
-
-  types.forEach((t, i) => {
-    const slice = pool.slice(cursor, cursor + sizes[i]);
-    cursor += sizes[i];
-    if (slice.length === 0) return;
-
-    if (t === 'gap-fill') {
-      exercises.push({
-        title: 'Complete the Sentences',
-        instruction: `Complete each sentence using the correct form of ${raw.grammarPoint}.`,
-        items: slice.map(it => {
-          // Negative answers need a signal in the hint — "(not / be)" is the
-          // standard ESL convention; "(be)" alone makes "hadn't been" unguessable.
-          const isNegative = /n['’]t\b|\bnot\b/i.test(it.targetPhrase);
-          const hint = it.hint ? `(${isNegative ? 'not / ' : ''}${it.hint})` : '';
-          return {
-            q: it.contextSentence.replace('[TARGET]', hint ? `___ ${hint}` : '___'),
-            answer: it.targetPhrase,
-          };
-        }),
-      });
-    } else if (t === 'multiple-choice') {
-      exercises.push({
-        title: 'Choose the Correct Form',
-        instruction: 'Circle the option that best completes each sentence.',
-        items: slice.map(it => ({
-          q: `${it.contextSentence.replace('[TARGET]', '___')} (${shuffle([it.targetPhrase, ...it.distractors]).join(' / ')})`,
-          answer: it.targetPhrase,
-        })),
-      });
-    } else {
-      exercises.push({
-        title: 'Correct the Mistakes',
-        instruction: 'Each sentence contains one grammar mistake. Rewrite the sentence correctly on the line.',
-        items: slice.map(it => ({
-          q: it.incorrectSentence,
-          answer: it.contextSentence.replace('[TARGET]', it.targetPhrase),
-        })),
-      });
-    }
-  });
-
-  return { grammarPoint: raw.grammarPoint, rule: raw.ruleText, examples, exercises };
-}
-
 const WithBlanks = ({ text, cls = 'gap-blank' }: { text: string; cls?: string }) => {
   const parts = text.split(/_{2,}/g);
   if (parts.length === 1) return <>{text}</>;
@@ -428,8 +295,6 @@ export const ActivityGenerator = () => {
   const [grammarPoint, setGrammarPoint] = useState('');
   const [teacherFocus, setTeacherFocus] = useState('');
   const [customCrosswordInput, setCustomCrosswordInput] = useState('');
-  const [vocabExTypes, setVocabExTypes]     = useState<VocabExType[]>(['gap-fill', 'multiple-choice']);
-  const [grammarExTypes, setGrammarExTypes] = useState<GrammarExType[]>(['gap-fill', 'error-correction']);
 
   // worksheet fields
   const [title, setTitle]             = useState('');
@@ -585,34 +450,18 @@ export const ActivityGenerator = () => {
 
   const genQuickVocab = async () => {
     if (!quickTheme.trim()) return alert('Enter a vocabulary theme or structure.');
-    if (vocabExTypes.length === 0) return alert('Select at least one exercise type.');
     setBusy('quickVocab');
-    const numItems = Math.min(Math.max(8, vocabExTypes.length * 5), 18);
-    const raw = await generateRawVocab(quickTheme, level, teacherFocus, numItems);
-    let qv: QuickVocabActivity | null = raw ? assembleQuickVocab(raw, vocabExTypes) : null;
-    if (!qv) qv = await generateQuickVocab(quickTheme, level, teacherFocus); // legacy fallback
-    if (qv) {
-      setSections([{ id: uid(), kind: 'quickVocab', pageBreakBefore: false, qv }]);
-      // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
-      if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Vocabulary: ${quickTheme.trim()}`);
-    }
+    const qv = await generateQuickVocab(quickTheme, level, teacherFocus);
+    if (qv) { setSections([{ id: uid(), kind: 'quickVocab', pageBreakBefore: false, qv }]); if (!title.trim()) setTitle(`Vocabulary: ${quickTheme.trim()}`); }
     else alert('Vocabulary generation failed. Please try again.');
     setBusy(null);
   };
   
   const genQuickGrammar = async () => {
     if (!grammarPoint.trim()) return alert('Enter a grammar point.');
-    if (grammarExTypes.length === 0) return alert('Select at least one exercise type.');
     setBusy('quickGrammar');
-    const numItems = Math.min(Math.max(8, grammarExTypes.length * 5 + 2), 18);
-    const raw = await generateRawGrammar(grammarPoint, level, teacherFocus, numItems);
-    let data: QuickGrammarActivity | null = raw ? assembleQuickGrammar(raw, grammarExTypes) : null;
-    if (!data) data = await generateQuickGrammar(grammarPoint, level, teacherFocus); // legacy fallback
-    if (data) {
-      setSections([{ id: uid(), kind: 'quickGrammar', pageBreakBefore: false, data }]);
-      // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
-      if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Grammar: ${grammarPoint.trim()}`);
-    }
+    const data = await generateQuickGrammar(grammarPoint, level, teacherFocus);
+    if (data) { setSections([{ id: uid(), kind: 'quickGrammar', pageBreakBefore: false, data }]); if (!title.trim()) setTitle(`Grammar: ${grammarPoint.trim()}`); }
     else alert('Grammar generation failed. Please try again.');
     setBusy(null);
   };
@@ -896,12 +745,11 @@ export const ActivityGenerator = () => {
 
   let partNo = 0;
   const part = (cond: boolean) => (cond ? ++partNo : partNo);
-  // Numbers must follow RENDER order: TF/Comp → Vocab → Crossword → Discussion → Grammar
   const p1 = part(!!tf || !!comp);
   const p2 = part(!!vocab);
-  const p5 = part(!!cw);
   const p3 = part(!!disc);
   const p4 = part(!!gram);
+  const p5 = part(!!cw);
   const showParts = mode === 'lesson';
 
   const partHead = (n: number, label: string) => <div className="part-head" {...ed} style={{ fontSize:'15px', fontWeight:'bold', margin:'26px 0 6px', outline:'none' }}>{showParts ? `Part ${n}: ` : ''}{label}</div>;
@@ -992,7 +840,7 @@ export const ActivityGenerator = () => {
                     <SectionBtn kind="tf" label="Part 1A · True / False" onClick={genTF} />
                     <SectionBtn kind="comprehension" label="Part 1B · Comprehension" onClick={genComp} />
                     <SectionBtn kind="vocab" label="Part 2 · Vocabulary" onClick={genVocab} />
-                    {vocab && <button onClick={genCrossword} disabled={!!busy} style={{ padding:'10px 12px', borderRadius:'10px', border:`1.5px solid ${cw ? '#6D28D9' : '#E2E8F0'}`, background: cw ? '#F3E8FF' : '#fff', color: cw ? '#6D28D9' : '#475569', fontWeight:700, fontSize:'0.82rem', cursor: busy ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px', marginLeft: '12px', width: 'calc(100% - 12px)' }}>
+                    {vocab && <button onClick={genCrossword} disabled={!!busy} style={{ width:'100%', padding:'10px 12px', borderRadius:'10px', border:`1.5px solid ${cw ? '#6D28D9' : '#E2E8F0'}`, background: cw ? '#F3E8FF' : '#fff', color: cw ? '#6D28D9' : '#475569', fontWeight:700, fontSize:'0.82rem', cursor: busy ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px', marginLeft: '12px', width: 'calc(100% - 12px)' }}>
                       <span style={{ display:'flex', alignItems:'center', gap:'6px' }}><IconPuzzle /> Crossword Puzzle</span>
                       <span style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'0.7rem', fontWeight:600 }}>{busy === 'crossword' ? <IconSpinner /> : cw ? <><IconRefresh /> Regenerate</> : <>+ Generate</>}</span>
                     </button>}
@@ -1023,17 +871,6 @@ export const ActivityGenerator = () => {
                     <input value={quickTheme} onChange={e => setQuickTheme(e.target.value)} placeholder="e.g., phrasal verbs, travel" style={{ ...inp, marginBottom:'10px' }} />
                     <label style={lbl}>Specific Focus / Instructions (Optional)</label>
                     <input value={teacherFocus} onChange={e => setTeacherFocus(e.target.value)} placeholder="e.g., Focus on missing particles..." style={{ ...inp, marginBottom:'10px' }} />
-                    <label style={lbl}>Exercise Types</label>
-                    <div style={{ marginBottom:'10px' }}>
-                      {VOCAB_EX_OPTIONS.map(opt => (
-                        <label key={opt.id} style={{ display:'flex', alignItems:'center', gap:'9px', cursor:'pointer', fontSize:'0.8rem', color:'#475569', fontWeight:500, marginBottom:'6px' }}>
-                          <input type="checkbox" checked={vocabExTypes.includes(opt.id)}
-                            onChange={() => setVocabExTypes(cur => cur.includes(opt.id) ? cur.filter(t => t !== opt.id) : [...cur, opt.id])}
-                            style={{ width:'14px', height:'14px', accentColor:'#EA580C', cursor:'pointer', flexShrink:0 }} />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
                     <button onClick={genQuickVocab} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FDBA74' : '#EA580C', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
                       {busy === 'quickVocab' ? <><IconSpinner /> Generating…</> : `+ Generate Vocabulary`}
                     </button>
@@ -1046,17 +883,6 @@ export const ActivityGenerator = () => {
                     <input value={grammarPoint} onChange={e => setGrammarPoint(e.target.value)} placeholder="e.g., second conditional" style={{ ...inp, marginBottom:'10px' }} />
                     <label style={lbl}>Specific Focus / Instructions (Optional)</label>
                     <input value={teacherFocus} onChange={e => setTeacherFocus(e.target.value)} placeholder="e.g., use time markers..." style={{ ...inp, marginBottom:'10px' }} />
-                    <label style={lbl}>Exercise Types</label>
-                    <div style={{ marginBottom:'10px' }}>
-                      {GRAMMAR_EX_OPTIONS.map(opt => (
-                        <label key={opt.id} style={{ display:'flex', alignItems:'center', gap:'9px', cursor:'pointer', fontSize:'0.8rem', color:'#475569', fontWeight:500, marginBottom:'6px' }}>
-                          <input type="checkbox" checked={grammarExTypes.includes(opt.id)}
-                            onChange={() => setGrammarExTypes(cur => cur.includes(opt.id) ? cur.filter(t => t !== opt.id) : [...cur, opt.id])}
-                            style={{ width:'14px', height:'14px', accentColor:'#DC2626', cursor:'pointer', flexShrink:0 }} />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
                     <button onClick={genQuickGrammar} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy ? '#FCA5A5' : '#DC2626', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
                       {busy === 'quickGrammar' ? <><IconSpinner /> Generating…</> : `+ Generate Grammar`}
                     </button>
