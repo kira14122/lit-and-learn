@@ -22,6 +22,17 @@ const IconHourglass = () => (<svg width="20" height="20" viewBox="0 0 24 24" fil
 const IconInfinity  = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"></path></svg>);
 const IconSparkles  = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>);
 
+// Format a duration stored in seconds as "Xm YYs" (or "Ys" under a minute).
+// e.g. 90 -> "1m 30s", 65 -> "1m 05s", 45 -> "45s". The stored value keeps its
+// decimal for tie-breaking; we only round for display here.
+const formatTime = (totalSeconds: any): string => {
+  if (totalSeconds == null || isNaN(Number(totalSeconds))) return '0s';
+  const s = Math.round(Number(totalSeconds));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m > 0 ? `${m}m ${String(rem).padStart(2, '0')}s` : `${rem}s`;
+};
+
 export const TeacherDashboard: React.FC = () => {
   const { getToken } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1150,7 +1161,7 @@ export const TeacherDashboard: React.FC = () => {
                         <div style={{display:'flex',alignItems:'center',gap:'12px',flexShrink:0,whiteSpace:'nowrap'}}>
                           {player.finished_at&&<div style={{background:'#10B981',color:'#fff',padding:'6px 12px',borderRadius:'8px',fontSize:'0.85rem',fontWeight:'800',textTransform:'uppercase'}}>Done</div>}
                           {player.total_questions!=null&&<div style={{fontSize:'1.1rem',color:'#10B981',fontWeight:'800',background:'#ECFDF5',padding:'8px 16px',borderRadius:'12px'}}>✓ {player.correct_answers||0}/{player.total_questions}</div>}
-                          {player.total_time!=null&&<div style={{fontSize:'1.1rem',color:'#64748B',fontWeight:'700',background:'#F1F5F9',padding:'8px 16px',borderRadius:'12px'}}>{player.total_time}s</div>}
+                          {player.total_time!=null&&<div style={{fontSize:'1.1rem',color:'#64748B',fontWeight:'700',background:'#F1F5F9',padding:'8px 16px',borderRadius:'12px'}}>{formatTime(player.total_time)}</div>}
                           <div style={{fontSize:'1.3rem',fontWeight:'800',color:'#4F46E5',background:'#EEF2FF',padding:'8px 20px',borderRadius:'12px'}}>{player.score} pts</div>
                         </div>
                       </div>

@@ -115,6 +115,12 @@ export interface QuickGrammarActivity {
 // PROVIDER LAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Set whenever a provider call is throttled (HTTP 429 / quota exhausted). The UI
+// reads this right after a failed generation to show a "rate-limited, wait"
+// message instead of a generic failure. Reset at the start of every callAI.
+let _lastRateLimited = false;
+export function wasRateLimited(): boolean { return _lastRateLimited; }
+
 async function callGemini(prompt: string, supabaseUrl: string, anonKey: string): Promise<string | null> {
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/ask-gemini`, {
@@ -122,13 +128,14 @@ async function callGemini(prompt: string, supabaseUrl: string, anonKey: string):
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}` },
       body:    JSON.stringify({ prompt }),
     });
+    if (res.status === 429) { _lastRateLimited = true; console.warn('⚠️ Gemini rate-limited (429) — trying Groq.'); return null; }
     if (!res.ok) { console.warn(`⚠️ Gemini returned ${res.status} — trying Groq.`); return null; }
     const data = await res.json();
+    if (data.error?.status === 'RESOURCE_EXHAUSTED') { _lastRateLimited = true; console.warn('⚠️ Gemini quota exhausted — switching to Groq.'); return null; }
     if (
-      data.error?.status === 'RESOURCE_EXHAUSTED' ||
       data.promptFeedback?.blockReason ||
       !data.candidates?.length
-    ) { console.warn('⚠️ Gemini quota/blocked — switching to Groq.'); return null; }
+    ) { console.warn('⚠️ Gemini blocked/empty — switching to Groq.'); return null; }
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!text) { console.warn('⚠️ Gemini returned empty — trying Groq.'); return null; }
     console.log('✅ Gemini responded.');
@@ -143,6 +150,7 @@ async function callGroq(prompt: string, supabaseUrl: string, anonKey: string): P
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}` },
       body:    JSON.stringify({ prompt }),
     });
+    if (res.status === 429) { _lastRateLimited = true; console.error('🚨 Groq rate-limited (429).'); return null; }
     if (!res.ok) { console.error(`🚨 Groq returned ${res.status}.`); return null; }
     const data = await res.json();
     const text = data.text?.trim();
@@ -153,6 +161,7 @@ async function callGroq(prompt: string, supabaseUrl: string, anonKey: string): P
 }
 
 async function callAI(prompt: string): Promise<string | null> {
+  _lastRateLimited = false;
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey     = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) { console.error('🚨 Supabase keys missing.'); return null; }
@@ -192,6 +201,22 @@ function sanitizePassage(text: string): string {
     .trim();
 }
 
+/**
+ * Light-sanitise a passage while PRESERVING paragraph boundaries, and label each
+ * paragraph ("Paragraph 1: ...") so question generators can cite them by number.
+ * sanitizePassage() flattens all newlines, which is why comprehension needs this.
+ */
+function numberParagraphs(passage: string): string {
+  const byBlank = passage.split(/\n{2,}/).map((p) => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const parts = byBlank.length > 1
+    ? byBlank
+    : passage.split(/\n+/).map((p) => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const clean = (parts.length ? parts : [passage]).map((p) =>
+    p.replace(/`/g, "'").replace(/"/g, "'").replace(/\\/g, ' ').trim()
+  );
+  return clean.map((p, i) => `Paragraph ${i + 1}: ${p}`).join('\n\n');
+}
+
 function wordInText(word: string, text: string): boolean {
   const w = word.toLowerCase().replace(/[^a-z]/g, '');
   if (!w) return false;
@@ -208,8 +233,12 @@ async function requestJSON<T>(
 ): Promise<T | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     // Escalating pause between attempts — rapid-fire retries trip provider
-    // rate limits (Groq 400s) and burn quota for nothing.
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    // rate limits (Groq 429s) and burn quota for nothing. Back off much harder
+    // when the last call was actually throttled, to let the limit window clear.
+    if (attempt > 0) {
+      const base = _lastRateLimited ? 4000 : 1500;
+      await new Promise((r) => setTimeout(r, base * attempt));
+    }
     const text = await callAI(prompt);
     if (!text) continue;
     try {
@@ -305,9 +334,10 @@ function validateQuestions(questions: any[], activityType: string, numQ: number)
 export async function generateLessonPassage(
   topic: string,
   level = 'B1',
-  words = 200
+  words = 200,
+  grammarFocus = ''
 ): Promise<string | null> {
-  return generateReadingPassage(sanitize(topic), level, words);
+  return generateReadingPassage(sanitize(topic), level, words, grammarFocus);
 }
 
 export async function generateTrueFalse(
@@ -323,6 +353,7 @@ RULES:
 - Mix True and False roughly evenly (do not make them all True).
 - Each statement must be unambiguously decidable from the passage alone.
 - Do NOT copy sentences verbatim from the passage — rephrase them.
+- Make EXACTLY ONE of the five statements an inference about the author's overall stance or opinion (what the author believes, suggests, or implies) rather than a directly stated fact — but it must still be clearly decidable as True or False from the passage.
 - "answer" must be EXACTLY "True" or "False".
 
 Passage:
@@ -350,7 +381,7 @@ export async function generateComprehensionQuestions(
   passage: string,
   level = 'B1'
 ): Promise<QAItem[] | null> {
-  const safePassage = sanitizePassage(passage);
+  const numbered = numberParagraphs(passage);
   const prompt = `You are an expert ESL textbook author. Based on the passage below, write EXACTLY 5 open comprehension questions at ${level} CEFR level.
 
 LEVEL (${level}): ${getLevelGuidance(level)}
@@ -358,12 +389,13 @@ LEVEL (${level}): ${getLevelGuidance(level)}
 RULES:
 - Questions require genuine understanding, not single-word lookup.
 - Students will answer in FULL SENTENCES, so phrase questions accordingly (why / how / what evidence / in what way).
+- Each question must EITHER refer to a specific paragraph by number (e.g. "In paragraph 2, ...") OR quote a short exact phrase from the passage (3-6 words, in quotation marks), the way a real comprehension worksheet does. Use a mix of both across the five questions.
 - Provide a model full-sentence "answer" for the teacher key.
 - Answerable from the passage.
 
-Passage:
+Passage (paragraphs are labelled so you can refer to them by number):
 """
-${safePassage}
+${numbered}
 """
 
 Output ONLY valid JSON, no markdown, no backticks:
@@ -377,7 +409,18 @@ The items array must contain EXACTLY 5 questions.`;
       q: String(it.q ?? '').trim(),
       answer: String(it.answer ?? '').trim(),
     }));
-    if (five.some((it) => it.q.length < 5 || it.answer.length < 2)) return null;
+    // Reject half-written questions (e.g. "What evidence" or a bare quoted
+    // fragment). A real question is a few words long and either ends with "?"
+    // or opens with a question/imperative stem; the model answer must be a
+    // proper sentence, not a stub.
+    const isRealQuestion = (q: string) => {
+      const t = q.trim();
+      const words = t.split(/\s+/).filter(Boolean).length;
+      if (words < 4 || t.length < 12) return false;
+      return /\?\s*$/.test(t) ||
+        /^(explain|describe|discuss|summari[sz]e|why|how|what|in what way|in which|give|list|identify)\b/i.test(t);
+    };
+    if (five.some((it) => !isRealQuestion(it.q) || it.answer.length < 10)) return null;
     return five;
   });
 }
@@ -398,21 +441,27 @@ export async function generateVocabularySet(
   // teachable words from 15 distinct families. Theme mode (invented words)
   // has no scarcity, so it always uses the full size.
   const wc = fromPassage ? countWords(safeSource) : Infinity;
-  const perGroup = wc >= 400 ? 5 : wc >= 250 ? 4 : 3;
+  // Hunt and Matching scale with passage length; Gaps is fixed at 4 (the
+  // classroom standard) whenever the passage is long enough to support it.
+  const perGroup   = wc >= 400 ? 5 : wc >= 250 ? 4 : 3;
+  const huntCount  = perGroup;
+  const matchCount = perGroup;
+  const gapCount   = perGroup >= 4 ? 4 : perGroup;
   const nDist = perGroup >= 4 ? 3 : 2;
-  const total = perGroup * 3;
+  const total = huntCount + matchCount + gapCount;
 
   const selectionBlock = fromPassage
-    ? `Choose all ${total} vocabulary words (${perGroup} for Hunt + ${perGroup} for Matching + ${perGroup} for Gaps) from the PASSAGE below.
+    ? `Choose all ${total} vocabulary words (${huntCount} for Hunt + ${matchCount} for Matching + ${gapCount} for Gaps) from the PASSAGE below.
 - Every chosen word MUST actually appear in the passage.
 - Choose useful, teachable words — never proper nouns, never the easiest function words.
 - The ${total} words must ALL be different from one another — AND from ${total} DIFFERENT WORD FAMILIES. Passages often repeat families (write/wrote/writing, influence/influenced/influential, philosophy/philosophical): pick AT MOST ONE word from any family. Before answering, check your ${total} words pairwise for shared roots and replace any clashes.
+- SENSE MATCH: define each word by the meaning AND part of speech it ACTUALLY carries in this passage. Do NOT pick a word that appears only inside a fixed phrase, compound, or technical term (e.g. "augmented" only in "augmented reality", "mirror" only in "mirror system", "memory" only in "memory bank", "contrast" only in "by contrast") and then test its everyday standalone sense or a different part of speech. The definition and the "pos" tag must match exactly how the word is used in this text; if they cannot, choose a different word.
 
 Passage:
 """
 ${safeSource}
 """`
-    : `Invent ${total} useful vocabulary words (${perGroup} for Hunt + ${perGroup} for Matching + ${perGroup} for Gaps) for a ${level} learner on the theme: "${safeSource}".
+    : `Invent ${total} useful vocabulary words (${huntCount} for Hunt + ${matchCount} for Matching + ${gapCount} for Gaps) for a ${level} learner on the theme: "${safeSource}".
 - All ${total} words must be different from one another (no shared roots).`;
 
   const prompt = `You are an expert ESL vocabulary materials writer.
@@ -423,38 +472,39 @@ LEVEL (${level}): ${getLevelGuidance(level)}
 
 Produce THREE separate groups. A word may appear in ONLY ONE group — never reuse a word (or its root) across groups.
 
-1) "hunt" — EXACTLY ${perGroup} items, each:
+1) "hunt" — EXACTLY ${huntCount} items, each:
    - "word": the target word.
    - "pos": short tag, one of: v. | n. | adj. | adv. | phr.
    - "hint": OPTIONAL short morphological clue ONLY when it genuinely helps (e.g. "ending in -ed", "plural"). Omit it entirely (empty string) when the POS alone is enough. Never include the word or its root in the hint.
    - "definition": a clear full definition that does NOT contain the word or any derivative.
 
-2) "matching" — EXACTLY ${perGroup} items, using ${perGroup} DIFFERENT words, each:
+2) "matching" — EXACTLY ${matchCount} items, using ${matchCount} DIFFERENT words, each:
    - "word", "pos" (same tag set), and "definition" (does NOT contain the word).
 
-3) "gaps" — EXACTLY ${perGroup} items, using ${perGroup} DIFFERENT words again, each:
+3) "gaps" — EXACTLY ${gapCount} items, using ${gapCount} DIFFERENT words again, each:
    - "sentence": an original sentence (NOT copied from the passage) with exactly one ___ where the word goes.
    - "answer": the word that fills the blank. Context must make it the only word from the bank that fits.
+   - CRITICAL — the answer must FIT: read the finished sentence with the answer in place and confirm it is grammatical, true, and sensible. Never pair a word with a slot it does not belong in (e.g. NOT "harvest the patient's records", NOT "produce the math problem", NOT "roll a new product line"). If the natural sentence for that word does not come easily, choose a different word rather than forcing a nonsensical one.
 
 Then "distractors" — EXACTLY ${nDist} decoy words:
    - "word", "pos". Same POS family as the gap answers, thematically related.
-   - Must NOT correctly complete any gap sentence, and must NOT duplicate any of the ${total} words.
+   - CRITICAL: each distractor must be clearly wrong in EVERY gap sentence, not only its own. Before finalising, test each distractor against ALL ${gapCount} gap sentences — if it could plausibly fill any of them (even loosely, e.g. "app" in "she keeps her notes on the ___"), discard it and pick another. It must also not duplicate any of the ${total} words.
 
 Output ONLY valid JSON, no markdown, no backticks:
 {"hunt":[{"word":"","pos":"","hint":"","definition":""}],"matching":[{"word":"","pos":"","definition":""}],"gaps":[{"sentence":"... ___ ...","answer":""}],"distractors":[{"word":"","pos":""}]}
-"hunt", "matching", "gaps" each EXACTLY ${perGroup}; "distractors" EXACTLY ${nDist}.`;
+"hunt" EXACTLY ${huntCount}; "matching" EXACTLY ${matchCount}; "gaps" EXACTLY ${gapCount}; "distractors" EXACTLY ${nDist}.`;
 
   return requestJSON<VocabularyPart>(prompt, (p) => {
     const huntRaw  = p?.hunt;
     const matchRaw = p?.matching;
     const gapRaw   = p?.gaps;
     const distRaw  = p?.distractors;
-    if (!Array.isArray(huntRaw)  || huntRaw.length  < perGroup) return null;
-    if (!Array.isArray(matchRaw) || matchRaw.length < perGroup) return null;
-    if (!Array.isArray(gapRaw)   || gapRaw.length   < perGroup) return null;
-    if (!Array.isArray(distRaw)  || distRaw.length  < nDist) return null;
+    if (!Array.isArray(huntRaw)  || huntRaw.length  < huntCount)  return null;
+    if (!Array.isArray(matchRaw) || matchRaw.length < matchCount) return null;
+    if (!Array.isArray(gapRaw)   || gapRaw.length   < gapCount)   return null;
+    if (!Array.isArray(distRaw)  || distRaw.length  < nDist)      return null;
 
-    const hunt: VocabHuntItem[] = huntRaw.slice(0, perGroup).map((t: any) => {
+    const hunt: VocabHuntItem[] = huntRaw.slice(0, huntCount).map((t: any) => {
       const hint = String(t.hint ?? '').trim();
       return {
         word:       String(t.word ?? '').trim(),
@@ -464,13 +514,13 @@ Output ONLY valid JSON, no markdown, no backticks:
       };
     });
 
-    const matching: MatchItem[] = matchRaw.slice(0, perGroup).map((m: any) => ({
+    const matching: MatchItem[] = matchRaw.slice(0, matchCount).map((m: any) => ({
       word:       String(m.word ?? '').trim(),
       pos:        String(m.pos ?? '').trim(),
       definition: String(m.definition ?? '').trim(),
     }));
 
-    const gaps: GapItem[] = gapRaw.slice(0, perGroup).map((g: any) => ({
+    const gaps: GapItem[] = gapRaw.slice(0, gapCount).map((g: any) => ({
       sentence: String(g.sentence ?? '').trim(),
       answer:   String(g.answer ?? '').trim(),
     }));
@@ -522,8 +572,10 @@ Output ONLY valid JSON, no markdown, no backticks:
 
     // Only reject if the repair gutted an exercise. Duplicates concentrate in
     // gaps (models reuse hunt words there), so gaps tolerates more shrinkage.
-    const minPer = Math.max(2, perGroup - 1);
-    if (huntU.length < minPer || matchingU.length < minPer || gapsU.length < 2 || distractorsU.length < 2) {
+    const minHunt  = Math.max(2, huntCount - 1);
+    const minMatch = Math.max(2, matchCount - 1);
+    const minGap   = Math.max(2, gapCount - 1);
+    if (huntU.length < minHunt || matchingU.length < minMatch || gapsU.length < minGap || distractorsU.length < 2) {
       console.warn('⚠️ Too many duplicated words to repair — retrying.');
       return null;
     }
@@ -574,14 +626,15 @@ export async function generateDiscussion(
   level = 'B1'
 ): Promise<string[] | null> {
   const safeSource = sanitizePassage(source);
-  const prompt = `You are an expert ESL discussion-task writer. Write EXACTLY 2 open-ended discussion questions at ${level} CEFR level, connected to the THEME of the text below.
+  const prompt = `You are an expert ESL discussion-task writer. Write EXACTLY 2 discussion questions at ${level} CEFR level, connected to the THEME of the text below.
 
 LEVEL (${level}): ${getLevelGuidance(level)}
 
 RULES:
-- Each question invites personal opinion and a real-life connection.
-- No single correct answer; not answerable directly from the text.
-- Encourage extended speaking/writing.
+- Each question must be substantial and TWO-PART: open with a sentence or two of framing that sets up a tension or scenario, then ask a pointed question that genuinely has two defensible sides.
+- Connect the theme to the students' own modern lives — their technology, daily choices, society, or personal experience.
+- No single correct answer, and not answerable directly from the text. Each must invite extended speaking or writing and a real personal opinion.
+- The two questions must explore DIFFERENT angles on the theme.
 
 Text / theme:
 """
@@ -589,14 +642,14 @@ ${safeSource}
 """
 
 Output ONLY valid JSON, no markdown, no backticks:
-{"items":["question 1","question 2"]}
-The items array must contain EXACTLY 2 questions.`;
+{"items":["framing sentence(s) + pointed question?","framing sentence(s) + pointed question?"]}
+The items array must contain EXACTLY 2 questions, each a single string holding both the framing and the question.`;
 
   return requestJSON<string[]>(prompt, (p) => {
     const items = p?.items;
     if (!Array.isArray(items) || items.length < 2) return null;
     const two = items.slice(0, 2).map((q: any) => String(q ?? '').trim());
-    if (two.some((q) => q.length < 8)) return null;
+    if (two.some((q) => q.length < 40)) return null;
     return two;
   });
 }
@@ -768,43 +821,108 @@ Output ONLY valid JSON, no markdown, no backticks:
 // READING — STEP 1: Passage generation  (shared by legacy + structured paths)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Best-effort, presence-only detector for a handful of common grammar targets.
+ * Returns a rough hit count, or null when the focus is one we cannot reliably
+ * detect (in which case we trust the prompt rather than guess). This is NOT a
+ * density gate: it only ever distinguishes "appears" from "absent", so it can
+ * never push the model toward cramming the structure unnaturally.
+ */
+function countStructureHits(text: string, focus: string): number | null {
+  const t = text.toLowerCase();
+  const f = focus.toLowerCase();
+  const count = (re: RegExp) => (t.match(re) || []).length;
+
+  if (f.includes('past perfect'))    return count(/\bhad\s+(?:not\s+|never\s+)?\w+(?:ed|en)\b/g);
+  if (f.includes('present perfect')) return count(/\b(?:has|have)\s+(?:not\s+|never\s+|already\s+|just\s+)?\w+(?:ed|en)\b/g);
+  if (f.includes('past continuous') || f.includes('past progressive'))
+                                     return count(/\b(?:was|were)\s+\w+ing\b/g);
+  if (f.includes('present continuous') || f.includes('present progressive'))
+                                     return count(/\b(?:am|is|are)\s+\w+ing\b/g);
+  if (f.includes('future') || f.includes('will '))
+                                     return count(/\bwill\s+\w+\b/g) + count(/\b(?:am|is|are)\s+going\s+to\s+\w+\b/g);
+  if (f.includes('passive'))         return count(/\b(?:is|are|was|were|been|being)\s+\w+(?:ed|en)\b/g);
+  if (f.includes('modal'))           return count(/\b(?:can|could|may|might|must|shall|should|would)\b/g);
+  if (f.includes('conditional'))     return count(/\bif\b/g);
+  if (f.includes('comparative') || f.includes('superlative'))
+                                     return count(/\b\w+(?:er|est)\b/g) + count(/\b(?:more|most|less|least)\s+\w+\b/g);
+  if (f.includes('relative'))        return count(/\b(?:who|which|that|whose|whom|where)\b/g);
+
+  return null; // unknown / hard-to-detect focus -> trust the prompt
+}
+
 async function generateReadingPassage(
   topic:        string,
   level:        string,
-  passageWords: number
+  passageWords: number,
+  grammarFocus = ''
 ): Promise<string | null> {
-  const min = passageWords - 10;
-  const max = passageWords + 10;
+  const focus = sanitize(grammarFocus);
 
-  const prompt = `You are a professional ESL materials writer. Write a reading passage for a ${level} CEFR learner on: "${topic}"
+  const grammarBlock = focus
+    ? `
+GRAMMAR FOCUS — this lesson teaches "${focus}":
+Make "${focus}" the natural backbone of the writing. Do NOT bolt it on or write to a quota. Instead, choose an angle on the topic where "${focus}" is genuinely the natural way to tell the story, so it recurs because the content calls for it (a topic about beliefs that were later overturned naturally uses the past perfect; a topic about an industry that has changed and is still changing naturally uses the present perfect).
+- Naturalness ALWAYS wins. If using "${focus}" would make a sentence awkward, write the natural sentence instead, even if the structure then appears less often.
+- Never distort a fact, a tense, or the meaning just to fit the structure.`
+    : '';
+
+  const prompt = `You are an expert ESL materials writer creating a reading passage for a ${level} CEFR learner on the topic: "${topic}"
+
+YOUR FIRST JOB — the passage must be worth reading on its own. Write a short, genuinely educational piece of non-fiction that teaches ONE real, non-obvious idea about this topic — not a neutral summary and not a list of facts. The reader should finish it knowing something true and interesting they could repeat to a friend. Think like a sharp magazine science or culture writer, not an encyclopedia.
+
+ABSOLUTE RULE — NO FABRICATION: Everything in the passage must be TRUE. Never invent people, studies, experiments, statistics, dates, quotes, or events. Use a specific name, date, or figure ONLY when it is a well-known fact you are confident is correct; otherwise stay general rather than inventing a specific. A slightly less vivid but true sentence is always better than a specific but false one. Do not manufacture precision (no made-up percentages, no invented researchers).
+
+STRUCTURE — an idea with an arc, in 4-5 paragraphs:
+- Open with a hook that unsettles a common assumption or raises something surprising about the topic.
+- Develop the idea with real, concrete explanation — how it works, why it happens — using real, general examples the reader can picture.
+- End with an implication that connects to the reader's own modern life.
 
 LEVEL (${level}): ${getLevelGuidance(level)}
+Aim for the upper end of this level: rich and engaging, but never above it.
+${grammarBlock}
 
-WORD COUNT: Write EXACTLY ${passageWords} words. Acceptable range: ${min}-${max}. Count every word including articles and prepositions. If too short, add specific details. If too long, tighten your sentences.
+WRITE NATURAL, CORRECT ENGLISH:
+- Every sentence must read naturally — never awkward, never padded.
+- Use tenses correctly: for finished past events use past tenses (do not use the present perfect for completed historical events); reserve the present perfect for situations or effects that continue today.
 
-STRUCTURE: 3 paragraphs.
-- Para 1: Engaging opening fact or observation. Introduce the main idea.
-- Para 2: Concrete details, examples, or data. This is the longest paragraph.
-- Para 3: Broader implication or thought-provoking reflection.
+WORD COUNT: about ${passageWords} words. A little over or under is fine; never pad with filler or vague generalities just to reach a number.
 
-RULES:
-- Factually accurate. No fiction unless topic demands it.
-- TENSE ACCURACY: when writing about historical or deceased people, use past tenses for their completed life events ("his career spanned", "he wrote") — NEVER present perfect ("his career has spanned", "he has written"). Present perfect is only acceptable for effects that continue today ("his work has influenced generations").
-- Every sentence must add specific information — no vague generalities.
-- Output ONLY the passage text. No title, no heading, no word count note.
-- Do NOT bold, underline, italicise, or otherwise mark any words.
-- Do not start with the word "The".`;
+OUTPUT RULES:
+- Output ONLY the passage text — no title, no heading, no word-count note, no commentary.
+- Separate each paragraph with a blank line.
+- Do not use bold, italics, underlining, or any markdown.
+- Do not begin the passage with the word "The".`;
 
-  const text = await callAI(prompt);
-  if (!text) return null;
+  // Soft validate-and-retry. A retry is only worth it on a clear miss — a much
+  // too-short draft, or a requested structure that never appears — never a
+  // density target, which would just push the model toward unnatural cramming.
+  // The teacher approves every passage before building on it, so if the checks
+  // can't be satisfied we return the best draft rather than failing outright.
+  const minWords = Math.floor(passageWords * 0.7);
+  let best: string | null = null;
 
-  const wc = countWords(text);
-  console.log(`✅ Passage generated: ${wc} words (target: ${passageWords}).`);
-  if (wc < passageWords * 0.6) {
-    console.warn(`⚠️ Passage too short: ${wc} words vs target ${passageWords}.`);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const text = await callAI(prompt);
+    if (!text) continue;
+    const clean = text.trim();
+    best = clean;
+
+    const wc = countWords(clean);
+    const tooShort = wc < minWords;
+    const hits = focus ? countStructureHits(clean, focus) : null;
+    const grammarAbsent = hits !== null && hits === 0;
+
+    if (!tooShort && !grammarAbsent) {
+      console.log(`✅ Passage generated: ${wc} words (target ${passageWords})${focus ? `, "${focus}" detected: ${hits}` : ''}.`);
+      return clean;
+    }
+    if (tooShort)      console.warn(`⚠️ Passage short (${wc} < ${minWords} words) — retrying.`);
+    if (grammarAbsent) console.warn(`⚠️ Target structure "${focus}" not detected — retrying.`);
   }
 
-  return text.trim();
+  if (best) console.warn('ℹ️ Returning best-effort passage after retries.');
+  return best;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

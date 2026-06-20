@@ -10,6 +10,7 @@ import {
   generateQuickGrammar,
   generateRawVocab,
   generateRawGrammar,
+  wasRateLimited,
 } from '../aiGenerator';
 import type {
   TFItem,
@@ -35,7 +36,7 @@ const IconBreak   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="
 const IconCheck   = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
 const IconEdit    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>;
 const IconLock    = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
-const IconPuzzle  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.908-.329-1.25-.768-1.022-1.31-3.033-1.066-3.738.455-.386.832-.016 1.83.826 2.218.361.168.618.498.718.887l.423 1.623c.205.787-.042 1.63-.647 2.235-.606.606-1.448.852-2.235.647l-1.623-.423a1.002 1.002 0 0 0-.887.051c-.443.25-.783.655-.968 1.135-.558 1.45-2.613 1.67-3.483.374-.356-.527-.925-.8-1.543-.768a.98.98 0 0 1-.837-.276l-1.611-1.611c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.568-1.568c.23-.23.338-.556.289-.878-.066-.438-.306-.84-.691-1.157-1.154-.949-1.154-2.735 0-3.684.385-.317-.625-.719-.691-1.157.049-.322-.059-.648-.289-.878l-1.568-1.568c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.611-1.611c.23-.23.535-.333.837-.276.47.07.908.329 1.25.768 1.022 1.31 3.033 1.066 3.738-.455.386-.832.016-1.83-.826-2.218-.361-.168-.618-.498-.718-.887l-.423-1.623c-.205-.787.042-1.63.647-2.235s1.448-.852 2.235-.647l1.623.423c.321.084.66.012.887-.051.443-.25.783-.655.968-1.135.558-1.45 2.613-1.67 3.483-.374.356.527.925.8 1.543.768.23.23.535.333.837.276l1.611 1.611c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.568 1.568c-.23.23-.338.556-.289.878.066.438.306.84.691 1.157 1.154.949 1.154 2.735 0 3.684-.385.317-.625.719-.691 1.157z"/></svg>;
+const IconPuzzle  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.908-.329-1.25-.768-1.022-1.31-3.033-1.066-3.738.455-.386.832-.016 1.83.826 2.218.361.168.618.498.718.887l.423 1.623c.205.787-.042 1.63-.647 2.235-.606.606-1.448.852-2.235.647l-1.623-.423a1.002 1.002 0 0 0-.887.051c-.443.25-.783.655-.968 1.135-.558 1.45-2.613 1.67-3.483.374-.356-.527-.925-.8-1.543-.768a.98.98 0 0 1-.837-.276l-1.611-1.611c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.568-1.568c.23-.23.338-.556.289-.878-.066-.438-.306-.84-.691-1.157-1.154-.949-1.154-2.735 0-3.684.385-.317.625-.719.691-1.157.049-.322-.059-.648-.289-.878l-1.568-1.568c-.47-.47-.706-1.087-.706-1.704s.235-1.233.706-1.704l1.611-1.611c.23-.23.535-.333.837-.276.47.07.908.329 1.25.768 1.022 1.31 3.033 1.066 3.738-.455.386-.832.016-1.83-.826-2.218-.361-.168-.618-.498-.718-.887l-.423-1.623c-.205-.787.042-1.63.647-2.235s1.448-.852 2.235-.647l1.623.423c.321.084.66.012.887-.051.443-.25.783-.655.968-1.135.558-1.45 2.613-1.67 3.483-.374.356.527.925.8 1.543.768.23.23.535.333.837.276l1.611 1.611c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.568 1.568c-.23.23-.338.556-.289.878.066.438.306.84.691 1.157 1.154.949 1.154 2.735 0 3.684-.385.317-.625.719-.691 1.157z"/></svg>;
 
 // ─── Native Crossword Algorithm ───────────────────────────────────────────────
 type Direction = 'across' | 'down';
@@ -192,6 +193,7 @@ type QuickType = 'vocab' | 'grammar' | 'crossword';
 type Persisted = {
   mode: Mode; title: string; level: string; passage: string; passageApproved: boolean;
   sections: Section[]; showName: boolean; showDate: boolean; showClass: boolean; showScore: boolean;
+  lessonGrammarFocus?: string;
 };
 
 const ORDER: Record<SectionKind, number> = { tf: 0, comprehension: 1, vocab: 2, discussion: 3, grammar: 4, crossword: 5, quickVocab: 2, quickGrammar: 4 };
@@ -265,6 +267,13 @@ const PCSS = `
 
 const shuffle = <T,>(a: T[]): T[] => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];} return r; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// Failure message that distinguishes rate limiting (the common cause when
+// generating several activities quickly) from a genuine failure.
+const failAlert = (what: string) =>
+  alert(wasRateLimited()
+    ? `The free AI services are rate-limited right now. Wait a minute or two, then generate ${what} again.`
+    : `Couldn't generate ${what}. Please try again.`);
 
 // ─── Quick Activity v2: deterministic exercise assembly ────────────────────────
 // The raw engines return only validated facts (target, distractors, ONE context
@@ -417,8 +426,9 @@ export const ActivityGenerator = () => {
   // lesson — passage
   const [source, setSource]           = useState<Source>('topic');
   const [topic, setTopic]             = useState('');
+  const [lessonGrammarFocus, setLessonGrammarFocus] = useState('');
   const [pasteText, setPasteText]     = useState('');
-  const [passageWords, setPassageWords] = useState(250);
+  const [passageWords, setPassageWords] = useState(400);
   const [passage, setPassage]         = useState('');
   const [passageApproved, setApproved]= useState(false);
 
@@ -451,16 +461,17 @@ export const ActivityGenerator = () => {
   useEffect(() => {
     if (!passage && sections.length === 0) return;
     try {
-      const data: Persisted = { mode, title, level, passage, passageApproved, sections, showName, showDate, showClass, showScore };
+      const data: Persisted = { mode, title, level, passage, passageApproved, sections, showName, showDate, showClass, showScore, lessonGrammarFocus };
       localStorage.setItem('ll_ws_v2', JSON.stringify(data));
     } catch {}
-  }, [mode, title, level, passage, passageApproved, sections, showName, showDate, showClass, showScore]);
+  }, [mode, title, level, passage, passageApproved, sections, showName, showDate, showClass, showScore, lessonGrammarFocus]);
 
   const doRestore = () => {
     if (!restore) return;
     setMode(restore.mode); setTitle(restore.title); setLevel(restore.level);
     setPassage(restore.passage); setApproved(restore.passageApproved); setSections(restore.sections);
     setShowName(restore.showName); setShowDate(restore.showDate); setShowClass(restore.showClass); setShowScore(restore.showScore);
+    setLessonGrammarFocus(restore.lessonGrammarFocus ?? '');
     setRestore(null);
   };
 
@@ -477,9 +488,16 @@ export const ActivityGenerator = () => {
   const genPassage = async () => {
     if (!topic.trim()) return alert('Please enter a topic for the passage.');
     setBusy('passage');
-    const p = await generateLessonPassage(topic, level, passageWords);
-    if (p) { setPassage(p); setApproved(false); if (!title.trim()) setTitle(topic.trim()); }
-    else alert('Passage generation failed. Please try again.');
+    const p = await generateLessonPassage(topic, level, passageWords, lessonGrammarFocus);
+    if (p) {
+      setPassage(p); setApproved(false);
+      if (!title.trim()) setTitle(topic.trim());
+      // Sync Part 4 (Grammar Noticing) to THIS lesson's grammar focus so it never
+      // keeps a stale point from a previous lesson. A blank focus leaves whatever
+      // the teacher may have typed in Part 4 untouched.
+      if (lessonGrammarFocus.trim()) setGrammarPoint(lessonGrammarFocus.trim());
+    }
+    else failAlert('the passage');
     setBusy(null);
   };
   const usePasted = () => {
@@ -502,28 +520,28 @@ export const ActivityGenerator = () => {
     if (!guardLesson()) return; setBusy('tf');
     const items = await generateTrueFalse(passage, level);
     if (items) upsert({ id: getSection('tf')?.id ?? uid(), kind: 'tf', pageBreakBefore: getSection('tf')?.pageBreakBefore ?? false, items });
-    else alert('True/False generation failed. Please try again.');
+    else failAlert('the True/False section');
     setBusy(null);
   };
   const genComp = async () => {
     if (!guardLesson()) return; setBusy('comprehension');
     const items = await generateComprehensionQuestions(passage, level);
     if (items) upsert({ id: getSection('comprehension')?.id ?? uid(), kind: 'comprehension', pageBreakBefore: getSection('comprehension')?.pageBreakBefore ?? false, items });
-    else alert('Comprehension generation failed. Please try again.');
+    else failAlert('the comprehension questions');
     setBusy(null);
   };
   const genVocab = async () => {
     if (!guardLesson()) return; setBusy('vocab');
     const vp = await generateVocabularySet(passage, level, true);
     if (vp) upsert(buildVocab(vp, getSection('vocab')?.pageBreakBefore ?? false));
-    else alert('Vocabulary generation failed. Please try again.');
+    else failAlert('the vocabulary section');
     setBusy(null);
   };
   const genDisc = async () => {
     if (!guardLesson()) return; setBusy('discussion');
     const items = await generateDiscussion(passage, level);
     if (items) upsert({ id: getSection('discussion')?.id ?? uid(), kind: 'discussion', pageBreakBefore: getSection('discussion')?.pageBreakBefore ?? false, items });
-    else alert('Discussion generation failed. Please try again.');
+    else failAlert('the discussion questions');
     setBusy(null);
   };
   const genGrammar = async () => {
@@ -532,7 +550,7 @@ export const ActivityGenerator = () => {
     setBusy('grammar');
     const data = await generateGrammarNoticing(grammarPoint, level, passage);
     if (data) upsert({ id: getSection('grammar')?.id ?? uid(), kind: 'grammar', pageBreakBefore: getSection('grammar')?.pageBreakBefore ?? false, data });
-    else alert('Grammar Noticing generation failed. Please try again.');
+    else failAlert('the grammar section');
     setBusy(null);
   };
 
@@ -596,7 +614,7 @@ export const ActivityGenerator = () => {
       // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
       if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Vocabulary: ${quickTheme.trim()}`);
     }
-    else alert('Vocabulary generation failed. Please try again.');
+    else failAlert('the vocabulary worksheet');
     setBusy(null);
   };
   
@@ -613,7 +631,7 @@ export const ActivityGenerator = () => {
       // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
       if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Grammar: ${grammarPoint.trim()}`);
     }
-    else alert('Grammar generation failed. Please try again.');
+    else failAlert('the grammar worksheet');
     setBusy(null);
   };
 
@@ -761,8 +779,15 @@ export const ActivityGenerator = () => {
     const across = layout.filter(p => p.direction === 'across').sort((a,b) => a.num - b.num);
     const down = layout.filter(p => p.direction === 'down').sort((a,b) => a.num - b.num);
 
-    const cellSize = maxC > 22 ? '20px' : maxC > 18 ? '24px' : '30px';
-    const fontSize = maxC > 18 ? '8px' : '10px';
+    // Fit the grid to the printable page width (~620px usable on A4 with the
+    // current margins), then clamp: never larger than 44px so small puzzles do
+    // not look cartoonish, never smaller than 22px so even a dense grid stays on
+    // one printed row. Most puzzles (10–18 columns) now land at 34–44px —
+    // clearly roomier than the old fixed 30px, while wide grids still fit.
+    const PRINT_GRID_WIDTH = 620;
+    const cellPx   = Math.max(22, Math.min(44, Math.floor(PRINT_GRID_WIDTH / maxC)));
+    const cellSize = `${cellPx}px`;
+    const fontSize = cellPx <= 26 ? '8px' : '10px';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', alignItems: 'center' }}>
@@ -961,7 +986,8 @@ export const ActivityGenerator = () => {
                   {source === 'topic' ? (
                     <>
                       <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g., the psychology of supermarkets" style={{ ...inp, marginBottom:'8px' }} />
-                      <div style={{ marginBottom:'8px' }}><label style={lbl}>Length</label><select value={passageWords} onChange={e => setPassageWords(Number(e.target.value))} style={sel}>{[150, 200, 250, 300, 350].map(w => <option key={w} value={w}>{w} words</option>)}</select></div>
+                      <div style={{ marginBottom:'8px' }}><label style={lbl}>Length</label><select value={passageWords} onChange={e => setPassageWords(Number(e.target.value))} style={sel}>{[150, 200, 250, 300, 350, 400, 450].map(w => <option key={w} value={w}>{w} words</option>)}</select></div>
+                      <div style={{ marginBottom:'8px' }}><label style={lbl}>Grammar Focus (optional)</label><input value={lessonGrammarFocus} onChange={e => setLessonGrammarFocus(e.target.value)} placeholder="e.g., present perfect — blank for none" style={inp} /></div>
                       <button onClick={genPassage} disabled={!!busy} style={{ width:'100%', padding:'11px', background: busy === 'passage' ? '#6EE7B7' : '#10B981', color:'#fff', border:'none', borderRadius:'11px', fontWeight:700, fontSize:'0.85rem', cursor: busy ? 'wait' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
                         {busy === 'passage' ? <><IconSpinner /> Writing…</> : passage ? <><IconRefresh /> Regenerate Passage</> : '+ Generate Passage'}
                       </button>
