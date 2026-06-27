@@ -10,13 +10,14 @@ import TextHighlighter from './components/TextHighlighter';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ContactPage } from './components/ContactPage';
 import { PracticeHub } from './components/PracticeHub';
+import { BookReviews } from './components/BookReviews';
 import { LivePlayer } from './components/LivePlayer'; 
+import { ExamCheckIn } from './components/ExamCheckIn';
+import { ExamDisplay } from './components/ExamDisplay';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
 // --- 1. SLEEK SVG ICONS ---
-const IconFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>);
-const IconNonFiction = ({ size = 18 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>);
 const IconBeginner = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" strokeOpacity="0.2"/><rect x="16" y="6" width="4" height="14" rx="2" strokeOpacity="0.2"/></svg>);
 const IconIntermediate = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" fill="currentColor"/><rect x="16" y="6" width="4" height="14" rx="2" strokeOpacity="0.2"/></svg>);
 const IconAdvanced = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" fill="currentColor"/><rect x="16" y="6" width="4" height="14" fill="currentColor"/></svg>);
@@ -39,8 +40,6 @@ const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) =>
 );
 
 // --- 2. CONSTANTS & STYLES ---
-const fictionCategories = ["British Literature", "American Literature", "Russian Literature", "French Literature", "Arabic Literature", "Other Literature"];
-const nonFictionCategories = ["Informative & Educational", "Self Improvement", "Language Learning & Teaching"];
 const LEVELS = [ { name: "Beginner", icon: <IconBeginner />, subLevels: ["Level 1", "Level 2", "Level 3"] }, { name: "Intermediate", icon: <IconIntermediate />, subLevels: ["Level 4", "Level 5", "Level 6"] }, { name: "Advanced", icon: <IconAdvanced />, subLevels: ["Level 7", "Level 8", "Business English"] } ];
 
 const styles: any = {
@@ -74,6 +73,7 @@ function LitAndLearnMain() {
   const location = useLocation();
 
   const isPlayRoute = location.pathname.startsWith('/play');
+  const isExamRoute = location.pathname.startsWith('/exam');
   const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
 
   const currentTabName = useMemo(() => {
@@ -322,14 +322,6 @@ function LitAndLearnMain() {
     return { title: '', desc: '', objectives: [] };
   };
 
-  const displayedReviews = reviews.filter(rev => {
-    if (!bookCategory || !activeSubCategory) return false;
-    const safeLower = (val: any) => typeof val === 'string' ? val.toLowerCase().trim() : '';
-    const mainCat = safeLower(rev.mainCategory) || safeLower(rev.category) || 'fiction';
-    const subCat = safeLower(rev.subCategory) || safeLower(rev.genre) || '';
-    return mainCat === bookCategory.toLowerCase().trim() && subCat === activeSubCategory.toLowerCase().trim();
-  });
-
   const searchResultsReviews = reviews.filter(rev => rev.title?.toLowerCase().includes(searchTerm.toLowerCase()) || (typeof rev.content === 'string' && rev.content.toLowerCase().includes(searchTerm.toLowerCase())) );
   const searchResultsResources = resources.filter(res => res.title?.toLowerCase().includes(searchTerm.toLowerCase()) || res.category?.toLowerCase().includes(searchTerm.toLowerCase()) || res.subLevel?.toLowerCase().includes(searchTerm.toLowerCase()) );
 
@@ -530,6 +522,12 @@ function LitAndLearnMain() {
       {isPlayRoute ? (
         <Routes>
           <Route path="/play" element={<LivePlayer />} />
+        </Routes>
+     ) : isExamRoute ? (
+        <Routes>
+          <Route path="/exam/display/:code" element={<ExamDisplay />} />
+          <Route path="/exam/:code" element={<ExamCheckIn />} />
+          <Route path="/exam" element={<ExamCheckIn />} />
         </Routes>
       ) : (
         <div style={styles.page}>
@@ -800,65 +798,14 @@ function LitAndLearnMain() {
 
                     {/* --- ROUTE: BOOK REVIEWS --- */}
                     <Route path="/reviews" element={
-                      <div>
-                        {!bookCategory ? (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '800px', margin: '0 auto' }}>
-                              <button onClick={() => setBookCategory('Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
-                                <div style={{ background: '#EEF2FF', color: '#4F46E5', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconFiction size={32} /></div>
-                                <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Fiction</h3>
-                                <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Novels, short stories, and classics.</p>
-                              </button>
-                              <button onClick={() => setBookCategory('Non-Fiction')} className="soft-card" style={{ flex: '1 1 300px', maxWidth: '350px', padding: '40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
-                                <div style={{ background: '#FEF2F2', color: '#EF4444', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconNonFiction size={32} /></div>
-                                <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>Non-Fiction</h3>
-                                <p style={{ color: '#64748B', margin: 0, fontSize: '1.1rem' }}>Essays and educational texts.</p>
-                              </button>
-                            </div>
-                          </div>
-                        ) : !activeSubCategory ? (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ marginBottom: '30px', textAlign: 'center' }}>
-                              <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
-                                <BackButton onClick={() => setBookCategory(null)} text="Back to Library" />
-                                <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Genre</h3>
-                                <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{bookCategory}</p>
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                              {(bookCategory === 'Fiction' ? fictionCategories : nonFictionCategories).map(cat => ( 
-                                <button key={cat} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubCategory(cat)}>{cat}</button> 
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ marginBottom: '30px' }}>
-                              <BackButton onClick={() => setActiveSubCategory(null)} text="Back to Genres" />
-                              <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeSubCategory}</h3>
-                              <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{bookCategory}</span>
-                            </div>
-                            <div style={styles.grid}>
-                              {displayedReviews.length > 0 ? displayedReviews.map(book => (
-                                <div key={book._id} className="soft-card" style={styles.card}>
-                                  <div style={{ padding: '16px 16px 0 16px' }}>{book.coverImage ? ( <img src={urlFor(book.coverImage).url()} alt={book.title} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: '24px' }} /> ) : ( <div style={{ width: '100%', aspectRatio: '3/4', background: '#F8FAFC', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontWeight: '500' }}>No Cover Image</div> )}</div>
-                                  <div style={{ padding: '24px', flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                    <h3 style={{ margin: '0 0 4px', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', textAlign: 'center', lineHeight: '1.2' }}>{book.title}</h3>
-                                    {book.author && <span style={{ color: '#64748B', fontSize: '1.05rem', marginBottom: '16px', textAlign: 'center' }}>{book.author}</span>}
-                                    {book.level && <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', marginBottom: 'auto', letterSpacing: '0.5px' }}>{book.level}</span>}
-                                    {book.content && ( <div style={{ width: '100%', marginTop: '20px' }}><button style={styles.readMoreBtn} onClick={() => setSelectedBook(book)}>Read Review</button></div> )}
-                                  </div>
-                                </div>
-                              )) : ( 
-                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '80px', color: '#94A3B8', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0' }}>
-                                  <h3 style={{ fontWeight: '600', margin: 0, fontSize: '1.5rem', color: '#475569' }}>No books found</h3>
-                                  <p style={{ margin: '8px 0 0 0', fontSize: '1.1rem' }}>Reviews for this category haven't been published yet.</p>
-                                </div> 
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <BookReviews
+                        reviews={reviews}
+                        bookCategory={bookCategory}
+                        setBookCategory={setBookCategory}
+                        activeSubCategory={activeSubCategory}
+                        setActiveSubCategory={setActiveSubCategory}
+                        onSelectBook={setSelectedBook}
+                      />
                     } />
 
                     {/* --- ROUTE: ENGLISH CORNER (HOME) --- */}

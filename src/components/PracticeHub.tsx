@@ -7,29 +7,51 @@ const IconCheckCircle = () => (<svg width="60" height="60" viewBox="0 0 24 24" f
 const IconAlert = () => (<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>);
 const IconArrowRight = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>);
 
+// Small line-art icons for the redesigned card
+const IconQuestions = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>);
+const IconChevronRight = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>);
+
 // --- Unified Master Theme (Matches ResourceLibrary exactly) ---
 const getCategoryTheme = (category: string) => {
   const cat = (category || '').toLowerCase();
   
   if (cat.includes('grammar')) return { 
-    bg: '#FEE2E2', color: '#EF4444', 
+    bg: '#FEE2E2', color: '#EF4444', tagText: '#B91C1C',
     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg> 
   };
   
   if (cat.includes('vocabulary')) return { 
-    bg: '#FEF3C7', color: '#F59E0B', 
+    bg: '#FEF3C7', color: '#F59E0B', tagText: '#B45309',
     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg> 
   };
   
   if (cat.includes('pronunciation')) return { 
-    bg: '#F3E8FF', color: '#A855F7', 
+    bg: '#F3E8FF', color: '#A855F7', tagText: '#7E22CE',
     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="11" rx="3" ry="3"></rect><path d="M5 10v2a7 7 0 0 0 14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg> 
   };
   
   return { 
-    bg: '#F1F5F9', color: '#64748B', 
+    bg: '#F1F5F9', color: '#64748B', tagText: '#475569',
     icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 
   };
+};
+
+// Counts the real, unique, valid questions inside a bulkData blob.
+// Mirrors the parse logic in handleStartTopic exactly so the number on the
+// card always matches what the student actually receives.
+const countQuestions = (bulkData: string): number => {
+  if (!bulkData) return 0;
+  const rows = bulkData.replace(/\r/g, '').split('\n').filter((row) => row.trim() !== '');
+  const seen = new Set<string>();
+  let count = 0;
+  for (const row of rows) {
+    const cols = row.split('\t').map((c) => c.trim());
+    if (cols.length >= 5 && cols[0] !== '' && cols[0].toLowerCase() !== 'question') {
+      const cleanQ = cols[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!seen.has(cleanQ)) { seen.add(cleanQ); count++; }
+    }
+  }
+  return count;
 };
 
 export const PracticeHub = () => {
@@ -246,14 +268,38 @@ export const PracticeHub = () => {
         .grid-container {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 24px;
+          gap: 16px;
+        }
+
+        /* Redesigned card: tighter, horizontal, full-card tap target */
+        .practice-card {
+          background-color: #ffffff;
+          border: 1px solid #E2E8F0;
+          border-radius: 20px;
+          padding: 18px 20px;
+          text-align: left;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 6px 20px -12px rgba(0,0,0,0.06);
+          width: 100%;
+        }
+        .practice-card:hover {
+          border-color: #C7D2FE;
+          box-shadow: 0 12px 28px -14px rgba(79,70,229,0.18);
+          transform: translateY(-2px);
+        }
+        .practice-card:hover .practice-chevron {
+          color: #4F46E5;
+          transform: translateX(2px);
         }
         
         @media (min-width: 768px) {
           .hub-controls { flex-direction: row; justify-content: space-between; align-items: center; }
           .hub-search-row { flex-direction: row; width: auto; max-width: 600px; gap: 16px; }
           .hub-dropdown-container { width: 200px; }
-          .grid-container { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 32px; }
+          .grid-container { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
         }
       `}</style>
 
@@ -335,49 +381,46 @@ export const PracticeHub = () => {
             <div className="grid-container">
               {filteredTopics.map(topic => {
                 const theme = getCategoryTheme(topic.category);
+                const qCount = countQuestions(topic.bulkData);
                 
                 return (
                   <button 
                     key={topic._id} 
                     onClick={() => handleStartTopic(topic)}
-                    className="soft-card" 
-                    style={{ 
-                      backgroundColor: '#ffffff', 
-                      border: '1px solid #E2E8F0', 
-                      borderRadius: '24px', 
-                      padding: '32px', 
-                      textAlign: 'left', 
-                      cursor: 'pointer', 
-                      transition: 'all 0.2s', 
-                      display: 'flex', 
-                      flexDirection: 'column',
-                      boxShadow: '0 10px 30px -10px rgba(0,0,0,0.04)',
-                      minHeight: '220px'
-                    }}
+                    className="practice-card soft-card" 
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-                      <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: theme.bg, color: theme.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: theme.bg, color: theme.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         {theme.icon}
                       </div>
                       
-                      {/* THIS FIXES THE CARD BADGE TYPOGRAPHY */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px', lineHeight: '1.2' }}>
-                          {topic.level}
-                        </span>
-                        <span style={{ color: '#94A3B8', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px', lineHeight: '1.2' }}>
-                          {topic.category}
-                        </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '3px 9px', borderRadius: '7px', background: theme.bg, color: theme.tagText, lineHeight: '1.2' }}>
+                            {topic.category}
+                          </span>
+                          {topic.level && (
+                            <span style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '3px 9px', borderRadius: '7px', background: '#F1F5F9', color: '#64748B', lineHeight: '1.2' }}>
+                              {topic.level}
+                            </span>
+                          )}
+                        </div>
+                        <h3 style={{ margin: 0, fontSize: '17px', color: '#0F172A', fontWeight: '700', lineHeight: '1.3', letterSpacing: '-0.2px' }}>
+                          {topic.title}
+                        </h3>
                       </div>
+                      
+                      <span className="practice-chevron" style={{ color: '#CBD5E1', flexShrink: 0, display: 'flex', transition: 'all 0.2s' }}>
+                        <IconChevronRight />
+                      </span>
                     </div>
                     
-                    <h3 style={{ margin: '0 0 24px', fontSize: '22px', color: '#0F172A', fontWeight: '700', lineHeight: '1.3', letterSpacing: '-0.3px' }}>
-                      {topic.title}
-                    </h3>
-                    
-                    <span style={{ color: '#4F46E5', fontWeight: '700', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px', marginTop: 'auto' }}>
-                      Start Practice <IconArrowRight />
-                    </span>
+                    {qCount > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #F1F5F9', color: '#64748B', fontSize: '13px', fontWeight: '600' }}>
+                        <span style={{ display: 'flex', color: '#94A3B8' }}><IconQuestions /></span>
+                        {qCount} question{qCount !== 1 ? 's' : ''}
+                      </div>
+                    )}
                   </button>
                 );
               })}

@@ -4,6 +4,7 @@ import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';
 import { client } from '../sanityClient'; 
 import { ActivityGenerator } from './ActivityGenerator';
+import { ExamMode } from './ExamMode';
 
 const IconMail      = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash     = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
@@ -21,6 +22,7 @@ const IconCrown     = () => (<svg width="20" height="20" viewBox="0 0 24 24" fil
 const IconHourglass = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 22h14"></path><path d="M5 2h14"></path><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path></svg>);
 const IconInfinity  = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"></path></svg>);
 const IconSparkles  = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>);
+const IconClipboard = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>);
 
 // Format a duration stored in seconds as "Xm YYs" (or "Ys" under a minute).
 // e.g. 90 -> "1m 30s", 65 -> "1m 05s", 45 -> "45s". The stored value keeps its
@@ -38,7 +40,7 @@ export const TeacherDashboard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Core UI ───────────────────────────────────────────────────────────────
-  const [adminTab, setAdminTab] = useState<'inbox'|'grading'|'progress'|'arena'|'studio'>('inbox');
+  const [adminTab, setAdminTab] = useState<'inbox'|'grading'|'progress'|'arena'|'studio'|'exam'>('inbox');
   const [toastMessage, setToastMessage] = useState<{text:string,type:'success'|'error'}|null>(null);
   const showToast = (text:string, type:'success'|'error') => { setToastMessage({text,type}); setTimeout(()=>setToastMessage(null),4000); };
 
@@ -628,7 +630,7 @@ export const TeacherDashboard: React.FC = () => {
       {/* Nav tabs */}
       <div style={{display:'flex',justifyContent:'center',marginBottom:'40px'}}>
         <div style={{display:'inline-flex',flexWrap:'wrap',justifyContent:'center',backgroundColor:'#fff',padding:'8px',borderRadius:'9999px',boxShadow:'0 10px 30px rgba(0,0,0,0.03)',gap:'8px'}}>
-          {([['inbox','#4F46E5',<IconMail/>,'Inbox'],['grading','#4F46E5',<IconUsers/>,'Grading Portal'],['progress','#10B981',<IconChart/>,'Student Progress'],['arena','#F59E0B',<IconPlay/>,'Live Arena'],['studio','#8B5CF6',<IconSparkles/>,'Content Studio']] as [string,string,React.ReactNode,string][]).map(([tab,color,icon,label])=>(
+          {([['inbox','#4F46E5',<IconMail/>,'Inbox'],['grading','#4F46E5',<IconUsers/>,'Grading Portal'],['progress','#10B981',<IconChart/>,'Student Progress'],['arena','#F59E0B',<IconPlay/>,'Live Arena'],['studio','#8B5CF6',<IconSparkles/>,'Content Studio'],['exam','#E11D48',<IconClipboard/>,'Exam Mode']] as [string,string,React.ReactNode,string][]).map(([tab,color,icon,label])=>(
             <button key={tab} onClick={()=>setAdminTab(tab as any)} style={{background:adminTab===tab?color:'transparent',color:adminTab===tab?'#fff':'#64748B',border:'none',padding:'14px 28px',borderRadius:'9999px',fontWeight:'600',fontSize:'1.1rem',cursor:'pointer',transition:'all 0.2s',display:'flex',alignItems:'center',gap:'8px'}}>
               {icon} {label}
             </button>
@@ -1176,6 +1178,8 @@ export const TeacherDashboard: React.FC = () => {
 
       {/* ── CONTENT STUDIO ── */}
       {adminTab==='studio' && <ActivityGenerator/>}
+       {/* ── EXAM MODE ── */}
+      {adminTab==='exam' && <ExamMode/>}
     </div>
   );
 };
