@@ -14,6 +14,7 @@ import { BookReviews } from './components/BookReviews';
 import { LivePlayer } from './components/LivePlayer'; 
 import { ExamCheckIn } from './components/ExamCheckIn';
 import { ExamDisplay } from './components/ExamDisplay';
+import { MobileNav } from './components/MobileNav';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
@@ -561,6 +562,7 @@ function LitAndLearnMain() {
                 </nav>
               )}
             </div>
+            {!isOverlayActive && <MobileNav TABS={TABS} currentPath={location.pathname} onNavigate={handleNavigation} />}
           </header>
 
           <div className="app-container" style={styles.container}>

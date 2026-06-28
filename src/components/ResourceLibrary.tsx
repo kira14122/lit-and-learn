@@ -61,11 +61,11 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
     });
   }, [groupedResources]);
 
+  // When the student switches category, start with every unit CLOSED.
+  // They open and close whichever units they like, as many as they want.
   useEffect(() => {
-    if (activeFilter && sortedGroupKeys.length > 0) {
-      setExpandedGroups({ [sortedGroupKeys[0]]: true });
-    }
-  }, [activeFilter, sortedGroupKeys]);
+    setExpandedGroups({});
+  }, [activeFilter]);
 
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
