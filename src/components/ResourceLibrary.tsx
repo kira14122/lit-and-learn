@@ -20,8 +20,29 @@ const IconDownloadSmall = () => (<svg width="18" height="18" viewBox="0 0 24 24"
 const IconChevronDown = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>);
 const IconChevronUp = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>);
 
+// Valid category names (must match the `name` values in `categories` below).
+const CATEGORY_NAMES = ['General', 'Reading', 'Writing', 'Listening', 'Grammar', 'Vocabulary'];
+
+// Reads ?cat=... from the address bar (e.g. /resources?cat=Grammar) and matches
+// it to a category, case-insensitively and forgivingly. Returns null if absent.
+const readCategoryFromUrl = (): string | null => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('cat');
+    if (!raw) return null;
+    const q = raw.trim().toLowerCase();
+    return (
+      CATEGORY_NAMES.find(c => c.toLowerCase() === q) ||
+      CATEGORY_NAMES.find(c => c.toLowerCase().startsWith(q)) ||
+      null
+    );
+  } catch {
+    return null;
+  }
+};
+
 export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  // If the page was opened with ?cat=Grammar, start right in that category.
+  const [activeFilter, setActiveFilter] = useState<string | null>(readCategoryFromUrl);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Unified Soft Pastel Color Palette
