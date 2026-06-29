@@ -15,6 +15,7 @@ import { LivePlayer } from './components/LivePlayer';
 import { ExamCheckIn } from './components/ExamCheckIn';
 import { ExamDisplay } from './components/ExamDisplay';
 import { MobileNav } from './components/MobileNav';
+import { AboutPage } from './components/AboutPage';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
@@ -1014,27 +1015,7 @@ function LitAndLearnMain() {
                     <Route path="/resources" element={<ResourceLibrary resources={resources} />} />
                     
                     {/* --- ROUTE: ABOUT --- */}
-                    <Route path="/about" element={
-                      <div style={{ animation: 'fadeInDown 0.3s ease-out', maxWidth: '800px', margin: '0 auto' }}>
-                        <div className="soft-card adapt-padding" style={{ backgroundColor: '#ffffff', borderRadius: '32px', padding: '60px', border: '1px solid #E2E8F0', boxShadow: '0 20px 40px rgba(0,0,0,0.04)' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderBottom: '2px solid #F1F5F9', paddingBottom: '40px', marginBottom: '40px' }}>
-                            <h2 style={{ margin: '0 0 8px 0', fontSize: '2.6rem', color: '#0F172A', fontWeight: '600', letterSpacing: '-0.5px' }}>Meet Dr. Chouit Abderraouf</h2>
-                            <p style={{ color: '#64748B', fontSize: '1.15rem', margin: '0 0 20px 0', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>Creator & Founder of Lit & Learn</p>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
-                              <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>PhD in English Linguistics</span>
-                              <span style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px 18px', borderRadius: '9999px', fontSize: '0.95rem', fontWeight: '700', letterSpacing: '0.5px' }}>TESOL Certified</span>
-                            </div>
-                          </div>
-                          <div style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                             <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Bridging Language and Literature</h3>
-                             <p style={{ margin: 0 }}>Welcome to Lit & Learn. As an educator, I have seen firsthand how frustrating traditional language learning can be when it is reduced to passing tests and studying dry vocabulary lists. I created this platform to offer a different path—one where language mastery is achieved through a dynamic, multifaceted approach.</p>
-                             <p style={{ margin: 0 }}>The foundation of our method is contextual immersion, with a strong emphasis on cultivating reading as a lifelong, evolving skill. Reading is not merely a vehicle for absorbing complex syntax; it is a profound educational journey. Through our curated book reviews and literary analyses, you are not just learning vocabulary in context—you are exploring the rich ideas, diverse cultures, and timeless philosophies embedded in world literature. The literature itself elevates both your mind and your English.</p>
-                             <p style={{ margin: 0 }}>However, Lit & Learn is much more than a library of literary reviews; it is a complete, interactive language center. Your learning journey here bridges the gap between theory and practice. You will move from deep textual analysis to structured lessons in the <strong>English Corner</strong>, where you can actively apply your knowledge through targeted exercises for grammar, pronunciation, and vocabulary. Finally, the <strong>My Progress</strong> dashboard ensures your success is measurable, allowing you to track your daily reviews and official assessments.</p>
-                             <p style={{ margin: 0 }}>Drawing on my PhD in English Linguistics and years of teaching experience, my mission is to continuously evolve this platform. By blending the profound depth of world literature with interactive pedagogical tools, my goal is to guide you to absolute, confident mastery of the English language.</p>
-                          </div>
-                        </div>
-                      </div>
-                    } />
+                    <Route path="/about" element={<AboutPage onNavigate={handleNavigation} />} />
 
                     {/* --- ROUTE: CONTACT --- */}
                     <Route path="/contact" element={<ContactPage />} />
