@@ -1,6 +1,7 @@
 // src/aiGenerator.ts
-// Primary: Gemini 2.0 Flash | Fallback: Groq Llama 3.3 70B
-// ~16,000 free requests per day combined
+// Primary: Gemini (model cascade lives in the ask-gemini edge function)
+// Fallback: Groq (model cascade lives in the ask-groq edge function)
+// Both are free-tier; exact per-model quotas vary and change often.
 //
 // ── REDESIGN NOTES ──────────────────────────────────────────────────────────
 // This file keeps ALL existing exports working unchanged:
@@ -131,12 +132,17 @@ async function callGemini(prompt: string, supabaseUrl: string, anonKey: string):
     if (res.status === 429) { _lastRateLimited = true; console.warn('⚠️ Gemini rate-limited (429) — trying Groq.'); return null; }
     if (!res.ok) { console.warn(`⚠️ Gemini returned ${res.status} — trying Groq.`); return null; }
     const data = await res.json();
-    if (data.error?.status === 'RESOURCE_EXHAUSTED') { _lastRateLimited = true; console.warn('⚠️ Gemini quota exhausted — switching to Groq.'); return null; }
-    if (
-      data.promptFeedback?.blockReason ||
-      !data.candidates?.length
-    ) { console.warn('⚠️ Gemini blocked/empty — switching to Groq.'); return null; }
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    // The ask-gemini edge function returns { text } on success or { error } on
+    // failure — the SAME clean shape as ask-groq. Read THAT, not the raw Google
+    // response: gemini-3.x are thinking models whose answer is not in parts[0],
+    // so re-parsing the raw structure here silently threw away valid answers
+    // (the function logged a ✅ while the app fell back to Groq every time).
+    if (data.error) {
+      if (/RESOURCE_EXHAUSTED|quota|rate.?limit|\b429\b/i.test(String(data.error))) _lastRateLimited = true;
+      console.warn(`⚠️ Gemini error: ${data.error} — switching to Groq.`);
+      return null;
+    }
+    const text = data.text?.trim();
     if (!text) { console.warn('⚠️ Gemini returned empty — trying Groq.'); return null; }
     console.log('✅ Gemini responded.');
     return text;
