@@ -33,7 +33,9 @@ Deno.serve(async (req) => {
       throw new Error('GROQ_API_KEY is missing from Supabase secrets!');
     }
 
-    // Call Groq — Llama 3.3 70B, 14,400 free requests/day
+    // Call Groq — GPT-OSS 120B, Groq's recommended replacement for the
+    // retired Llama 3.3 70B Versatile (decommissioned Aug 16, 2026).
+    // reasoning_effort 'low' keeps it fast and leaves the token budget for the answer.
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -41,10 +43,11 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2048,
         temperature: 0.3,
+        reasoning_effort: 'low',
       }),
     });
 
