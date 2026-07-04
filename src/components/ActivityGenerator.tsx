@@ -268,13 +268,6 @@ const PCSS = `
 const shuffle = <T,>(a: T[]): T[] => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];} return r; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-// Failure message that distinguishes rate limiting (the common cause when
-// generating several activities quickly) from a genuine failure.
-const failAlert = (what: string) =>
-  alert(wasRateLimited()
-    ? `The free AI services are rate-limited right now. Wait a minute or two, then generate ${what} again.`
-    : `Couldn't generate ${what}. Please try again.`);
-
 // ─── Quick Activity v2: deterministic exercise assembly ────────────────────────
 // The raw engines return only validated facts (target, distractors, ONE context
 // sentence with a [TARGET] placeholder). These assemblers turn them into the
@@ -452,7 +445,26 @@ export const ActivityGenerator = () => {
   // ui
   const [busy, setBusy]               = useState<string | null>(null);
   const [restore, setRestore]         = useState<Persisted | null>(null);
+  const [toast, setToast]             = useState<{ msg: string; tone: 'warn' | 'error' } | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const toastTimer = useRef<number | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Styled in-app toast — replaces every native alert(). Auto-dismisses.
+  const showToast = (msg: string, tone: 'warn' | 'error' = 'warn') => {
+    setToast({ msg, tone });
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3400);
+  };
+  // Generation-failure message that distinguishes rate limiting (the common cause
+  // when generating several activities quickly) from a genuine failure.
+  const failToast = (what: string) =>
+    showToast(
+      wasRateLimited()
+        ? `The free AI services are busy right now. Wait a minute, then generate ${what} again.`
+        : `Couldn't generate ${what}. Please try again.`,
+      'error'
+    );
 
   // ── autosave / restore ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -486,7 +498,7 @@ export const ActivityGenerator = () => {
   const hasContent = !!passage || sections.length > 0;
 
   const genPassage = async () => {
-    if (!topic.trim()) return alert('Please enter a topic for the passage.');
+    if (!topic.trim()) return showToast('Enter a topic for the passage.');
     setBusy('passage');
     const p = await generateLessonPassage(topic, level, passageWords, lessonGrammarFocus);
     if (p) {
@@ -497,17 +509,17 @@ export const ActivityGenerator = () => {
       // the teacher may have typed in Part 4 untouched.
       if (lessonGrammarFocus.trim()) setGrammarPoint(lessonGrammarFocus.trim());
     }
-    else failAlert('the passage');
+    else failToast('the passage');
     setBusy(null);
   };
   const usePasted = () => {
-    if (!pasteText.trim()) return alert('Please paste your source text.');
+    if (!pasteText.trim()) return showToast('Paste your source text first.');
     setPassage(pasteText.trim()); setApproved(false);
   };
   const approvePassage = () => { if (!passage.trim()) return; setApproved(true); };
   const editPassage    = () => setApproved(false);
 
-  const guardLesson = () => { if (mode === 'lesson' && !passageApproved) { alert('Approve a passage first, then build the activities on it.'); return false; } return true; };
+  const guardLesson = () => { if (mode === 'lesson' && !passageApproved) { showToast('Approve a passage first, then build the activities.'); return false; } return true; };
 
   const buildVocab = (vp: VocabularyPart, pb = false): VocabSection => ({
     id: uid(), kind: 'vocab', pageBreakBefore: pb, vp,
@@ -520,43 +532,43 @@ export const ActivityGenerator = () => {
     if (!guardLesson()) return; setBusy('tf');
     const items = await generateTrueFalse(passage, level);
     if (items) upsert({ id: getSection('tf')?.id ?? uid(), kind: 'tf', pageBreakBefore: getSection('tf')?.pageBreakBefore ?? false, items });
-    else failAlert('the True/False section');
+    else failToast('the True/False section');
     setBusy(null);
   };
   const genComp = async () => {
     if (!guardLesson()) return; setBusy('comprehension');
     const items = await generateComprehensionQuestions(passage, level);
     if (items) upsert({ id: getSection('comprehension')?.id ?? uid(), kind: 'comprehension', pageBreakBefore: getSection('comprehension')?.pageBreakBefore ?? false, items });
-    else failAlert('the comprehension questions');
+    else failToast('the comprehension questions');
     setBusy(null);
   };
   const genVocab = async () => {
     if (!guardLesson()) return; setBusy('vocab');
     const vp = await generateVocabularySet(passage, level, true);
     if (vp) upsert(buildVocab(vp, getSection('vocab')?.pageBreakBefore ?? false));
-    else failAlert('the vocabulary section');
+    else failToast('the vocabulary section');
     setBusy(null);
   };
   const genDisc = async () => {
     if (!guardLesson()) return; setBusy('discussion');
     const items = await generateDiscussion(passage, level);
     if (items) upsert({ id: getSection('discussion')?.id ?? uid(), kind: 'discussion', pageBreakBefore: getSection('discussion')?.pageBreakBefore ?? false, items });
-    else failAlert('the discussion questions');
+    else failToast('the discussion questions');
     setBusy(null);
   };
   const genGrammar = async () => {
     if (!guardLesson()) return;
-    if (!grammarPoint.trim()) return alert('Enter a grammar point for Part 4.');
+    if (!grammarPoint.trim()) return showToast('Enter a grammar point for Part 4.');
     setBusy('grammar');
     const data = await generateGrammarNoticing(grammarPoint, level, passage);
     if (data) upsert({ id: getSection('grammar')?.id ?? uid(), kind: 'grammar', pageBreakBefore: getSection('grammar')?.pageBreakBefore ?? false, data });
-    else failAlert('the grammar section');
+    else failToast('the grammar section');
     setBusy(null);
   };
 
   const genCrossword = () => {
     const vocab = getSection('vocab');
-    if (!vocab) return alert('Please generate Part 2 · Vocabulary first so the crossword has words to use!');
+    if (!vocab) return showToast('Generate Part 2 · Vocabulary first so the crossword has words to use.');
     
     setBusy('crossword');
     setTimeout(() => {
@@ -568,14 +580,14 @@ export const ActivityGenerator = () => {
       if (layout) {
         upsert({ id: getSection('crossword')?.id ?? uid(), kind: 'crossword', pageBreakBefore: false, layout });
       } else {
-        alert('Could not generate a crossword layout with these specific words. This happens rarely if letters do not intersect well.');
+        showToast('Could not build a crossword from these words — their letters do not intersect well.', 'error');
       }
       setBusy(null);
     }, 50);
   };
 
   const genCustomCrossword = () => {
-    if (!customCrosswordInput.trim()) return alert('Please paste some words and clues.');
+    if (!customCrosswordInput.trim()) return showToast('Paste some words and clues first.');
     
     const lines = customCrosswordInput.split('\n');
     const items: {word: string, clue: string}[] = [];
@@ -586,7 +598,7 @@ export const ActivityGenerator = () => {
       if (match) items.push({ word: match[1].trim(), clue: match[2].trim() });
     }
     
-    if (items.length < 2) return alert('Please provide at least 2 valid pairs formatted as "Word : Clue".');
+    if (items.length < 2) return showToast('Add at least 2 lines formatted as "Word : Clue".');
 
     setBusy('crossword');
     setTimeout(() => {
@@ -595,15 +607,15 @@ export const ActivityGenerator = () => {
         setSections([{ id: uid(), kind: 'crossword', pageBreakBefore: false, layout }]);
         if (!title.trim()) setTitle(quickTheme.trim() || 'Custom Crossword Puzzle');
       } else {
-        alert('Could not generate a crossword layout with these words. Try adding more options to increase intersections.');
+        showToast('Could not build a crossword from these words — add more so the letters can intersect.', 'error');
       }
       setBusy(null);
     }, 50);
   };
 
   const genQuickVocab = async () => {
-    if (!quickTheme.trim()) return alert('Enter a vocabulary theme or structure.');
-    if (vocabExTypes.length === 0) return alert('Select at least one exercise type.');
+    if (!quickTheme.trim()) return showToast('Enter a vocabulary theme or structure.');
+    if (vocabExTypes.length === 0) return showToast('Select at least one exercise type.');
     setBusy('quickVocab');
     const numItems = Math.min(Math.max(8, vocabExTypes.length * 5), 18);
     const raw = await generateRawVocab(quickTheme, level, teacherFocus, numItems);
@@ -614,13 +626,13 @@ export const ActivityGenerator = () => {
       // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
       if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Vocabulary: ${quickTheme.trim()}`);
     }
-    else failAlert('the vocabulary worksheet');
+    else failToast('the vocabulary worksheet');
     setBusy(null);
   };
   
   const genQuickGrammar = async () => {
-    if (!grammarPoint.trim()) return alert('Enter a grammar point.');
-    if (grammarExTypes.length === 0) return alert('Select at least one exercise type.');
+    if (!grammarPoint.trim()) return showToast('Enter a grammar point.');
+    if (grammarExTypes.length === 0) return showToast('Select at least one exercise type.');
     setBusy('quickGrammar');
     const numItems = Math.min(Math.max(8, grammarExTypes.length * 5 + 2), 18);
     const raw = await generateRawGrammar(grammarPoint, level, teacherFocus, numItems);
@@ -631,13 +643,14 @@ export const ActivityGenerator = () => {
       // Quick generation replaces the whole sheet: refresh the title unless the teacher typed a custom one.
       if (!title.trim() || /^(Vocabulary|Grammar):/i.test(title.trim())) setTitle(`Grammar: ${grammarPoint.trim()}`);
     }
-    else failAlert('the grammar worksheet');
+    else failToast('the grammar worksheet');
     setBusy(null);
   };
 
   const reshuffleMatching = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, wordOrder: shuffle(s.vp.matching.map((_, i) => i)), defOrder: shuffle(s.vp.matching.map((_, i) => i)) } : s));
   const reshuffleBank     = (id: string) => setSections(prev => prev.map(s => s.kind === 'vocab' && s.id === id ? { ...s, bankOrder: shuffle([...s.vp.gaps.map((_, i) => i), ...s.vp.distractors.map((_, i) => s.vp.gaps.length + i)]) } : s));
-  const clearAll = () => { if (window.confirm('Clear the entire worksheet?')) { setPassage(''); setApproved(false); setSections([]); setTitle(''); localStorage.removeItem('ll_ws_v2'); } };
+  const clearAll = () => setConfirmClear(true);
+  const doClearAll = () => { setPassage(''); setApproved(false); setSections([]); setTitle(''); localStorage.removeItem('ll_ws_v2'); setConfirmClear(false); };
 
   const cleanHTML = () => { const c = printRef.current?.cloneNode(true) as HTMLElement; if (!c) return ''; c.querySelectorAll('.no-print').forEach(e => e.remove()); return c.innerHTML; };
   const doPrint = () => { const w = window.open('', '', 'width=960,height=1080'); if (!w) return; w.document.write(`<html><head><title>${title || 'Worksheet'}</title><style>${PCSS}</style></head><body>${cleanHTML()}</body></html>`); w.document.close(); setTimeout(() => { w.print(); w.close(); }, 600); };
@@ -949,7 +962,33 @@ export const ActivityGenerator = () => {
 
   return (
     <div style={{ display:'flex', gap:'28px', alignItems:'flex-start' }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes llToastIn{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}`}</style>
+
+      {toast && (
+        <div role="status" style={{ position:'fixed', top:'20px', left:'50%', transform:'translateX(-50%)', zIndex:10000, display:'flex', alignItems:'center', gap:'10px', background:'#fff', border:`1px solid ${toast.tone === 'error' ? '#FECACA' : '#FDE68A'}`, borderRadius:'12px', padding:'11px 15px', boxShadow:'0 10px 30px rgba(0,0,0,0.18)', maxWidth:'360px', animation:'llToastIn 0.18s ease-out' }}>
+          <span style={{ display:'flex', width:'22px', height:'22px', flexShrink:0, alignItems:'center', justifyContent:'center', background: toast.tone === 'error' ? '#FEE2E2' : '#FEF3C7', color: toast.tone === 'error' ? '#DC2626' : '#B45309', borderRadius:'50%', fontSize:'13px', fontWeight:700 }}>!</span>
+          <span style={{ fontSize:'0.83rem', color:'#0F172A', fontWeight:500, lineHeight:1.4 }}>{toast.msg}</span>
+        </div>
+      )}
+
+      {confirmClear && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', backdropFilter:'blur(4px)', zIndex:10001, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
+          <div style={{ background:'#fff', borderRadius:'24px', width:'100%', maxWidth:'400px', boxShadow:'0 20px 44px rgba(0,0,0,0.22)', overflow:'hidden' }}>
+            <div style={{ padding:'26px 26px 8px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'14px' }}>
+                <span style={{ display:'flex', width:'42px', height:'42px', alignItems:'center', justifyContent:'center', background:'#FEF2F2', color:'#EF4444', borderRadius:'14px', flexShrink:0 }}><IconTrash /></span>
+                <h3 style={{ margin:0, fontSize:'1.2rem', fontWeight:700, color:'#0F172A' }}>Clear the entire worksheet?</h3>
+              </div>
+              <p style={{ margin:'0 0 4px', fontSize:'0.9rem', lineHeight:1.55, color:'#64748B' }}>This removes the passage and every activity you've generated. This can't be undone.</p>
+            </div>
+            <div style={{ display:'flex', gap:'10px', padding:'18px 26px 24px' }}>
+              <button onClick={() => setConfirmClear(false)} style={{ flex:1, padding:'11px', background:'#F1F5F9', color:'#475569', border:'none', borderRadius:'12px', fontSize:'0.9rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+              <button onClick={doClearAll} style={{ flex:1, padding:'11px', background:'#EF4444', color:'#fff', border:'none', borderRadius:'12px', fontSize:'0.9rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Clear worksheet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ flex:'0 0 320px', background:'#fff', borderRadius:'26px', padding:'22px', border:'1px solid #E2E8F0', boxShadow:'0 8px 24px rgba(0,0,0,0.04)', position:'sticky', top:'20px', maxHeight:'calc(100vh - 40px)', overflowY:'auto' }}>
         <div style={{ display:'flex', gap:'4px', background:'#F1F5F9', padding:'4px', borderRadius:'12px', marginBottom:'18px' }}>
           {(['build', 'settings'] as const).map(t => (
