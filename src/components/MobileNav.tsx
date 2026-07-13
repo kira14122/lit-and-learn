@@ -16,6 +16,9 @@ interface MobileNavProps {
   TABS: Tab[];
   currentPath: string;
   onNavigate: (path?: string) => void;
+  // Passed down from App.tsx (single source of truth for the launch date).
+  // When it flips to false, the "NEW" pill disappears here automatically too.
+  writingLabIsNew?: boolean;
 }
 
 const PURPLE = '#4F46E5';
@@ -30,6 +33,7 @@ const tabIcon = (path: string) => {
   switch (path) {
     case '/':          return (<svg {...c}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>);
     case '/practice':  return (<svg {...c}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /></svg>);
+    case '/writing':   return (<svg {...c}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>);
     case '/reviews':   return (<svg {...c}><polygon points="12 2 15 9 22 9.5 17 14 18.5 21 12 17 5.5 21 7 14 2 9.5 9 9" /></svg>);
     case '/resources': return (<svg {...c}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>);
     case '/progress':  return (<svg {...c}><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></svg>);
@@ -40,7 +44,7 @@ const tabIcon = (path: string) => {
   }
 };
 
-export function MobileNav({ TABS, currentPath, onNavigate }: MobileNavProps) {
+export function MobileNav({ TABS, currentPath, onNavigate, writingLabIsNew = false }: MobileNavProps) {
   const [open, setOpen] = useState(false);
 
   // Lock background scroll while the menu is open.
@@ -134,6 +138,14 @@ export function MobileNav({ TABS, currentPath, onNavigate }: MobileNavProps) {
         .ll-mnav-item.is-active { background: #EEF2FF; color: #4F46E5; font-weight: 600; }
         .ll-mnav-item.is-active .ll-mnav-ic { color: #4F46E5; }
 
+        /* Amber "NEW" pill, pushed to the right edge of its row. */
+        .ll-mnav-new {
+          margin-left: auto; flex-shrink: 0;
+          background: #F59E0B; color: #ffffff;
+          font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
+          padding: 3px 9px; border-radius: 9999px;
+        }
+
         .ll-mnav-foot { padding: 16px 18px 22px; border-top: 1px solid #F1F5F9; }
         .ll-mnav-signin {
           width: 100%; background: #10B981; color: #ffffff; border: none;
@@ -166,6 +178,9 @@ export function MobileNav({ TABS, currentPath, onNavigate }: MobileNavProps) {
               >
                 <span className="ll-mnav-ic">{tabIcon(tab.path)}</span>
                 <span>{tab.name}</span>
+                {tab.path === '/writing' && writingLabIsNew && (
+                  <span className="ll-mnav-new">NEW</span>
+                )}
               </button>
             ))}
           </nav>

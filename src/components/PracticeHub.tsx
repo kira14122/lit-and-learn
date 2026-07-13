@@ -39,6 +39,8 @@ const getCategoryTheme = (category: string) => {
 // Counts the real, unique, valid questions inside a bulkData blob.
 // Mirrors the parse logic in handleStartTopic exactly so the number on the
 // card always matches what the student actually receives.
+// Duplicates are identified by question + options, so repeated question
+// stems with different options (e.g. "Which sentence is correct?") are kept.
 const countQuestions = (bulkData: string): number => {
   if (!bulkData) return 0;
   const rows = bulkData.replace(/\r/g, '').split('\n').filter((row) => row.trim() !== '');
@@ -47,7 +49,7 @@ const countQuestions = (bulkData: string): number => {
   for (const row of rows) {
     const cols = row.split('\t').map((c) => c.trim());
     if (cols.length >= 5 && cols[0] !== '' && cols[0].toLowerCase() !== 'question') {
-      const cleanQ = cols[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanQ = (cols[0] + cols[1] + cols[2] + cols[3]).toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!seen.has(cleanQ)) { seen.add(cleanQ); count++; }
     }
   }
@@ -109,7 +111,7 @@ export const PracticeHub = () => {
     const uniqueQuestions = [];
     const seen = new Set();
     for (const q of rawQuestions) {
-      const cleanQ = q.question.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanQ = (q.question + q.options.A + q.options.B + q.options.C).toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!seen.has(cleanQ)) { seen.add(cleanQ); uniqueQuestions.push(q); }
     }
 

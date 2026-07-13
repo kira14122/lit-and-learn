@@ -15,8 +15,11 @@ const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) =>
 );
 
 // --- Constants (local to Book Reviews) ---
+// Fiction keeps its genre step. Non-Fiction is a single flat pool: clicking the
+// category card goes straight to the book grid (no genre screen). Sub-category
+// tags on non-fiction books in Sanity are simply ignored, so they can be
+// reintroduced later without any data changes.
 const fictionCategories = ["British Literature", "American Literature", "Russian Literature", "French Literature", "Arabic Literature", "Other Literature"];
-const nonFictionCategories = ["Informative & Educational", "Self Improvement", "Language Learning & Teaching"];
 
 // --- Helpers ---
 const safeLower = (val: any) => typeof val === 'string' ? val.toLowerCase().trim() : '';
@@ -57,6 +60,9 @@ export const BookReviews = ({
   onSelectBook,
 }: BookReviewsProps) => {
 
+  // Non-Fiction skips the genre screen entirely and goes straight to the grid.
+  const isNonFiction = safeLower(bookCategory) === 'non-fiction';
+
   // Most recent reviews across everything, newest first (uses Sanity's built-in _createdAt).
   const recentReviews = [...reviews]
     .sort((a, b) => {
@@ -75,7 +81,10 @@ export const BookReviews = ({
   };
 
   const displayedReviews = reviews.filter(rev => {
-    if (!bookCategory || !activeSubCategory) return false;
+    if (!bookCategory) return false;
+    // Non-Fiction: one flat pool, sub-category tags are ignored.
+    if (isNonFiction) return getMainCat(rev) === 'non-fiction';
+    if (!activeSubCategory) return false;
     return getMainCat(rev) === bookCategory.toLowerCase().trim() && getSubCat(rev) === activeSubCategory.toLowerCase().trim();
   });
 
@@ -189,24 +198,24 @@ export const BookReviews = ({
           </div>
 
         </div>
-      ) : !activeSubCategory ? (
-        /* ================= GENRE SELECT ================= */
+      ) : (!activeSubCategory && !isNonFiction) ? (
+        /* ================= GENRE SELECT (Fiction only) ================= */
         <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
           <div style={{ maxWidth: '860px', margin: '0 auto' }}>
             <BackButton onClick={() => setBookCategory(null)} text="Back to Library" />
             <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '18px 0 4px 0' }}>Select a Genre</h3>
             <p style={{ color: '#64748B', fontSize: '1.05rem', margin: '0 0 24px 0', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ display: 'inline-flex', width: '24px', height: '24px', borderRadius: '8px', background: bookCategory === 'Fiction' ? '#EEF2FF' : '#FEF2F2', color: bookCategory === 'Fiction' ? '#4F46E5' : '#EF4444', alignItems: 'center', justifyContent: 'center' }}>
-                {bookCategory === 'Fiction' ? <IconFiction size={14} /> : <IconNonFiction size={14} />}
+              <span style={{ display: 'inline-flex', width: '24px', height: '24px', borderRadius: '8px', background: '#EEF2FF', color: '#4F46E5', alignItems: 'center', justifyContent: 'center' }}>
+                <IconFiction size={14} />
               </span>
               {bookCategory}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {(bookCategory === 'Fiction' ? fictionCategories : nonFictionCategories).map(cat => {
+              {fictionCategories.map(cat => {
                 const count = genreCount(cat);
-                const tintBg = bookCategory === 'Fiction' ? '#EEF2FF' : '#FEF2F2';
-                const tintColor = bookCategory === 'Fiction' ? '#4F46E5' : '#EF4444';
+                const tintBg = '#EEF2FF';
+                const tintColor = '#4F46E5';
                 if (count === 0) {
                   return (
                     <div key={cat} className="br-genre" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#F8FAFC', border: '1px dashed #E2E8F0', borderRadius: '20px', opacity: 0.6 }}>
@@ -232,9 +241,12 @@ export const BookReviews = ({
         /* ================= BOOK GRID ================= */
         <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
           <div style={{ marginBottom: '30px' }}>
-            <BackButton onClick={() => setActiveSubCategory(null)} text="Back to Genres" />
-            <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{activeSubCategory}</h3>
-            <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{bookCategory}</span>
+            <BackButton
+              onClick={() => isNonFiction ? setBookCategory(null) : setActiveSubCategory(null)}
+              text={isNonFiction ? 'Back to Library' : 'Back to Genres'}
+            />
+            <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 4px 0' }}>{isNonFiction ? 'Non-Fiction' : activeSubCategory}</h3>
+            <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{isNonFiction ? `${displayedReviews.length} review${displayedReviews.length !== 1 ? 's' : ''}` : bookCategory}</span>
           </div>
           <div style={styles.grid}>
             {displayedReviews.length > 0 ? displayedReviews.map(book => (

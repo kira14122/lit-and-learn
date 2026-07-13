@@ -43,6 +43,9 @@ export default {
       name: 'subCategory',
       type: 'string',
       title: 'Sub-Category',
+      // Non-Fiction is a single flat pool on the site (no genre step),
+      // so this field only applies to Fiction and hides itself otherwise.
+      hidden: ({ document }) => document?.category === 'Non-Fiction',
       options: {
         list: [
           // Fiction options

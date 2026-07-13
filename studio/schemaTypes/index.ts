@@ -13,6 +13,10 @@ import grammarPracticeBlock from './grammarPracticeBlock'
 import unitMetadata from './unitMetadata'
 import unitAssessment from './unitAssessment'
 import practiceBank from './practiceBank'
+import writingBank from './writingBank'
+import writingModule from './writingModule'
+import readingBank from './readingBank'
+import readingModule from './readingModule'
 
 export const schemaTypes = [
   review,
@@ -30,4 +34,8 @@ export const schemaTypes = [
   unitMetadata,
   unitAssessment,
   practiceBank,
+  writingBank,
+  writingModule,
+  readingBank,
+  readingModule,
 ]

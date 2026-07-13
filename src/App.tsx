@@ -10,6 +10,7 @@ import TextHighlighter from './components/TextHighlighter';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ContactPage } from './components/ContactPage';
 import { PracticeHub } from './components/PracticeHub';
+import { WritingLab } from './components/WritingLab';
 import { BookReviews } from './components/BookReviews';
 import { LivePlayer } from './components/LivePlayer'; 
 import { ExamCheckIn } from './components/ExamCheckIn';
@@ -43,6 +44,10 @@ const BackButton = ({ onClick, text }: { onClick: () => void, text: string }) =>
 
 // --- 2. CONSTANTS & STYLES ---
 const LEVELS = [ { name: "Beginner", icon: <IconBeginner />, subLevels: ["Level 1", "Level 2", "Level 3"] }, { name: "Intermediate", icon: <IconIntermediate />, subLevels: ["Level 4", "Level 5", "Level 6"] }, { name: "Advanced", icon: <IconAdvanced />, subLevels: ["Level 7", "Level 8", "Business English"] } ];
+
+// Writing Lab launch framing. The "NEW" nav badge and the "Just launched" pill on the
+// featured card disappear automatically on this date — no code change needed later.
+const WRITING_LAB_IS_NEW = new Date() < new Date('2026-09-15');
 
 const styles: any = {
   page: { fontFamily: '"Fredoka", sans-serif', backgroundColor: '#F3F6F8', minHeight: '100vh', color: '#0F172A', padding: '40px 0 0 0' },
@@ -82,6 +87,7 @@ function LitAndLearnMain() {
     switch(location.pathname) {
       case '/': return 'English Corner';
       case '/practice': return 'Practice Hub'; 
+      case '/writing': return 'Writing Lab';
       case '/reviews': return 'Book Reviews';
       case '/resources': return 'Resources';
       case '/progress': return 'My Progress';
@@ -95,6 +101,7 @@ function LitAndLearnMain() {
   const TABS = [
     { name: 'English Corner', path: '/' },
     { name: 'Practice Hub', path: '/practice' },
+    { name: 'Writing Lab', path: '/writing' },
     { name: 'Book Reviews', path: '/reviews' },
     { name: 'Resources', path: '/resources' },
     { name: 'My Progress', path: '/progress' },
@@ -393,6 +400,11 @@ function LitAndLearnMain() {
         .soft-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.06) !important; }
         .back-btn:hover { background-color: #F8FAFC !important; transform: translateX(-4px); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Featured Writing Lab card: hide the decorative module preview on phones */
+        @media (max-width: 700px) {
+          .wl-featured-preview { display: none !important; }
+        }
         
         .bento-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 40px; align-items: start; }
         
@@ -543,10 +555,13 @@ function LitAndLearnMain() {
                   {TABS.map(tab => (
                     <button 
                       key={tab.name} 
-                      style={styles.navButton(location.pathname === tab.path)} 
+                      style={{ ...styles.navButton(location.pathname === tab.path), position: 'relative' }} 
                       onClick={() => handleNavigation(tab.path)}
                     >
                       {tab.name}
+                      {tab.name === 'Writing Lab' && WRITING_LAB_IS_NEW && (
+                        <span style={{ position: 'absolute', top: '2px', right: '8px', background: '#F59E0B', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '2px 7px', borderRadius: '9999px', letterSpacing: '0.5px', lineHeight: '1.4' }}>NEW</span>
+                      )}
                     </button>
                   ))}
                   
@@ -563,7 +578,7 @@ function LitAndLearnMain() {
                 </nav>
               )}
             </div>
-            {!isOverlayActive && <MobileNav TABS={TABS} currentPath={location.pathname} onNavigate={handleNavigation} />}
+            {!isOverlayActive && <MobileNav TABS={TABS} currentPath={location.pathname} onNavigate={handleNavigation} writingLabIsNew={WRITING_LAB_IS_NEW} />}
           </header>
 
           <div className="app-container" style={styles.container}>
@@ -580,6 +595,7 @@ function LitAndLearnMain() {
                         currentTabName === 'Admin Dashboard' ? 'Secure Command Center.' :
                         currentTabName === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
                         currentTabName === 'Practice Hub' ? 'Fast, interactive exercises to test your knowledge.' : 
+                        currentTabName === 'Writing Lab' ? 'Learn the rule, then practise it.' :
                         currentTabName === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
                         currentTabName === 'Resources' ? 'Download worksheets and audio lessons.' :
                         'Welcome to Lit & Learn.'}
@@ -647,6 +663,9 @@ function LitAndLearnMain() {
                   <Routes>
                     {/* --- ROUTE: PRACTICE HUB --- */}
                     <Route path="/practice" element={<PracticeHub />} />
+
+                    {/* --- ROUTE: WRITING LAB --- */}
+                    <Route path="/writing" element={<WritingLab />} />
 
                     {/* --- ROUTE: MY PROGRESS --- */}
                     <Route path="/progress" element={
@@ -816,6 +835,52 @@ function LitAndLearnMain() {
                       <div>
                         {!activeLevel ? (
                           <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
+
+                            {/* --- FEATURED: WRITING LAB (premium launch card) --- */}
+                            <div className="soft-card" style={{ position: 'relative', overflow: 'hidden', maxWidth: '1000px', margin: '0 auto 40px auto', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.14)', background: 'radial-gradient(120% 90% at 85% 10%, rgba(167,139,250,0.45) 0%, rgba(167,139,250,0) 55%), radial-gradient(90% 80% at 5% 95%, rgba(236,72,153,0.20) 0%, rgba(236,72,153,0) 55%), linear-gradient(135deg, #312E81 0%, #4338CA 45%, #5B21B6 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 24px 55px -18px rgba(49,46,129,0.55)', padding: '40px' }}>
+                              <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+                              <div style={{ position: 'absolute', top: '-90px', right: '-60px', width: '260px', height: '260px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0) 70%)' }} />
+                              <svg style={{ position: 'absolute', top: '26px', right: '30px', opacity: 0.75 }} width="16" height="16" viewBox="0 0 24 24" fill="#FDE68A"><path d="M12 1l2.2 7.6L22 12l-7.8 3.4L12 23l-2.2-7.6L2 12l7.8-3.4z"/></svg>
+                              <svg style={{ position: 'absolute', top: '70px', right: '76px', opacity: 0.45 }} width="10" height="10" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 1l2.2 7.6L22 12l-7.8 3.4L12 23l-2.2-7.6L2 12l7.8-3.4z"/></svg>
+                              <svg style={{ position: 'absolute', right: '-16px', bottom: '-26px', opacity: 0.10, transform: 'rotate(-12deg)' }} width="170" height="170" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+
+                              <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '30px' }}>
+                                <div style={{ flex: '1 1 400px', minWidth: 0 }}>
+                                  {WRITING_LAB_IS_NEW && (
+                                    <span style={{ display: 'inline-block', background: 'linear-gradient(100deg, #F59E0B, #FBBF24 60%, #FDE68A)', color: '#451A03', fontSize: '0.7rem', fontWeight: '800', padding: '5px 14px', borderRadius: '9999px', letterSpacing: '1.2px', textTransform: 'uppercase', boxShadow: '0 4px 14px -2px rgba(245,158,11,0.55), inset 0 1px 0 rgba(255,255,255,0.5)' }}>Just Launched</span>
+                                  )}
+                                  <h3 style={{ fontSize: '2.2rem', fontWeight: '600', margin: '14px 0 8px 0', lineHeight: '1.15', background: 'linear-gradient(100deg, #ffffff 30%, #C7D2FE 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>The Writing Lab</h3>
+                                  <p style={{ color: '#C7D2FE', fontSize: '1.15rem', lineHeight: '1.6', margin: '0 0 16px 0', maxWidth: '520px' }}>From your first sentence to full academic essays — one lesson at a time.</p>
+                                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '22px' }}>
+                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>9 modules</span>
+                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>A1 → C1</span>
+                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>100% free</span>
+                                  </div>
+                                  <button onClick={() => handleNavigation('/writing')} style={{ background: 'linear-gradient(180deg, #ffffff, #EEF2FF)', color: '#4338CA', border: 'none', padding: '16px 32px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.15rem', cursor: 'pointer', boxShadow: '0 10px 26px -6px rgba(0,0,0,0.45), inset 0 -2px 0 rgba(79,70,229,0.14)', transition: 'all 0.2s' }}>
+                                    Start the course →
+                                  </button>
+                                </div>
+
+                                {/* Decorative mini-preview of the real course modules (hidden on phones) */}
+                                <div className="wl-featured-preview" style={{ flex: '0 0 210px', position: 'relative', height: '278px' }}>
+                                  <div style={{ position: 'absolute', top: '0px', left: '26px', width: '176px', transform: 'rotate(4deg)', background: 'rgba(255,255,255,0.97)', borderRadius: '18px', padding: '14px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.45)' }}>
+                                    <span style={{ display: 'inline-block', background: '#4F46E5', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 1</span>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#0F172A', marginTop: '8px', lineHeight: '1.25' }}>Basic Grammar and Punctuation</div>
+                                    <div style={{ height: '5px', background: '#E2E8F0', borderRadius: '3px', marginTop: '10px', overflow: 'hidden' }}><div style={{ width: '34%', height: '100%', background: '#4F46E5' }} /></div>
+                                  </div>
+                                  <div style={{ position: 'absolute', top: '92px', left: '0px', width: '176px', transform: 'rotate(-3deg)', background: 'rgba(255,255,255,0.97)', borderRadius: '18px', padding: '14px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.45)' }}>
+                                    <span style={{ display: 'inline-block', background: '#D97706', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 2</span>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#0F172A', marginTop: '8px', lineHeight: '1.25' }}>Fixing Common Sentence Errors</div>
+                                    <div style={{ fontSize: '0.72rem', color: '#D97706', fontWeight: '700', marginTop: '9px' }}>7 lessons →</div>
+                                  </div>
+                                  <div style={{ position: 'absolute', top: '204px', left: '32px', width: '168px', transform: 'rotate(3deg)', background: 'rgba(255,255,255,0.88)', borderRadius: '18px', padding: '12px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.40)' }}>
+                                    <span style={{ display: 'inline-block', background: '#10B981', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 3</span>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#0F172A', marginTop: '7px', lineHeight: '1.2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Formal Academic Vocab…</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
                             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
                               {LEVELS.map((lvl, index) => {
                                 const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#10B981' } ];
