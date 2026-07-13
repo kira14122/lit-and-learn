@@ -409,6 +409,7 @@ function LitAndLearnMain() {
         @media (max-width: 700px) {
           .wl-write { font-size: 3.4rem; }
           .wl-pen { width: 38px; height: 38px; top: 10px !important; }
+          .wl-kicker { font-size: 0.62rem !important; letter-spacing: 1.5px !important; }
           .wl-manifesto-foot { flex-direction: column; align-items: stretch !important; }
           .wl-cta { width: 100%; }
         }
@@ -846,7 +847,7 @@ function LitAndLearnMain() {
                             {/* --- FEATURED: WRITING LAB (the "Write." manifesto card) --- */}
                             <div className="soft-card" style={{ maxWidth: '1000px', margin: '0 auto 40px auto', background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '32px', boxShadow: '0 20px 45px -18px rgba(15,23,42,0.12)', padding: '36px 40px 32px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid #0F172A', paddingBottom: '14px' }}>
-                                <span style={{ fontSize: '0.72rem', letterSpacing: '2.5px', color: '#0F172A', fontWeight: '600' }}>THE MASTER WRITING COURSE</span>
+                                <span className="wl-kicker" style={{ fontSize: '0.72rem', letterSpacing: '2.5px', color: '#0F172A', fontWeight: '600' }}>THE MASTER WRITING COURSE</span>
                                 {WRITING_LAB_IS_NEW && (
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '0.72rem', letterSpacing: '2px', color: '#B45309', fontWeight: '600' }}>
                                     <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#F59E0B' }} />NEW
