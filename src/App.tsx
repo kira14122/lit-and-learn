@@ -384,7 +384,7 @@ function LitAndLearnMain() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Fraunces:ital,wght@1,500;1,600&display=swap');
         
         * { box-sizing: border-box; font-family: 'Fredoka', sans-serif !important; }
         
@@ -401,9 +401,16 @@ function LitAndLearnMain() {
         .back-btn:hover { background-color: #F8FAFC !important; transform: translateX(-4px); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Featured Writing Lab card: hide the decorative module preview on phones */
+        /* Featured Writing Lab card (the "Write." manifesto) */
+        /* .wl-serif must out-rank the global "* !important" Fredoka rule, hence class + !important */
+        .wl-serif, .wl-serif * { font-family: 'Fraunces', Georgia, 'Times New Roman', serif !important; }
+        .wl-write { font-size: 5rem; }
+        .wl-pen { width: 56px; height: 56px; }
         @media (max-width: 700px) {
-          .wl-featured-preview { display: none !important; }
+          .wl-write { font-size: 3.4rem; }
+          .wl-pen { width: 38px; height: 38px; top: 10px !important; }
+          .wl-manifesto-foot { flex-direction: column; align-items: stretch !important; }
+          .wl-cta { width: 100%; }
         }
         
         .bento-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; margin-bottom: 40px; align-items: start; }
@@ -836,48 +843,29 @@ function LitAndLearnMain() {
                         {!activeLevel ? (
                           <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
 
-                            {/* --- FEATURED: WRITING LAB (premium launch card) --- */}
-                            <div className="soft-card" style={{ position: 'relative', overflow: 'hidden', maxWidth: '1000px', margin: '0 auto 40px auto', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.14)', background: 'radial-gradient(120% 90% at 85% 10%, rgba(167,139,250,0.45) 0%, rgba(167,139,250,0) 55%), radial-gradient(90% 80% at 5% 95%, rgba(236,72,153,0.20) 0%, rgba(236,72,153,0) 55%), linear-gradient(135deg, #312E81 0%, #4338CA 45%, #5B21B6 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 24px 55px -18px rgba(49,46,129,0.55)', padding: '40px' }}>
-                              <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
-                              <div style={{ position: 'absolute', top: '-90px', right: '-60px', width: '260px', height: '260px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0) 70%)' }} />
-                              <svg style={{ position: 'absolute', top: '26px', right: '30px', opacity: 0.75 }} width="16" height="16" viewBox="0 0 24 24" fill="#FDE68A"><path d="M12 1l2.2 7.6L22 12l-7.8 3.4L12 23l-2.2-7.6L2 12l7.8-3.4z"/></svg>
-                              <svg style={{ position: 'absolute', top: '70px', right: '76px', opacity: 0.45 }} width="10" height="10" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 1l2.2 7.6L22 12l-7.8 3.4L12 23l-2.2-7.6L2 12l7.8-3.4z"/></svg>
-                              <svg style={{ position: 'absolute', right: '-16px', bottom: '-26px', opacity: 0.10, transform: 'rotate(-12deg)' }} width="170" height="170" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-
-                              <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '30px' }}>
-                                <div style={{ flex: '1 1 400px', minWidth: 0 }}>
-                                  {WRITING_LAB_IS_NEW && (
-                                    <span style={{ display: 'inline-block', background: 'linear-gradient(100deg, #F59E0B, #FBBF24 60%, #FDE68A)', color: '#451A03', fontSize: '0.7rem', fontWeight: '800', padding: '5px 14px', borderRadius: '9999px', letterSpacing: '1.2px', textTransform: 'uppercase', boxShadow: '0 4px 14px -2px rgba(245,158,11,0.55), inset 0 1px 0 rgba(255,255,255,0.5)' }}>Just Launched</span>
-                                  )}
-                                  <h3 style={{ fontSize: '2.2rem', fontWeight: '600', margin: '14px 0 8px 0', lineHeight: '1.15', background: 'linear-gradient(100deg, #ffffff 30%, #C7D2FE 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>The Writing Lab</h3>
-                                  <p style={{ color: '#C7D2FE', fontSize: '1.15rem', lineHeight: '1.6', margin: '0 0 16px 0', maxWidth: '520px' }}>From your first sentence to full academic essays — one lesson at a time.</p>
-                                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '22px' }}>
-                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>9 modules</span>
-                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>A1 → C1</span>
-                                    <span style={{ background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.20)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)', color: '#EDE9FE', fontSize: '0.85rem', fontWeight: '600', padding: '6px 14px', borderRadius: '9999px' }}>100% free</span>
-                                  </div>
-                                  <button onClick={() => handleNavigation('/writing')} style={{ background: 'linear-gradient(180deg, #ffffff, #EEF2FF)', color: '#4338CA', border: 'none', padding: '16px 32px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.15rem', cursor: 'pointer', boxShadow: '0 10px 26px -6px rgba(0,0,0,0.45), inset 0 -2px 0 rgba(79,70,229,0.14)', transition: 'all 0.2s' }}>
-                                    Start the course →
-                                  </button>
+                            {/* --- FEATURED: WRITING LAB (the "Write." manifesto card) --- */}
+                            <div className="soft-card" style={{ maxWidth: '1000px', margin: '0 auto 40px auto', background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '32px', boxShadow: '0 20px 45px -18px rgba(15,23,42,0.12)', padding: '36px 40px 32px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid #0F172A', paddingBottom: '14px' }}>
+                                <span style={{ fontSize: '0.72rem', letterSpacing: '2.5px', color: '#0F172A', fontWeight: '600' }}>THE MASTER WRITING COURSE</span>
+                                {WRITING_LAB_IS_NEW && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '0.72rem', letterSpacing: '2px', color: '#B45309', fontWeight: '600' }}>
+                                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#F59E0B' }} />NEW
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ position: 'relative', padding: '26px 0 10px' }}>
+                                <h3 className="wl-serif wl-write" style={{ fontStyle: 'italic', fontWeight: '600', lineHeight: '0.95', color: '#0F172A', letterSpacing: '-2px', margin: 0 }}>Write<span style={{ color: '#4F46E5' }}>.</span></h3>
+                                <svg className="wl-pen" style={{ position: 'absolute', right: '8px', top: '18px', transform: 'rotate(6deg)' }} viewBox="0 0 24 24" fill="none" stroke="#D4A017" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                              </div>
+                              <p style={{ fontSize: '1.1rem', color: '#475569', lineHeight: '1.65', maxWidth: '440px', margin: 0 }}>From your first sentence to full academic essays — one lesson at a time.</p>
+                              <p className="wl-serif" style={{ fontStyle: 'italic', fontSize: '1.15rem', color: '#B45309', margin: '10px 0 26px' }}>Free, for everyone. Always.</p>
+                              <div className="wl-manifesto-foot" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px', borderTop: '1px solid #E2E8F0', paddingTop: '20px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', gap: '32px' }}>
+                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>9</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>MODULES</div></div>
+                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>67</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>LESSONS</div></div>
+                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>A1–C1</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>ALL LEVELS</div></div>
                                 </div>
-
-                                {/* Decorative mini-preview of the real course modules (hidden on phones) */}
-                                <div className="wl-featured-preview" style={{ flex: '0 0 210px', position: 'relative', height: '278px' }}>
-                                  <div style={{ position: 'absolute', top: '0px', left: '26px', width: '176px', transform: 'rotate(4deg)', background: 'rgba(255,255,255,0.97)', borderRadius: '18px', padding: '14px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.45)' }}>
-                                    <span style={{ display: 'inline-block', background: '#4F46E5', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 1</span>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#0F172A', marginTop: '8px', lineHeight: '1.25' }}>Basic Grammar and Punctuation</div>
-                                    <div style={{ height: '5px', background: '#E2E8F0', borderRadius: '3px', marginTop: '10px', overflow: 'hidden' }}><div style={{ width: '34%', height: '100%', background: '#4F46E5' }} /></div>
-                                  </div>
-                                  <div style={{ position: 'absolute', top: '92px', left: '0px', width: '176px', transform: 'rotate(-3deg)', background: 'rgba(255,255,255,0.97)', borderRadius: '18px', padding: '14px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.45)' }}>
-                                    <span style={{ display: 'inline-block', background: '#D97706', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 2</span>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#0F172A', marginTop: '8px', lineHeight: '1.25' }}>Fixing Common Sentence Errors</div>
-                                    <div style={{ fontSize: '0.72rem', color: '#D97706', fontWeight: '700', marginTop: '9px' }}>7 lessons →</div>
-                                  </div>
-                                  <div style={{ position: 'absolute', top: '204px', left: '32px', width: '168px', transform: 'rotate(3deg)', background: 'rgba(255,255,255,0.88)', borderRadius: '18px', padding: '12px 16px', boxShadow: '0 14px 30px -10px rgba(0,0,0,0.40)' }}>
-                                    <span style={{ display: 'inline-block', background: '#10B981', color: '#ffffff', fontSize: '0.6rem', fontWeight: '800', padding: '3px 10px', borderRadius: '9999px', letterSpacing: '0.6px' }}>MODULE 3</span>
-                                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#0F172A', marginTop: '7px', lineHeight: '1.2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Formal Academic Vocab…</div>
-                                  </div>
-                                </div>
+                                <button onClick={() => handleNavigation('/writing')} className="wl-cta" style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '15px 30px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 24px -8px rgba(79,70,229,0.45)', transition: 'all 0.2s', fontFamily: '"Fredoka", sans-serif' }}>Start the course →</button>
                               </div>
                             </div>
 
