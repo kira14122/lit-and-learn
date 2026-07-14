@@ -413,7 +413,7 @@ export const ExamMode: React.FC = () => {
 
   // ── Scoring panel ────────────────────────────────────────────────────────────
   const perSkill = (queue?.speaking_total || 10) / 5;
-  const liveTotal = [sFluency, sGrammar, sVocab, sPron, sTask].reduce((sum: number, v) => sum + (v === '' ? 0 : Number(v)), 0);
+  const liveTotal: number = [sFluency, sGrammar, sVocab, sPron, sTask].reduce<number>((sum, v) => sum + (v === '' ? 0 : Number(v)), 0);
   const entryTotal = (e: ExamEntry) =>
     (e.score_fluency || 0) + (e.score_grammar || 0) + (e.score_vocabulary || 0) + (e.score_pronunciation || 0) + (e.score_task || 0);
 
@@ -444,7 +444,8 @@ export const ExamMode: React.FC = () => {
     setIsSavingScore(true);
     try {
       const db = await getDb();
-      const numOrNull = (v: number | '') => (v === '' ? null : Number(v));
+      // Clamp to the valid range at save time too (defends against any odd typed value).
+      const numOrNull = (v: number | '') => (v === '' ? null : Math.min(Math.max(Number(v), 0), perSkill));
       const payload: any = {
         score_fluency: numOrNull(sFluency),
         score_grammar: numOrNull(sGrammar),
@@ -622,7 +623,27 @@ export const ExamMode: React.FC = () => {
                   <span style={{ fontSize: '1rem', color: '#0F172A', fontWeight: 600 }}>{lbl}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <button onClick={() => bump(val, setter, -1)} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid #CBD5E1', background: '#fff', color: '#475569', fontSize: '1.3rem', cursor: 'pointer', lineHeight: 1 }}>−</button>
-                    <span style={{ minWidth: '64px', textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#0F172A' }}>{val === '' ? 0 : val}<span style={{ color: '#94A3B8', fontWeight: 400, fontSize: '0.85rem' }}> / {perSkill}</span></span>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        max={perSkill}
+                        step={0.5}
+                        value={val}
+                        onChange={e => {
+                          const raw = e.target.value;
+                          if (raw === '') { setter(''); return; }
+                          let n = Number(raw);
+                          if (Number.isNaN(n)) return;
+                          if (n < 0) n = 0;
+                          if (n > perSkill) n = perSkill;
+                          setter(n);
+                        }}
+                        style={{ width: '64px', padding: '7px 4px', borderRadius: '9px', border: '2px solid #E2E8F0', textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#0F172A', outline: 'none', background: '#fff' }}
+                      />
+                      <span style={{ color: '#94A3B8', fontWeight: 400, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>/ {perSkill}</span>
+                    </div>
                     <button onClick={() => bump(val, setter, 1)} style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid #CBD5E1', background: '#fff', color: '#475569', fontSize: '1.3rem', cursor: 'pointer', lineHeight: 1 }}>+</button>
                   </div>
                 </div>

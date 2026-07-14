@@ -191,8 +191,8 @@ export const ExamDisplay: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(16px,2vw,32px)', flexShrink: 0 }}>
               <div style={{ fontSize: 'clamp(28px,3.5vw,56px)', fontWeight: 600, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{clockStr}</div>
               <div style={{ background: '#fff', borderRadius: '14px', padding: '8px', textAlign: 'center' }}>
-                <img src={qrSrc} alt="Scan to join" style={{ width: 'clamp(64px,7vw,104px)', height: 'clamp(64px,7vw,104px)', display: 'block' }} />
-                <div style={{ color: BG, fontSize: 'clamp(9px,0.8vw,12px)', fontWeight: 700, marginTop: '2px', letterSpacing: '1px' }}>{queue.code}</div>
+                <img src={qrSrc} alt="Scan to join" style={{ width: 'clamp(72px,8vw,124px)', height: 'clamp(72px,8vw,124px)', display: 'block' }} />
+                <div style={{ color: BG, fontSize: 'clamp(11px,1vw,16px)', fontWeight: 800, marginTop: '2px', letterSpacing: '2px' }}>{queue.code}</div>
               </div>
             </div>
           </div>
@@ -276,9 +276,10 @@ export const ExamDisplay: React.FC = () => {
 
             {/* Right: QR */}
             <div style={{ background: '#fff', borderRadius: '24px', padding: 'clamp(18px,2vw,32px)', textAlign: 'center', justifySelf: 'center', maxWidth: '100%' }}>
-              <img src={qrSrc} alt="Scan to join the speaking queue" style={{ width: 'clamp(160px,18vw,320px)', height: 'clamp(160px,18vw,320px)', display: 'block', margin: '0 auto', maxWidth: '100%' }} />
+              <img src={qrSrc} alt="Scan to join the speaking queue" style={{ width: 'clamp(180px,22vw,420px)', height: 'clamp(180px,22vw,420px)', display: 'block', margin: '0 auto', maxWidth: '100%' }} />
               <div style={{ fontSize: 'clamp(15px,1.5vw,24px)', fontWeight: 700, color: BG, marginTop: 'clamp(10px,1.4vh,18px)' }}>Scan to join the speaking queue</div>
-              <div style={{ fontSize: 'clamp(12px,1.2vw,18px)', color: '#4F46E5', marginTop: '6px', fontWeight: 600 }}>code {queue.code}</div>
+              <div style={{ fontSize: 'clamp(26px,3.2vw,58px)', color: '#4F46E5', marginTop: '6px', fontWeight: 800, letterSpacing: '4px', fontVariantNumeric: 'tabular-nums' }}>{queue.code}</div>
+              <div style={{ fontSize: 'clamp(13px,1.3vw,20px)', color: '#64748B', marginTop: '4px', fontWeight: 600 }}>or type this code at {origin.replace(/^https?:\/\//, '')}/exam</div>
               <div style={{ fontSize: 'clamp(11px,1vw,15px)', color: '#64748B', marginTop: 'clamp(8px,1vh,12px)', borderTop: '1px solid #E2E8F0', paddingTop: 'clamp(8px,1vh,12px)' }}>{checkedIn} checked in</div>
             </div>
           </div>
