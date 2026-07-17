@@ -603,7 +603,7 @@ function LitAndLearnMain() {
                         currentTabName === 'Admin Dashboard' ? 'Secure Command Center.' :
                         currentTabName === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
                         currentTabName === 'Practice Hub' ? 'Fast, interactive exercises to test your knowledge.' : 
-                        currentTabName === 'Writing Lab' ? 'Learn the rule, then practise it.' :
+                        currentTabName === 'Writing Lab' ? 'Learn the rule, then practice it.' :
                         currentTabName === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
                         currentTabName === 'Resources' ? 'Download worksheets and audio lessons.' :
                         'Welcome to Lit & Learn.'}
