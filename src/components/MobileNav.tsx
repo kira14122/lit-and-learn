@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
+import { SerifAmp } from './LitLearnLogo';
 
 // ============================================================================
 // MobileNav — a self-contained, MOBILE-ONLY slide-in menu.
@@ -165,7 +166,18 @@ export function MobileNav({ TABS, currentPath, onNavigate, writingLabIsNew = fal
       <div className={`ll-mnav-scrim ${open ? 'is-open' : ''}`} onClick={() => setOpen(false)}>
         <aside className="ll-mnav-panel" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
           <div className="ll-mnav-head">
-            <span className="ll-mnav-brand">Lit <span style={{ color: PURPLE }}>&amp;</span> Learn</span>
+            <span className="ll-mnav-brand" style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+              <svg width="25" height="24" viewBox="0 0 96 92" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <path d="M48 4 C49.6 12 51.4 13.8 59.5 15.4 C51.4 17 49.6 18.8 48 27 C46.4 18.8 44.6 17 36.5 15.4 C44.6 13.8 46.4 12 48 4 Z" fill={PURPLE} />
+                <path d="M46 40 C36 31 20 28 5 32 L5 80 C20 76 36 79 46 87 Z" fill={PURPLE} />
+                <path d="M50 40 C60 31 76 28 91 32 L91 80 C76 76 60 79 50 87 Z" fill={PURPLE} />
+              </svg>
+              <span style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+                Lit
+                <span style={{ margin: '0 0.16em', display: 'inline-flex' }}><SerifAmp h="0.85em" w="0.86em" /></span>
+                Learn
+              </span>
+            </span>
             <button className="ll-mnav-close" aria-label="Close menu" onClick={() => setOpen(false)}>✕</button>
           </div>
 
