@@ -938,7 +938,7 @@ export const CourseLab = ({ config }: { config: CourseLabConfig }) => {
                   onClick={handleStartPractice}
                   style={{ width: '100%', padding: '18px', background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '9999px', fontSize: '17px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 10px 20px -5px rgba(79,70,229,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
                 >
-                  Start Practising · {activeItems.length} item{activeItems.length !== 1 ? 's' : ''} <IconArrowRight />
+                  Start Practicing · {activeItems.length} item{activeItems.length !== 1 ? 's' : ''} <IconArrowRight />
                 </button>
               ) : (
                 <div style={{ padding: '20px', background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '16px', color: '#C2410C', fontSize: '15px', fontWeight: '600', textAlign: 'center' }}>
