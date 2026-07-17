@@ -17,6 +17,7 @@ import { ExamCheckIn } from './components/ExamCheckIn';
 import { ExamDisplay } from './components/ExamDisplay';
 import { MobileNav } from './components/MobileNav';
 import { AboutPage } from './components/AboutPage';
+import LitLearnLogo from './components/LitLearnLogo';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
@@ -554,8 +555,7 @@ function LitAndLearnMain() {
       ) : (
         <div style={styles.page}>
           <header style={styles.header}>
-            <h1 className="page-header" style={{ fontSize: '4.5rem', fontWeight: '600', color: '#0F172A', margin: '0 0 10px 0' }}>Lit <span style={{ color: '#4F46E5' }}>&</span> Learn</h1>
-            <p style={{color: '#94A3B8', letterSpacing: '3px', fontWeight: '500', fontSize: '1rem', textTransform: 'uppercase', margin: 0}}>English • Literature • Language</p>
+            <LitLearnLogo />
             
             <div style={{ marginTop: '30px' }}>
               {!isOverlayActive && (
@@ -603,7 +603,7 @@ function LitAndLearnMain() {
                         currentTabName === 'Admin Dashboard' ? 'Secure Command Center.' :
                         currentTabName === 'Book Reviews' ? 'Explore literary analysis and critiques.' : 
                         currentTabName === 'Practice Hub' ? 'Fast, interactive exercises to test your knowledge.' : 
-                        currentTabName === 'Writing Lab' ? 'Learn the rule, then practice it.' :
+                        currentTabName === 'Writing Lab' ? 'Learn the rule, then practise it.' :
                         currentTabName === 'English Corner' ? 'Master grammar, vocabulary, and skills.' :
                         currentTabName === 'Resources' ? 'Download worksheets and audio lessons.' :
                         'Welcome to Lit & Learn.'}

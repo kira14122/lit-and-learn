@@ -1,16 +1,9 @@
-<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="16" fill="#4F46E5"/>
-  
-  <!-- Open book -->
-  <path d="M14 20C14 18.3431 15.3431 17 17 17H29C30.6569 17 32 18.3431 32 20V47C32 45.3431 30.6569 44 29 44H17C15.3431 44 14 42.6569 14 41V20Z" fill="#FFFFFF"/>
-  <path d="M50 20C50 18.3431 48.6569 17 47 17H35C33.3431 17 32 18.3431 32 20V47C32 45.3431 33.3431 44 35 44H47C48.6569 44 50 42.6569 50 41V20Z" fill="#FFFFFF"/>
-  
-  <!-- Center fold -->
-  <path d="M32 18V46" stroke="#4F46E5" stroke-width="3" stroke-linecap="round"/>
-  
-  <!-- Simple page lines -->
-  <path d="M19 27H27" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M19 34H26" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M37 27H45" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
-  <path d="M38 34H45" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="96" viewBox="0 0 100 96" role="img">
+<title>Lit &amp; Learn</title>
+<desc>Open book with a spark — Lit &amp; Learn.</desc>
+<g transform="translate(2 2) scale(1.0)">
+<path d="M48 4 C49.6 12 51.4 13.8 59.5 15.4 C51.4 17 49.6 18.8 48 27 C46.4 18.8 44.6 17 36.5 15.4 C44.6 13.8 46.4 12 48 4 Z" fill="#4F46E5"/>
+<path d="M46 40 C36 31 20 28 5 32 L5 80 C20 76 36 79 46 87 Z" fill="#4F46E5"/>
+<path d="M50 40 C60 31 76 28 91 32 L91 80 C76 76 60 79 50 87 Z" fill="#4F46E5"/>
+</g>
 </svg>
