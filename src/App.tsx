@@ -17,7 +17,7 @@ import { ExamCheckIn } from './components/ExamCheckIn';
 import { ExamDisplay } from './components/ExamDisplay';
 import { MobileNav } from './components/MobileNav';
 import { AboutPage } from './components/AboutPage';
-import LitLearnLogo from './components/LitLearnLogo';
+import LitLearnLogo, { SerifAmp } from './components/LitLearnLogo';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
@@ -1127,8 +1127,21 @@ function LitAndLearnMain() {
           <footer style={{ background: '#0F172A', color: '#94A3B8', marginTop: '100px', padding: '80px 20px', borderRadius: '40px 40px 0 0' }}>
             <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 40px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '40px', textAlign: 'center' }}>
               <div>
-                <h3 style={{ color: '#ffffff', margin: '0 0 20px', fontSize: '2.2rem', fontWeight: '600', letterSpacing: '-1px' }}>Lit & Learn</h3>
-                <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.15rem' }}>Mastering English through global literature — one page at a time.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+                  <svg width="62" height="59" viewBox="0 0 96 92" aria-hidden="true">
+                    <path d="M48 4 C49.6 12 51.4 13.8 59.5 15.4 C51.4 17 49.6 18.8 48 27 C46.4 18.8 44.6 17 36.5 15.4 C44.6 13.8 46.4 12 48 4 Z" fill="#ffffff" />
+                    <path d="M46 40 C36 31 20 28 5 32 L5 80 C20 76 36 79 46 87 Z" fill="#ffffff" />
+                    <path d="M50 40 C60 31 76 28 91 32 L91 80 C76 76 60 79 50 87 Z" fill="#ffffff" />
+                    <path d="M12 42 C23 39.5 35 41.5 41 46" stroke="#0F172A" strokeWidth="2.4" strokeLinecap="round" fill="none" opacity="0.55" />
+                    <path d="M84 42 C73 39.5 61 41.5 55 46" stroke="#0F172A" strokeWidth="2.4" strokeLinecap="round" fill="none" opacity="0.55" />
+                  </svg>
+                  <h3 style={{ color: '#ffffff', margin: 0, fontSize: '2.2rem', fontWeight: '600', letterSpacing: '-1px', display: 'flex', alignItems: 'baseline' }}>
+                    Lit
+                    <span style={{ margin: '0 0.16em', display: 'inline-flex' }}><SerifAmp h="0.82em" color="#A5B4FC" bold /></span>
+                    Learn
+                  </h3>
+                </div>
+                <p style={{ margin: '0 auto', lineHeight: '1.8', maxWidth: '300px', fontWeight: '400', fontSize: '1.15rem' }}>Mastering English — one lesson, one page, one book at a time.</p>
               </div>
               <div style={{ fontSize: '1.1rem', fontWeight: '500', paddingTop: '30px' }}>© 2026 Lit & Learn. All rights reserved.</div>
             </div>

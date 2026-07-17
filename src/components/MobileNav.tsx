@@ -174,7 +174,7 @@ export function MobileNav({ TABS, currentPath, onNavigate, writingLabIsNew = fal
               </svg>
               <span style={{ display: 'inline-flex', alignItems: 'baseline' }}>
                 Lit
-                <span style={{ margin: '0 0.16em', display: 'inline-flex' }}><SerifAmp h="0.85em" w="0.86em" /></span>
+                <span style={{ margin: '0 0.16em', display: 'inline-flex' }}><SerifAmp h="0.82em" bold /></span>
                 Learn
               </span>
             </span>
