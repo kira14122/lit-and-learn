@@ -976,7 +976,7 @@ export const CourseLab = ({ config }: { config: CourseLabConfig }) => {
                 onClick={handleStartPractice}
                 style={{ padding: '16px 32px', background: '#4F46E5', color: '#ffffff', border: 'none', borderRadius: '9999px', fontSize: '16px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 10px 20px -5px rgba(79,70,229,0.3)' }}
               >
-                Practise Again
+                Practice Again
               </button>
             </div>
             <p style={{ margin: '28px 0 0', color: '#94A3B8', fontSize: '13px', fontWeight: '600' }}>
