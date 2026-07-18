@@ -105,10 +105,15 @@ export const insightsSummaryText = (ins:any): string => {
 };
 
 // Compact context appended to the AI feedback prompt so drafts reference the real trend.
-export const insightsForAI = (ins:any): string => {
+// Pass isFinal=true when grading the Final Test so the generated feedback closes out
+// the term instead of pointing the student at a next test that doesn't exist.
+export const insightsForAI = (ins:any, isFinal:boolean = false): string => {
   if (!ins) return '';
   const lines = ins.skills.map((s:any) => `${s.label} ${s.latest}% (${s.status})`).join('; ');
-  return `\n\nPERFORMANCE CONTEXT (use to inform the feedback naturally; do not list these raw numbers): ${insightsSummaryText(ins)} Per-skill latest: ${lines}.`;
+  const finalNote = isFinal
+    ? ' IMPORTANT: this was the FINAL test of the term. Write feedback that closes the term — acknowledge the full arc of their results, recognize consistent strengths and real growth, and give advice the student can act on independently going forward. Do not mention the next test, upcoming lessons, or future classwork.'
+    : '';
+  return `\n\nPERFORMANCE CONTEXT (use to inform the feedback naturally; do not list these raw numbers): ${insightsSummaryText(ins)} Per-skill latest: ${lines}.${finalNote}`;
 };
 
 // Student-facing wording for the per-skill line in the email (gentle, never harsh).
@@ -132,6 +137,56 @@ export const buildProgressEmailText = (ins:any): string => {
     : `Overall, your score has held steady at around ${ins.overallLast}% across your tests.`;
   const skillLines = ins.skills.map((s:any) => `• ${s.label} — ${s.latest}% · ${studentSkillWord(s)}`).join('\n');
   return `\n\n**Your Progress So Far**\n${lead} Here's how each skill is tracking:\n\n${skillLines}\n\nThe best area to focus on next is ${ins.weakest.label}.`;
+};
+
+// ── Term in Review (final-test email block) ─────────────────────────────────
+// Replaces "Your Progress So Far" when the assessment being emailed is the
+// Final Test. Written for adult learners: direct and warm, no pep-talk. Adapts
+// to however many tests the student actually sat — skipped tests and late
+// enrollment are described neutrally ("the three tests you took"), never
+// explained or apologized for.
+//
+// `termGrade` is the weighted grade computed by GradingPortal (grading policy
+// lives there, not here); pass null/undefined to omit the grade line entirely.
+// `tips` is the teacher's feedback tip bank including their in-app edits;
+// falls back to DEFAULT_TIPS.
+export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?: Record<string,string[]>): string => {
+  if (!ins) return '';
+  const bank = tips || DEFAULT_TIPS;
+  const tipFor = (key:string) => (bank[key] && bank[key][0]) || '';
+  const gradeLine = (termGrade != null && !Number.isNaN(termGrade)) ? ` Your final term grade is **${Math.round(termGrade)}%**.` : '';
+
+  // Only the final on record — no arc to tell, keep it clean and honest.
+  if (ins.count < 2) {
+    const tip = tipFor(ins.weakest.key);
+    const carry = tip ? ` A habit worth keeping: ${tip}.` : '';
+    return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%); the one with the most room to grow is **${ins.weakest.label}** (${ins.weakest.latest}%).${carry}`;
+  }
+
+  // Two or more tests — a real arc exists.
+  const arc = ins.points.map((p:any) => `${p.overall}%`).join(' → ');
+  const testsPhrase = ins.count === 4 ? 'all four tests' : `the ${ins.count === 2 ? 'two' : 'three'} tests you took`;
+  const earlierMax = Math.max(...ins.points.slice(0, -1).map((p:any) => p.overall));
+  const flourish = ins.overallLast >= earlierMax
+    ? ', finishing on your strongest result of the term'
+    : ins.overallLast > ins.overallPrev
+    ? ', ending with an improvement on your previous test'
+    : '';
+  const opener = `You've completed the term — here is the full picture. Across ${testsPhrase}, your scores went ${arc}${flourish}.${gradeLine}`;
+
+  const strength = `Your most consistent strength this term was **${ins.strongest.label}** (average ${ins.strongest.avg}%).`;
+
+  // "Biggest growth" only when it's a real signal (≥8 points first → last) and
+  // not the same skill we just named the strength.
+  const grown = ins.skills.reduce((m:any, s:any) => (s.trend > m.trend ? s : m), ins.skills[0]);
+  const growth = (grown.trend >= 8 && grown.key !== ins.strongest.key)
+    ? ` Your biggest growth was in **${grown.label}**, which climbed from ${grown.first}% to ${grown.latest}% — that improvement came from your work, and it shows.`
+    : '';
+
+  const tip = tipFor(ins.weakest.key);
+  const carry = `If you continue with one thing going forward, make it **${ins.weakest.label}**.` + (tip ? ` A habit worth keeping: ${tip}.` : '');
+
+  return `\n\n**Your Term in Review**\n${opener}\n\n${strength}${growth}\n\n${carry}`;
 };
 
 // ── Quick feedback builder bank ─────────────────────────────────────────────

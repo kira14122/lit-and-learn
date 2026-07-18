@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS } from './gradingHelpers';
+import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, buildTermReviewEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS } from './gradingHelpers';
 import { TermSummaryCard } from './TermSummaryCard';
 import { PerformanceInsightsCard } from './PerformanceInsightsCard';
 import { PreviousRecordsCard } from './PreviousRecordsCard';
@@ -394,6 +394,20 @@ export const GradingPortal: React.FC<{
     return {totalPoints:tp, earnedWeight:(tp/Number(maxPoints))*Number(assessmentWeight)};
   };
 
+  // Projected term grade including the scores currently on the form — the saved
+  // termSummary can't see them until the record is stored. Same policy as
+  // termSummary.standing: rescale to tests taken, absent earns 0, N/A drops out.
+  const projectedStanding = () => {
+    const { earnedWeight } = calculateTotals();
+    let earned = 0, assessed = 0;
+    termSummary.tests.forEach((t:any) => {
+      if (t.name === assessmentName) return; // superseded by the live form values
+      if (t.status === 'graded' || t.status === 'absent') { earned += t.earnedWeight || 0; assessed += t.weight || 0; }
+    });
+    if (!notApplicable) { earned += isAbsent ? 0 : earnedWeight; assessed += Number(assessmentWeight) || 0; }
+    return assessed > 0 ? (earned / assessed) * 100 : null;
+  };
+
   const getFormattedScores = () => {
     const {totalPoints,earnedWeight} = calculateTotals();
     const pps = Number(maxPoints)/5;
@@ -405,7 +419,7 @@ export const GradingPortal: React.FC<{
     if (!selectedStudent) return;
     setIsGenerating(true);
     const pm = "Please vary vocabulary and structure. Do not use 'I was particularly impressed'. Be specific about scores.";
-    const draft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, getFormattedScores(), teacherNotes+'\n\n'+pm+insightsForAI(insights));
+    const draft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, getFormattedScores(), teacherNotes+'\n\n'+pm+insightsForAI(insights, assessmentName === 'Final Test'));
     setFeedback(draft); setIsGenerating(false);
   };
 
@@ -520,9 +534,12 @@ export const GradingPortal: React.FC<{
       // Email still uses the pretty formatted string — students see the same beautiful layout
       const prettyScore = getFormattedScores();
       const statusNote = isAbsent?`**Status:** ABSENT (0%)`:`**Score Breakdown:**\n${prettyScore}`;
-      const progressBlock = isAbsent ? '' : buildProgressEmailText(projectedInsights);
-      const body = `Hello ${selectedStudent.full_name},\n\nI have finished grading your recent assessment, and your official results are now available. Below is a detailed breakdown of your performance, along with my personal feedback.\n\n**Assessment:** ${assessmentName} (${assessmentWeight}% of Final Grade)\n\n${statusNote}${progressBlock}\n\n**Instructor Feedback:**\n"${feedback||'Please review your scores carefully.'}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
-      const { error: emailError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${assessmentName}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
+      const isFinalSend = assessmentName === 'Final Test';
+      const progressBlock = isAbsent ? '' : (isFinalSend
+        ? buildTermReviewEmailText(projectedInsights, projectedStanding(), feedbackTips)
+        : buildProgressEmailText(projectedInsights));
+      const body = `Hello ${selectedStudent.full_name},\n\n${isFinalSend ? 'I have finished grading your final assessment, and your official results for the term are now available. Below is a detailed breakdown of your performance, a review of your term, and my personal feedback.' : 'I have finished grading your recent assessment, and your official results are now available. Below is a detailed breakdown of your performance, along with my personal feedback.'}\n\n**Assessment:** ${assessmentName} (${assessmentWeight}% of Final Grade)\n\n${statusNote}${progressBlock}\n\n**Instructor Feedback:**\n"${feedback||'Please review your scores carefully.'}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
+      const { error: emailError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject: isFinalSend ? 'Final Test Results & Your Term in Review' : `Official Assessment Grade: ${assessmentName}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
       if (emailError) throw new Error(emailError.message);
       showToast(`Grade recorded and emailed to ${selectedStudent.email}!`,'success');
     } catch {showToast('Grade recorded, but email failed.','error');}
@@ -541,7 +558,7 @@ export const GradingPortal: React.FC<{
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
       const prettyScore = formatScoreDisplay(rec.score);
-      const body = `Hello ${selectedStudent.full_name},\n\nI am resending your official assessment results.\n\n**Assessment:** ${rec.assessment_name}\n\n**Score Breakdown:**\n${prettyScore}${buildProgressEmailText(insights)}\n\n**Instructor Feedback:**\n"${rec.feedback}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
+      const body = `Hello ${selectedStudent.full_name},\n\nI am resending your official assessment results.\n\n**Assessment:** ${rec.assessment_name}\n\n**Score Breakdown:**\n${prettyScore}${rec.assessment_name === 'Final Test' ? buildTermReviewEmailText(insights, termSummary.standing, feedbackTips) : buildProgressEmailText(insights)}\n\n**Instructor Feedback:**\n"${rec.feedback}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
       const { error: resendError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name} (Resend)`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
       if (resendError) throw new Error(resendError.message);
       showToast(`Grade resent to ${selectedStudent.email}!`,'success');
@@ -558,7 +575,9 @@ export const GradingPortal: React.FC<{
       let parsed:any={}; try{parsed=JSON.parse(rec.score)||{};}catch{}
       const prettyScore = formatScoreDisplay(rec.score);
       const statusNote = parsed.isAbsent ? `**Status:** ABSENT (0%)` : `**Score Breakdown:**\n${prettyScore}`;
-      const progressBlock = parsed.isAbsent ? '' : buildProgressEmailText(insights);
+      const progressBlock = parsed.isAbsent ? '' : (rec.assessment_name === 'Final Test'
+        ? buildTermReviewEmailText(insights, termSummary.standing, feedbackTips)
+        : buildProgressEmailText(insights));
       const body = `Hello ${selectedStudent.full_name},\n\nI have finished grading your recent assessment, and your official results are now available. Below is a detailed breakdown of your performance, along with my personal feedback.\n\n**Assessment:** ${rec.assessment_name} (${parsed.weight}% of Final Grade)\n\n${statusNote}${progressBlock}\n\n**Instructor Feedback:**\n"${rec.feedback||'Please review your scores carefully.'}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
       const { error: sendError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
       if (sendError) throw new Error(sendError.message);
@@ -623,6 +642,10 @@ export const GradingPortal: React.FC<{
         const dSkill   = (k:string, formVal:any) => pr ? (prs[k]||0) : (formVal||0);
         const dFeedback= pr ? (pr.feedback||'') : feedback;
         const dInsights= pr ? insights : projectedInsights;
+        const dIsFinal = dAssessment === 'Final Test';
+        const dTermGrade = pr ? termSummary.standing : projectedStanding();
+        // Tiny renderer so the preview shows the exact builder output, **bold** included.
+        const boldify = (line:string) => line.split('**').map((seg,i)=> i%2 ? <strong key={i}>{seg}</strong> : seg);
         return (
   <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(15,23,42,0.5)',backdropFilter:'blur(4px)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
     <div style={{background:'#fff',borderRadius:'24px',width:'100%',maxWidth:'640px',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 40px rgba(0,0,0,0.15)'}}>
@@ -635,7 +658,7 @@ export const GradingPortal: React.FC<{
       </div>
       <div style={{overflowY:'auto',padding:'28px',flexGrow:1,fontFamily:'Arial,sans-serif',fontSize:'14px',lineHeight:'1.7',color:'#1e293b'}}>
         <p>Hello {selectedStudent.full_name},</p>
-        <p>I have finished grading your recent assessment, and your official results are now available.</p>
+        <p>{dIsFinal ? 'I have finished grading your final assessment, and your official results for the term are now available.' : 'I have finished grading your recent assessment, and your official results are now available.'}</p>
         <p><strong>Assessment:</strong> {dAssessment} ({dWeight}% of Final Grade)</p>
         {dAbsent ? (
           <p><strong>Status:</strong> ABSENT (0%)</p>
@@ -655,7 +678,14 @@ export const GradingPortal: React.FC<{
             <p style={{margin:'2px 0'}}>Speaking: {dSkill('speaking',scoreSpeaking)}/{dPer}</p>
           </div>
         )}
-        {!dAbsent && dInsights && dInsights.count>1 && (
+        {!dAbsent && dInsights && dIsFinal && (
+          <div style={{background:'#F8FAFC',padding:'16px',borderRadius:'8px',border:'1px solid #E2E8F0',margin:'12px 0'}}>
+            {buildTermReviewEmailText(dInsights, dTermGrade, feedbackTips).trim().split('\n').filter((l:string)=>l.trim()).map((line:string,i:number)=>(
+              <p key={i} style={{margin: i===0?'0 0 8px':'6px 0', fontWeight: i===0?'700':'400'}}>{i===0 ? line.replace(/\*\*/g,'') : boldify(line)}</p>
+            ))}
+          </div>
+        )}
+        {!dAbsent && dInsights && !dIsFinal && dInsights.count>1 && (
           <div style={{background:'#F8FAFC',padding:'16px',borderRadius:'8px',border:'1px solid #E2E8F0',margin:'12px 0'}}>
             <p style={{margin:'0 0 8px',fontWeight:'700'}}>Your Progress So Far:</p>
             <p style={{margin:'2px 0 10px'}}>{dInsights.direction==='up'
