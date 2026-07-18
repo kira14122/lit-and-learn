@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, buildTermReviewEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS } from './gradingHelpers';
+import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, buildTermReviewEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS, PHRASE_CATEGORIES, seededPick, builderPraiseText, computeFocusFlags } from './gradingHelpers';
 import { TermSummaryCard } from './TermSummaryCard';
 import { PerformanceInsightsCard } from './PerformanceInsightsCard';
 import { PreviousRecordsCard } from './PreviousRecordsCard';
@@ -90,6 +90,10 @@ export const GradingPortal: React.FC<{
   const [builderUseClosing, setBuilderUseClosing] = useState(true);
   const [builderStrengths, setBuilderStrengths]   = useState<Set<string>>(new Set());
   const [builderTipsSel, setBuilderTipsSel]       = useState<Set<string>>(new Set());
+  const [builderNote, setBuilderNote]             = useState('');
+  const [builderGeneralSel, setBuilderGeneralSel] = useState<Set<string>>(new Set());
+  const [builderVaryNonce, setBuilderVaryNonce]   = useState(0);
+  const [builderConfirmReplace, setBuilderConfirmReplace] = useState(false);
   const [builderExpanded, setBuilderExpanded]     = useState<Set<string>>(new Set());
   const [editingRecordId, setEditingRecordId]   = useState<string|null>(null);
   const [editScoreText, setEditScoreText]       = useState('');
@@ -201,6 +205,10 @@ export const GradingPortal: React.FC<{
     return { skills, strongKeys, focusKeys };
   }, [selectedStudent, isAbsent, notApplicable, maxPoints, scoreListening, scoreGrammar, scoreReading, scoreWriting, scoreSpeaking]);
 
+  // Reasoned Strength/Focus flags for the builder rows — blends the current
+  // test with the term trend so the badge can say WHY a skill needs attention.
+  const builderFlags = useMemo(() => computeFocusFlags(currentTestSignal, projectedInsights), [currentTestSignal, projectedInsights]);
+
   const formatScoreDisplay = (score: any): string => {
     try {
       const parsed = typeof score === 'string' ? JSON.parse(score) : score;
@@ -236,7 +244,7 @@ export const GradingPortal: React.FC<{
 
   const handleSaveDraft = () => {
     if (!selectedStudent) return;
-    const draft = { isAbsent, scoreListening, scoreGrammar, scoreReading, scoreWriting, scoreSpeaking, teacherNotes, savedAt: new Date().toISOString() };
+    const draft = { isAbsent, scoreListening, scoreGrammar, scoreReading, scoreWriting, scoreSpeaking, teacherNotes, builderNote, savedAt: new Date().toISOString() };
     localStorage.setItem(makeDraftKey(selectedStudent.id, assessmentName), JSON.stringify(draft));
     bumpDraft();
     showToast(`✅ Scores saved for ${selectedStudent.full_name}!`, 'success');
@@ -250,6 +258,7 @@ export const GradingPortal: React.FC<{
     setScoreWriting(draft.scoreWriting   || '');
     setScoreSpeaking(draft.scoreSpeaking || '');
     setTeacherNotes(draft.teacherNotes   || '');
+    setBuilderNote(draft.builderNote     || '');
     showToast('Draft scores loaded!', 'success');
   };
 
@@ -431,26 +440,42 @@ export const GradingPortal: React.FC<{
   const openBuilder = () => {
     const sig = currentTestSignal;
     setBuilderStrengths(new Set(sig ? [...sig.strongKeys] : []));
-    setBuilderExpanded(new Set(sig ? [...sig.focusKeys] : []));
+    const amber = Object.entries(builderFlags).filter(([,f]:any)=>f.tone==='amber').map(([k])=>k);
+    setBuilderExpanded(new Set(amber.length ? amber : (sig ? [...sig.focusKeys] : [])));
     setBuilderTipsSel(new Set());
+    setBuilderNote('');
+    setBuilderGeneralSel(new Set());
+    setBuilderConfirmReplace(false);
     setBuilderUseOpening(true);
     setBuilderUseClosing(true);
     setBuilderEditing(false);
     setBuilderOpen(true);
   };
   const buildFeedbackText = () => {
+    // Guard: never silently wipe feedback the teacher already wrote or edited.
+    // First press arms the confirmation; the button relabels itself; second
+    // press replaces. Any other builder action disarms it.
+    if (feedback.trim() && !builderConfirmReplace) { setBuilderConfirmReplace(true); return; }
+    setBuilderConfirmReplace(false);
     const parts: string[] = [];
     const first = (selectedStudent?.full_name||'').split(' ')[0] || selectedStudent?.full_name || 'there';
     const { totalPoints } = calculateTotals();
     const listJoin = (arr:string[]) => arr.length===1 ? arr[0] : arr.slice(0,-1).join(', ')+', and '+arr[arr.length-1];
+    const seed = `${selectedStudent?.id||''}|${assessmentName}|${builderVaryNonce}`;
 
-    if (builderUseOpening) parts.push(`Hi ${first}, you scored ${totalPoints}/${maxPoints} on your ${assessmentName}.`);
-
-    const strongLabels = INSIGHT_SKILLS.filter(s=>builderStrengths.has(s.key)).map(s=>s.label.toLowerCase());
-    if (strongLabels.length) {
-      const joined = strongLabels.length===1 ? strongLabels[0] : strongLabels.slice(0,-1).join(', ')+' and '+strongLabels[strongLabels.length-1];
-      parts.push(strongLabels.length===1 ? `Your ${joined} was a real strength this time — well done.` : `Your ${joined} were real strengths this time — well done.`);
+    if (builderUseOpening) {
+      const tpl = seededPick(feedbackTips['_openers']||[], seed+'|open') || 'Hi {name}, you scored {score} on your {test}.';
+      parts.push(tpl.replace('{name}', first).replace('{score}', `${totalPoints}/${maxPoints}`).replace('{test}', assessmentName));
     }
+
+    const praised = INSIGHT_SKILLS.filter(s=>builderStrengths.has(s.key));
+    const praiseLine = builderPraiseText(praised, projectedInsights, seed);
+    if (praiseLine) parts.push(praiseLine);
+
+    const note = builderNote.trim();
+    if (note) parts.push(/[.!?]$/.test(note) ? note : note + '.');
+
+    (feedbackTips['_general']||[]).filter(g=>builderGeneralSel.has(g)).forEach(g=>parts.push(g));
 
     const groups = INSIGHT_SKILLS
       .map(sk => ({ label: sk.label.toLowerCase(), tips: (feedbackTips[sk.key]||[]).filter(t=>builderTipsSel.has(`${sk.key}::${t}`)) }))
@@ -462,7 +487,10 @@ export const GradingPortal: React.FC<{
       parts.push(`Going forward, here are a few things to focus on: ${clauses.slice(0,-1).join('; ')}; and ${clauses[clauses.length-1]}.`);
     }
 
-    if (builderUseClosing) parts.push(`Keep up the good work, and let me know if you'd like extra practice on any of this.`);
+    if (builderUseClosing) {
+      const bank = assessmentName === 'Final Test' ? (feedbackTips['_closersFinal']||[]) : (feedbackTips['_closers']||[]);
+      parts.push(seededPick(bank, seed+'|close') || `Keep up the good work, and let me know if you'd like extra practice on any of this.`);
+    }
     setFeedback(parts.join(' '));
     setBuilderOpen(false);
   };
@@ -1057,6 +1085,22 @@ export const GradingPortal: React.FC<{
                                 </div>
                               </div>
                             ))}
+                            <div style={{borderTop:'1px solid #EEF1F6',margin:'4px 0 12px'}}/>
+                            {PHRASE_CATEGORIES.map(cat=>(
+                              <div key={cat.key} style={{marginBottom:'14px'}}>
+                                <div style={{fontSize:'0.78rem',fontWeight:'600',color:'#475569',marginBottom:'2px'}}>{cat.label}</div>
+                                <div style={{fontSize:'0.68rem',color:'#94A3B8',marginBottom:'6px'}}>{cat.hint}</div>
+                                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                                  {(feedbackTips[cat.key]||[]).map((tip,i)=>(
+                                    <div key={i} style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                                      <input value={tip} onChange={e=>editTip(cat.key,i,e.target.value)} style={{flex:1,boxSizing:'border-box',padding:'8px 10px',borderRadius:'9px',border:'1px solid #E3E7EF',background:'#fff',fontSize:'0.8rem',color:'#334155',outline:'none'}}/>
+                                      <button onClick={()=>removeTip(cat.key,i)} title="Remove phrase" style={{flexShrink:0,width:'28px',height:'28px',borderRadius:'8px',border:'none',background:'#FEF2F2',color:'#EF4444',cursor:'pointer'}}>✕</button>
+                                    </div>
+                                  ))}
+                                  <button onClick={()=>addTip(cat.key)} style={{alignSelf:'flex-start',background:'#EEF2FF',color:'#4F46E5',border:'none',padding:'6px 12px',borderRadius:'8px',fontSize:'0.78rem',fontWeight:'600',cursor:'pointer'}}>+ Add phrase</button>
+                                </div>
+                              </div>
+                            ))}
                             <button onClick={resetTips} style={{background:'transparent',border:'1px solid #E3E7EF',color:'#64748B',padding:'8px 14px',borderRadius:'9px',fontSize:'0.78rem',fontWeight:'500',cursor:'pointer'}}>Reset to starter phrases</button>
                           </>
                         ) : (
@@ -1075,12 +1119,21 @@ export const GradingPortal: React.FC<{
                                 return <button key={sk.key} onClick={()=>toggleSet(setBuilderStrengths,sk.key)} style={{display:'inline-flex',alignItems:'center',gap:'5px',padding:'6px 12px',borderRadius:'999px',fontSize:'0.8rem',fontWeight:'500',cursor:'pointer',border:on?'1.5px solid #A7F3D0':'1.5px solid #E3E7EF',background:on?'#ECFDF5':'#fff',color:on?'#047857':'#475569'}}>{on?'✓ ':''}{sk.label}</button>;
                               })}
                             </div>
+                            <div style={{fontSize:'0.72rem',fontWeight:'600',color:'#64748B',textTransform:'uppercase',letterSpacing:'0.4px',margin:'4px 0 7px'}}>Personal note</div>
+                            <textarea value={builderNote} onChange={e=>{setBuilderNote(e.target.value);setBuilderConfirmReplace(false);}} placeholder="Something specific to this student — a class moment, particular praise, anything…" rows={2} style={{width:'100%',boxSizing:'border-box',padding:'9px 11px',borderRadius:'10px',border:'1px solid #E3E7EF',background:'#fff',color:'#334155',fontSize:'0.82rem',outline:'none',resize:'vertical',lineHeight:'1.5',marginBottom:'12px'}}/>
+                            {(feedbackTips['_general']||[]).filter(g=>g.trim()).length>0 && (<>
+                              <div style={{fontSize:'0.72rem',fontWeight:'600',color:'#64748B',textTransform:'uppercase',letterSpacing:'0.4px',margin:'4px 0 7px'}}>General remarks</div>
+                              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}}>
+                                {(feedbackTips['_general']||[]).filter(g=>g.trim()).map((g,i)=>(
+                                  <label key={i} style={{display:'flex',alignItems:'flex-start',gap:'8px',fontSize:'0.82rem',color:'#475569',cursor:'pointer',lineHeight:'1.4'}}><input type="checkbox" checked={builderGeneralSel.has(g)} onChange={()=>{toggleSet(setBuilderGeneralSel,g);setBuilderConfirmReplace(false);}} style={{marginTop:'3px'}}/> {g}</label>
+                                ))}
+                              </div>
+                            </>)}
                             <div style={{fontSize:'0.72rem',fontWeight:'600',color:'#64748B',textTransform:'uppercase',letterSpacing:'0.4px',margin:'4px 0 7px'}}>Recommendations</div>
                             {INSIGHT_SKILLS.map(sk=>{
                               const expanded=builderExpanded.has(sk.key);
-                              const isStrongNow=currentTestSignal?.strongKeys?.has(sk.key);
-                              const isFocusNow=currentTestSignal?.focusKeys?.has(sk.key);
-                              const tag=isStrongNow?{t:'Strength',c:'#047857',b:'#ECFDF5'}:(isFocusNow?{t:'Focus',c:'#C2410C',b:'#FFF7ED'}:null);
+                              const f=builderFlags[sk.key];
+                              const tag=f?{t:`${f.t} · ${f.reason}`,c:f.tone==='green'?'#047857':'#C2410C',b:f.tone==='green'?'#ECFDF5':'#FFF7ED'}:null;
                               return (
                                 <div key={sk.key} style={{borderTop:'1px solid #EEF1F6'}}>
                                   <div onClick={()=>toggleSet(setBuilderExpanded,sk.key)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',cursor:'pointer'}}>
@@ -1101,7 +1154,10 @@ export const GradingPortal: React.FC<{
                             <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'0.85rem',color:'#334155',cursor:'pointer',margin:'12px 0 14px',borderTop:'1px solid #EEF1F6',paddingTop:'12px'}}>
                               <input type="checkbox" checked={builderUseClosing} onChange={e=>setBuilderUseClosing(e.target.checked)}/> Close with encouragement
                             </label>
-                            <button onClick={buildFeedbackText} style={{width:'100%',background:'#4F46E5',color:'#fff',border:'none',padding:'12px',borderRadius:'11px',fontSize:'0.88rem',fontWeight:'600',cursor:'pointer',boxShadow:'0 8px 18px -8px rgba(79,70,229,0.5)'}}>↓ Build feedback</button>
+                            <div style={{display:'flex',gap:'8px'}}>
+                              <button onClick={()=>{setBuilderVaryNonce(n=>n+1);setBuilderConfirmReplace(false);}} title="Cycle to a different opener, praise phrasing, and closer" style={{flexShrink:0,background:'#EEF2FF',color:'#4F46E5',border:'none',padding:'12px 14px',borderRadius:'11px',fontSize:'0.88rem',fontWeight:'600',cursor:'pointer'}}>↻ Vary</button>
+                              <button onClick={buildFeedbackText} style={{flex:1,background:builderConfirmReplace?'#C2410C':'#4F46E5',color:'#fff',border:'none',padding:'12px',borderRadius:'11px',fontSize:'0.88rem',fontWeight:'600',cursor:'pointer',boxShadow:'0 8px 18px -8px rgba(79,70,229,0.5)'}}>{builderConfirmReplace?'Replace existing feedback text?':'↓ Build feedback'}</button>
+                            </div>
                           </>
                         )}
                       </div>

@@ -225,4 +225,116 @@ export const DEFAULT_TIPS: Record<string,string[]> = {
     'answer in full sentences, not single words',
     'prepare three example sentences for each new structure',
   ],
+  // Builder phrase banks — pseudo-categories stored in the same object (keys
+  // start with '_' so they can never collide with skill keys). They ride the
+  // existing localStorage merge, edit UI, and reset for free.
+  _openers: [
+    'Hi {name}, you scored {score} on your {test}.',
+    'Hello {name} — your {test} results are in, and you scored {score}.',
+    'Hi {name}, here are your {test} results: {score}.',
+    'Hello {name}, thank you for your work on the {test} — you scored {score}.',
+  ],
+  _general: [
+    'It has been a pleasure having you in class.',
+    'Your participation in our sessions has been excellent.',
+    'You bring great energy to the class, and it lifts everyone around you.',
+  ],
+  _closers: [
+    "Keep up the good work, and let me know if you'd like extra practice on any of this.",
+    "You're putting in real work and it shows — reach out any time if you'd like extra materials.",
+    "I'm glad to see your effort this term; my door is always open if you have questions.",
+    "Well done on your work so far — just ask if you'd like more practice activities.",
+  ],
+  _closersFinal: [
+    'It has been a pleasure teaching you this term — I wish you every success going forward.',
+    'Thank you for your hard work this term. Keep reading, keep practising, and stay in touch.',
+    'Congratulations on completing the term — I hope our paths cross in a future course.',
+  ],
+};
+
+// Sections shown in the Edit Phrases panel for the banks above.
+export const PHRASE_CATEGORIES = [
+  { key: '_openers',      label: 'Openers',              hint: 'Placeholders: {name}, {score}, {test}' },
+  { key: '_general',      label: 'General remarks',      hint: 'Full sentences you can drop into any feedback' },
+  { key: '_closers',      label: 'Closers',              hint: 'Used for First Test, Midterm, and Third Test' },
+  { key: '_closersFinal', label: 'Closers (Final Test)', hint: 'Used when grading the Final Test' },
+];
+
+// Deterministic pick: the same student + test always lands on the same
+// phrasing (rebuilding doesn't reshuffle words under the teacher), while
+// different students and tests naturally vary. A nonce in the seed lets the
+// teacher cycle alternatives on demand.
+export const seededPick = <T>(arr: T[], seedStr: string): T | undefined => {
+  if (!arr || !arr.length) return undefined;
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return arr[Math.abs(h) % arr.length];
+};
+
+// Insight-aware praise for the builder. Praised skills are grouped by what the
+// term history actually says about them, so "strength all term", "improved
+// this time", and "still strong overall despite a dip" each get their own
+// sentence instead of one generic line.
+export const builderPraiseText = (praised: any[], ins: any, seedStr: string): string => {
+  if (!praised || !praised.length) return '';
+  const statusOf = (key:string) => ins?.skills?.find((s:any)=>s.key===key)?.status || '';
+  const buckets: Record<string,string[]> = { strong: [], improving: [], dipped: [], now: [] };
+  praised.forEach((sk:any) => {
+    const st = statusOf(sk.key);
+    if (st === 'Strong') buckets.strong.push(sk.label.toLowerCase());
+    else if (st === 'Improving') buckets.improving.push(sk.label.toLowerCase());
+    else if (st === 'Dipped last test') buckets.dipped.push(sk.label.toLowerCase());
+    else buckets.now.push(sk.label.toLowerCase());
+  });
+  const join = (a:string[]) => a.length===1 ? a[0] : a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+  const parts: string[] = [];
+  if (buckets.strong.length) {
+    const many = buckets.strong.length > 1;
+    parts.push(seededPick([
+      `Your ${join(buckets.strong)} ${many?'have':'has'} been ${many?'strengths':'a strength'} throughout the term — well done.`,
+      `You have been consistently strong in ${join(buckets.strong)} all term.`,
+    ], seedStr+'|strong')!);
+  }
+  if (buckets.improving.length) {
+    parts.push(seededPick([
+      `Your ${join(buckets.improving)} improved noticeably this time — good progress.`,
+      `I was glad to see real progress in your ${join(buckets.improving)} this time.`,
+    ], seedStr+'|improving')!);
+  }
+  if (buckets.dipped.length) {
+    const many = buckets.dipped.length > 1;
+    parts.push(`Your ${join(buckets.dipped)} ${many?'are':'is'} still among your strongest areas overall.`);
+  }
+  if (buckets.now.length) {
+    const many = buckets.now.length > 1;
+    parts.push(seededPick([
+      `Your ${join(buckets.now)} ${many?'were real strengths':'was a real strength'} this time — well done.`,
+      `You did particularly well in ${join(buckets.now)} this time.`,
+    ], seedStr+'|now')!);
+  }
+  return parts.join(' ');
+};
+
+// Reasoned Strength/Focus flags for the builder rows. Blends the test being
+// graded with the term history so the badge says WHY: a skill can be fine
+// today but slipping across tests, or low today while being the student's most
+// improved. Priority: today's problems, then trend problems, then strengths.
+export const computeFocusFlags = (sig:any, ins:any): Record<string, {t:string, reason:string, tone:'amber'|'green'|'gray'}> => {
+  const out: Record<string, {t:string, reason:string, tone:'amber'|'green'|'gray'}> = {};
+  INSIGHT_SKILLS.forEach(sk => {
+    const pct = sig?.skills?.find((s:any)=>s.key===sk.key)?.pct ?? null;
+    const s = ins?.skills?.find((x:any)=>x.key===sk.key) || null;
+    const isWeakest = !!(ins && ins.weakest && ins.weakest.key === sk.key);
+    let flag: any = null;
+    if (pct != null && pct < 70) flag = { t:'Focus', reason:'low this test', tone:'amber' };
+    else if (s && s.status === 'Slipping') flag = { t:'Focus', reason:'slipping', tone:'amber' };
+    else if (s && s.status === 'Needs work') flag = { t:'Focus', reason:'needs work', tone:'amber' };
+    else if (s && isWeakest && s.avg < 78) flag = { t:'Focus', reason:'lowest all term', tone:'amber' };
+    else if (s && s.status === 'Dipped last test') flag = { t:'Watch', reason:'dipped last test', tone:'amber' };
+    else if (pct != null && pct >= 80 && (!s || s.status === 'Strong' || s.avg >= 80)) flag = { t:'Strength', reason: s ? 'all term' : 'this test', tone:'green' };
+    else if (s && s.status === 'Improving') flag = { t:'Improving', reason:'rising', tone:'green' };
+    else if (pct != null && pct >= 80) flag = { t:'Strength', reason:'this test', tone:'green' };
+    if (flag) out[sk.key] = flag;
+  });
+  return out;
 };
