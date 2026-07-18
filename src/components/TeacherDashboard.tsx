@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS } from './gradingHelpers';
-import { TermSummaryCard } from './TermSummaryCard';
-import { PerformanceInsightsCard } from './PerformanceInsightsCard';
-import { PreviousRecordsCard } from './PreviousRecordsCard';
 import { GradingPortal } from './GradingPortal';
 import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';

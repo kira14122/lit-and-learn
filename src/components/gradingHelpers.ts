@@ -67,6 +67,7 @@ export const computeInsights = (history: any[]) => {
     let status = 'Steady', tone = 'gray';
     const recent = multi ? s.delta : 0; // change since the previous test (matches the on-screen arrow)
     if (s.avg < 55) { status = 'Needs work'; tone = 'amber'; }            // still failing regardless of movement
+    else if (recent <= -8 && s.avg >= 80) { status = 'Dipped last test'; tone = 'amber'; } // one-off drop from a strong record — flag it, but don't call a strength "slipping"
     else if (recent <= -8) { status = 'Slipping'; tone = 'amber'; }       // notable recent drop → agrees with the red arrow
     else if (recent >= 8) { status = 'Improving'; tone = 'green'; }       // notable recent rise → agrees with the green arrow
     else if (s.avg >= 80) { status = 'Strong'; tone = 'green'; }
@@ -77,18 +78,30 @@ export const computeInsights = (history: any[]) => {
 
   const overallFirst = points[0].overall;
   const overallLast  = points[points.length - 1].overall;
-  const overallTrend = overallLast - overallFirst;
-  const direction = !multi ? 'single' : overallTrend >= 3 ? 'up' : overallTrend <= -3 ? 'down' : 'steady';
+  const overallPrev  = multi ? points[points.length - 2].overall : overallLast;
+  const overallTrend = overallLast - overallFirst;              // arc since the first test — context, not the headline
+  const overallDelta = overallLast - overallPrev;               // movement since the PREVIOUS test — this drives the headline
+  const direction = !multi ? 'single' : overallDelta >= 3 ? 'up' : overallDelta <= -3 ? 'down' : 'steady';
 
-  return { count: points.length, points, skills: withStatus, weakest, strongest, overallFirst, overallLast, overallTrend, direction };
+  // Human word for the headline. "Trending" is reserved for movement the
+  // trajectory agrees with: a drop only counts as "Trending down" if the score
+  // was already at or below the first test BEFORE this drop (i.e. the decline
+  // isn't just one bad day after a rise). Symmetrically, a rise is only
+  // "Trending up" if they were already at or above where they started —
+  // otherwise it's a recovery ("Improving").
+  const directionWord = !multi ? 'Single test'
+    : direction === 'up'   ? (overallPrev >= overallFirst ? 'Trending up'   : 'Improving')
+    : direction === 'down' ? (overallPrev <= overallFirst ? 'Trending down' : 'Dipped last test')
+    : 'Holding steady';
+
+  return { count: points.length, points, skills: withStatus, weakest, strongest, overallFirst, overallLast, overallPrev, overallTrend, overallDelta, direction, directionWord };
 };
 
 // One-line summary, reused for the on-screen banner and the AI feedback prompt.
 export const insightsSummaryText = (ins:any): string => {
   if (!ins) return '';
   if (ins.count < 2) return `One test so far — overall ${ins.overallLast}%. Strongest: ${ins.strongest.label} (${ins.strongest.avg}%). Weakest: ${ins.weakest.label} (${ins.weakest.avg}%).`;
-  const dir = ins.direction === 'up' ? 'Trending up' : ins.direction === 'down' ? 'Trending down' : 'Holding steady';
-  return `${dir} — overall ${ins.overallFirst}% → ${ins.overallLast}% since the first test. Recurring soft spot: ${ins.weakest.label} (avg ${ins.weakest.avg}%). Consistent strength: ${ins.strongest.label} (avg ${ins.strongest.avg}%).`;
+  return `${ins.directionWord} — overall ${ins.overallPrev}% → ${ins.overallLast}% since the last test (first test: ${ins.overallFirst}%). Recurring soft spot: ${ins.weakest.label} (avg ${ins.weakest.avg}%). Consistent strength: ${ins.strongest.label} (avg ${ins.strongest.avg}%).`;
 };
 
 // Compact context appended to the AI feedback prompt so drafts reference the real trend.
@@ -100,10 +113,11 @@ export const insightsForAI = (ins:any): string => {
 
 // Student-facing wording for the per-skill line in the email (gentle, never harsh).
 export const studentSkillWord = (s:any): string => {
-  if (s.status === 'Strong')     return 'a real strength';
-  if (s.status === 'Improving')  return 'improving';
-  if (s.status === 'Slipping')   return 'dipped a little this time';
-  if (s.status === 'Needs work') return 'worth more practice';
+  if (s.status === 'Strong')           return 'a real strength';
+  if (s.status === 'Improving')        return 'improving';
+  if (s.status === 'Dipped last test') return 'dipped a little this time';
+  if (s.status === 'Slipping')         return 'slipping a little — let\'s give it some attention';
+  if (s.status === 'Needs work')       return 'worth more practice';
   return 'holding steady';
 };
 
@@ -112,9 +126,9 @@ export const studentSkillWord = (s:any): string => {
 export const buildProgressEmailText = (ins:any): string => {
   if (!ins || ins.count < 2) return '';
   const lead = ins.direction === 'up'
-    ? `Overall, your score has improved from ${ins.overallFirst}% to ${ins.overallLast}% across your tests — nice work.`
+    ? `Overall, your score improved from ${ins.overallPrev}% to ${ins.overallLast}% since your last test — nice work.`
     : ins.direction === 'down'
-    ? `Overall, your score moved from ${ins.overallFirst}% to ${ins.overallLast}% this time. Let's work on bringing that back up — you can do it.`
+    ? `Overall, your score moved from ${ins.overallPrev}% to ${ins.overallLast}% since your last test. Let's work on bringing that back up — you can do it.`
     : `Overall, your score has held steady at around ${ins.overallLast}% across your tests.`;
   const skillLines = ins.skills.map((s:any) => `• ${s.label} — ${s.latest}% · ${studentSkillWord(s)}`).join('\n');
   return `\n\n**Your Progress So Far**\n${lead} Here's how each skill is tracking:\n\n${skillLines}\n\nThe best area to focus on next is ${ins.weakest.label}.`;

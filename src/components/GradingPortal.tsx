@@ -659,9 +659,9 @@ export const GradingPortal: React.FC<{
           <div style={{background:'#F8FAFC',padding:'16px',borderRadius:'8px',border:'1px solid #E2E8F0',margin:'12px 0'}}>
             <p style={{margin:'0 0 8px',fontWeight:'700'}}>Your Progress So Far:</p>
             <p style={{margin:'2px 0 10px'}}>{dInsights.direction==='up'
-              ? `Overall, your score has improved from ${dInsights.overallFirst}% to ${dInsights.overallLast}% across your tests — nice work.`
+              ? `Overall, your score improved from ${dInsights.overallPrev}% to ${dInsights.overallLast}% since your last test — nice work.`
               : dInsights.direction==='down'
-              ? `Overall, your score moved from ${dInsights.overallFirst}% to ${dInsights.overallLast}% this time. Let's work on bringing that back up — you can do it.`
+              ? `Overall, your score moved from ${dInsights.overallPrev}% to ${dInsights.overallLast}% since your last test. Let's work on bringing that back up — you can do it.`
               : `Overall, your score has held steady at around ${dInsights.overallLast}% across your tests.`}</p>
             {dInsights.skills.map((s:any)=>(
               <p key={s.key} style={{margin:'2px 0'}}>{s.label} — {s.latest}% · {studentSkillWord(s)}</p>
