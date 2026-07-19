@@ -797,7 +797,7 @@ function LitAndLearnMain() {
                                     <div key={idx} style={{ border: '1px solid #E2E8F0', borderRadius: '20px', padding: '24px', background: '#ffffff', boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
 
                                       {/* HEADER: name + date left, status/total right */}
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: skills.length ? '16px' : '0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: skills.length ? '20px' : '0' }}>
                                         <div>
                                           <div style={{ color: '#0F172A', fontWeight: '800', fontSize: '1.2rem' }}>{grade.assessment_name}</div>
                                           <div style={{ color: '#94A3B8', fontWeight: '500', fontSize: '0.9rem', marginTop: '2px' }}>{new Date(grade.date_recorded).toLocaleDateString()}</div>
@@ -813,14 +813,27 @@ function LitAndLearnMain() {
                                         ) : null}
                                       </div>
 
-                                      {/* SKILL CHIPS: horizontal, wrapping on small screens */}
+                                      {/* SKILL BARS: label + score with progress bar, grid adapts to screen */}
                                       {isJson && skills.length > 0 && (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                          {skills.map(([label, v], i) => (
-                                            <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 14px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem' }}>
-                                              {label}: {v}{perSkillMax ? ` / ${perSkillMax}` : ''}
-                                            </span>
-                                          ))}
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px 28px', marginTop: '4px' }}>
+                                          {skills.map(([label, v], i) => {
+                                            const val = Number(v) || 0;
+                                            const pct = perSkillMax ? Math.min(100, Math.round((val / perSkillMax) * 100)) : 0;
+                                            const barColor = pct >= 80 ? '#10B981' : pct >= 60 ? '#4F46E5' : pct >= 40 ? '#F59E0B' : '#EF4444';
+                                            return (
+                                              <div key={i}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                                                  <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#475569' }}>{label}</span>
+                                                  <span style={{ fontSize: '0.92rem', fontWeight: '800', color: '#0F172A' }}>{val}{perSkillMax ? ` / ${perSkillMax}` : ''}</span>
+                                                </div>
+                                                {perSkillMax > 0 && (
+                                                  <div style={{ height: '8px', background: '#F1F5F9', borderRadius: '9999px', overflow: 'hidden' }}>
+                                                    <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: '9999px', transition: 'width 0.6s ease' }} />
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       )}
 
@@ -835,15 +848,15 @@ function LitAndLearnMain() {
 
                                       {/* FEEDBACK: only if it exists, collapsed by default */}
                                       {hasFeedback && (
-                                        <div style={{ marginTop: '18px' }}>
+                                        <div style={{ marginTop: '20px' }}>
                                           <button
                                             type="button"
                                             onClick={() => setOpenFeedbackIdx(feedbackOpen ? null : idx)}
-                                            style={{ background: feedbackOpen ? '#EEF2FF' : 'transparent', color: '#4F46E5', border: '2px solid #E0E7FF', padding: '10px 20px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                                            style={{ width: '100%', background: feedbackOpen ? '#EEF2FF' : '#F8FAFC', color: '#4F46E5', border: '1px solid #E2E8F0', padding: '13px 20px', borderRadius: '14px', fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }}
                                           >
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                                             {feedbackOpen ? 'Hide teacher feedback' : 'Read teacher feedback'}
-                                            <span style={{ fontSize: '0.75rem', transform: feedbackOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                            <span style={{ fontSize: '0.7rem', transform: feedbackOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                           </button>
                                           {feedbackOpen && (
                                             <div style={{ marginTop: '14px', background: '#F8FAFC', borderLeft: '4px solid #4F46E5', borderRadius: '0 14px 14px 0', padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.7', whiteSpace: 'pre-wrap', animation: 'fadeInDown 0.25s ease-out' }}>
