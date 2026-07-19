@@ -772,6 +772,49 @@ function LitAndLearnMain() {
                               </div>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                                {/* GRADE SO FAR — mirrors the admin Term Summary calculation */}
+                                {(() => {
+                                  let earnedSum = 0, weightSum = 0, counted = 0;
+                                  officialGrades.forEach((g) => {
+                                    let p: any = null;
+                                    try { p = JSON.parse(g.score); } catch { /* legacy row: skip */ }
+                                    if (!p || typeof p !== 'object' || p.notApplicable) return;
+                                    const w = Number(p.weight) || 0;
+                                    if (!w) return;
+                                    const max = Number(p.maxPoints) || 0;
+                                    const skillVals = [p.listening, p.grammar, p.reading, p.writing, p.speaking].filter((v: any) => v !== undefined && v !== null && v !== '');
+                                    const tot = skillVals.reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+                                    earnedSum += (p.isAbsent || !max) ? 0 : (tot / max) * w;
+                                    weightSum += w;
+                                    counted++;
+                                  });
+                                  if (!weightSum) return null;
+                                  const pct = Math.round((earnedSum / weightSum) * 1000) / 10;
+                                  const earnedStr = (Math.round(earnedSum * 10) / 10).toFixed(1).replace(/\.0$/, '');
+                                  const barColor = pct >= 80 ? '#10B981' : pct >= 60 ? '#818CF8' : pct >= 40 ? '#F59E0B' : '#EF4444';
+                                  return (
+                                    <div style={{ background: '#0F172A', borderRadius: '20px', padding: '26px 28px', color: '#ffffff' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                        <div>
+                                          <div style={{ fontSize: '0.75rem', letterSpacing: '2px', fontWeight: '600', color: '#94A3B8', marginBottom: '6px' }}>GRADE SO FAR</div>
+                                          <div style={{ fontSize: '2.4rem', fontWeight: '800', lineHeight: 1 }}>{pct}%</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', color: '#94A3B8', fontSize: '0.92rem', fontWeight: '500', lineHeight: '1.7' }}>
+                                          {counted} test{counted === 1 ? '' : 's'} recorded<br />
+                                          {weightSum}% of final grade assessed
+                                        </div>
+                                      </div>
+                                      <div style={{ marginTop: '18px', height: '10px', background: 'rgba(255,255,255,0.12)', borderRadius: '9999px', overflow: 'hidden' }}>
+                                        <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: barColor, borderRadius: '9999px', transition: 'width 0.6s ease' }} />
+                                      </div>
+                                      <div style={{ marginTop: '10px', fontSize: '0.85rem', color: '#94A3B8', fontWeight: '500' }}>
+                                        You've earned <span style={{ color: '#ffffff', fontWeight: '700' }}>{earnedStr}%</span> of the {weightSum}% assessed so far.
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
                                 {officialGrades.map((grade, idx) => {
                                   let parsed: any = null;
                                   try { parsed = JSON.parse(grade.score); } catch { /* legacy plain-text score */ }
