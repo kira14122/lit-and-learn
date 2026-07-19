@@ -800,7 +800,11 @@ function LitAndLearnMain() {
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: skills.length ? '20px' : '0' }}>
                                         <div>
                                           <div style={{ color: '#0F172A', fontWeight: '800', fontSize: '1.2rem' }}>{grade.assessment_name}</div>
-                                          <div style={{ color: '#94A3B8', fontWeight: '500', fontSize: '0.9rem', marginTop: '2px' }}>{new Date(grade.date_recorded).toLocaleDateString()}</div>
+                                          <div style={{ color: '#94A3B8', fontWeight: '500', fontSize: '0.9rem', marginTop: '2px' }}>
+                                            {new Date(grade.date_recorded).toLocaleDateString()}
+                                            {isJson && parsed.weight ? <span style={{ color: '#CBD5E1' }}> · </span> : null}
+                                            {isJson && parsed.weight ? <span style={{ color: '#64748B', fontWeight: '600' }}>{parsed.weight}% of final grade</span> : null}
+                                          </div>
                                         </div>
                                         {isAbsent ? (
                                           <span style={{ background: '#FFF7ED', color: '#EA580C', padding: '8px 18px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.95rem' }}>Absent</span>
@@ -854,8 +858,8 @@ function LitAndLearnMain() {
                                             onClick={() => setOpenFeedbackIdx(feedbackOpen ? null : idx)}
                                             style={{ width: '100%', background: feedbackOpen ? '#EEF2FF' : '#F8FAFC', color: '#4F46E5', border: '1px solid #E2E8F0', padding: '13px 20px', borderRadius: '14px', fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s' }}
                                           >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                            {feedbackOpen ? 'Hide teacher feedback' : 'Read teacher feedback'}
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                            <span style={{ whiteSpace: 'nowrap' }}>{feedbackOpen ? 'Hide feedback' : 'Teacher feedback'}</span>
                                             <span style={{ fontSize: '0.7rem', transform: feedbackOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                                           </button>
                                           {feedbackOpen && (
