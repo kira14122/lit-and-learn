@@ -126,9 +126,31 @@ export const studentSkillWord = (s:any): string => {
   return 'holding steady';
 };
 
+// Picks the skill the email should tell the student to focus on next. The
+// term-average "weakest" is the wrong lens for this: a student who just scored
+// 100% in her historically weakest skill must not be told to focus on it.
+// Preference: lowest LATEST score, average as tiebreaker. If even the lowest
+// latest is >= 90, nothing deserves the label — return null so the email can
+// say something positive instead.
+export const focusSkillForEmail = (ins:any): any | null => {
+  if (!ins || !ins.skills || !ins.skills.length) return null;
+  const sorted = [...ins.skills].sort((a:any,b:any) => a.latest - b.latest || a.avg - b.avg);
+  const cand = sorted[0];
+  return (cand && cand.latest < 90) ? cand : null;
+};
+
+// Resolves the teacher's override against the auto pick. 'auto' (or absent)
+// -> focusSkillForEmail; 'none' -> undefined (omit the sentence entirely);
+// a skill key -> that skill.
+const resolveFocus = (ins:any, focusOverride?: string): any | null | undefined => {
+  if (focusOverride === 'none') return undefined;
+  if (focusOverride && focusOverride !== 'auto') return ins.skills.find((s:any)=>s.key===focusOverride) || focusSkillForEmail(ins);
+  return focusSkillForEmail(ins);
+};
+
 // Builds the plain-text "Your Progress So Far" block for the email body.
 // Returns '' (nothing added) unless there are at least two non-absent tests.
-export const buildProgressEmailText = (ins:any): string => {
+export const buildProgressEmailText = (ins:any, focusOverride?: string): string => {
   if (!ins || ins.count < 2) return '';
   const lead = ins.direction === 'up'
     ? `Overall, your score improved from ${ins.overallPrev}% to ${ins.overallLast}% since your last test — nice work.`
@@ -136,7 +158,11 @@ export const buildProgressEmailText = (ins:any): string => {
     ? `Overall, your score moved from ${ins.overallPrev}% to ${ins.overallLast}% since your last test. Let's work on bringing that back up — you can do it.`
     : `Overall, your score has held steady at around ${ins.overallLast}% across your tests.`;
   const skillLines = ins.skills.map((s:any) => `• ${s.label} — ${s.latest}% · ${studentSkillWord(s)}`).join('\n');
-  return `\n\n**Your Progress So Far**\n${lead} Here's how each skill is tracking:\n\n${skillLines}\n\nThe best area to focus on next is ${ins.weakest.label}.`;
+  const focus = resolveFocus(ins, focusOverride);
+  const focusLine = focus === undefined ? ''
+    : focus ? `\n\nThe best area to focus on next is ${focus.label}.`
+    : `\n\nNo single area stands out for extra focus right now — keep up the balanced work.`;
+  return `\n\n**Your Progress So Far**\n${lead} Here's how each skill is tracking:\n\n${skillLines}${focusLine}`;
 };
 
 // ── Term in Review (final-test email block) ─────────────────────────────────
@@ -150,17 +176,25 @@ export const buildProgressEmailText = (ins:any): string => {
 // lives there, not here); pass null/undefined to omit the grade line entirely.
 // `tips` is the teacher's feedback tip bank including their in-app edits;
 // falls back to DEFAULT_TIPS.
-export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?: Record<string,string[]>): string => {
+export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?: Record<string,string[]>, focusOverride?: string): string => {
   if (!ins) return '';
   const bank = tips || DEFAULT_TIPS;
   const tipFor = (key:string) => (bank[key] && bank[key][0]) || '';
   const gradeLine = (termGrade != null && !Number.isNaN(termGrade)) ? ` Your final term grade is **${Math.round(termGrade)}%**.` : '';
 
+  // The carry-forward skill: teacher override wins; otherwise the weakest by
+  // term average whose latest score is < 90 — never "keep working on" a skill
+  // the student just aced. undefined = omit; null = balanced closing line.
+  const carrySkill = focusOverride === 'none' ? undefined
+    : (focusOverride && focusOverride !== 'auto') ? (ins.skills.find((s:any)=>s.key===focusOverride) || null)
+    : ([...ins.skills].sort((a:any,b:any)=>a.avg-b.avg).find((s:any)=>s.latest < 90) || null);
+
   // Only the final on record — no arc to tell, keep it clean and honest.
   if (ins.count < 2) {
-    const tip = tipFor(ins.weakest.key);
-    const carry = tip ? ` A habit worth keeping: ${tip}.` : '';
-    return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%); the one with the most room to grow is **${ins.weakest.label}** (${ins.weakest.latest}%).${carry}`;
+    const growLine = carrySkill === undefined ? ''
+      : carrySkill ? ` The area with the most room to grow is **${carrySkill.label}** (${carrySkill.latest}%).` + (tipFor(carrySkill.key) ? ` A habit worth keeping: ${tipFor(carrySkill.key)}.` : '')
+      : ` Your skills are strong across the board — keep up the regular practice that got you here.`;
+    return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%).${growLine}`;
   }
 
   // Two or more tests — a real arc exists.
@@ -183,10 +217,11 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
     ? ` Your biggest growth was in **${grown.label}**, which climbed from ${grown.first}% to ${grown.latest}% — that improvement came from your work, and it shows.`
     : '';
 
-  const tip = tipFor(ins.weakest.key);
-  const carry = `If you continue with one thing going forward, make it **${ins.weakest.label}**.` + (tip ? ` A habit worth keeping: ${tip}.` : '');
+  const carry = carrySkill === undefined ? ''
+    : carrySkill ? `\n\nIf you continue with one thing going forward, make it **${carrySkill.label}**.` + (tipFor(carrySkill.key) ? ` A habit worth keeping: ${tipFor(carrySkill.key)}.` : '')
+    : `\n\nYou're finishing with strong, balanced skills across the board — keep the regular reading, listening and writing habits that got you here.`;
 
-  return `\n\n**Your Term in Review**\n${opener}\n\n${strength}${growth}\n\n${carry}`;
+  return `\n\n**Your Term in Review**\n${opener}\n\n${strength}${growth}${carry}`;
 };
 
 // ── Quick feedback builder bank ─────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, buildTermReviewEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS, PHRASE_CATEGORIES, seededPick, builderPraiseText, computeFocusFlags } from './gradingHelpers';
+import { draftHasContent, INSIGHT_SKILLS, computeInsights, insightsForAI, studentSkillWord, buildProgressEmailText, buildTermReviewEmailText, FEEDBACK_TIPS_KEY, DEFAULT_TIPS, PHRASE_CATEGORIES, seededPick, builderPraiseText, computeFocusFlags, focusSkillForEmail } from './gradingHelpers';
 import { TermSummaryCard } from './TermSummaryCard';
 import { PerformanceInsightsCard } from './PerformanceInsightsCard';
 import { PreviousRecordsCard } from './PreviousRecordsCard';
@@ -94,6 +94,7 @@ export const GradingPortal: React.FC<{
   const [builderGeneralSel, setBuilderGeneralSel] = useState<Set<string>>(new Set());
   const [builderVaryNonce, setBuilderVaryNonce]   = useState(0);
   const [builderConfirmReplace, setBuilderConfirmReplace] = useState(false);
+  const [emailFocus, setEmailFocus] = useState('auto'); // 'auto' | skill key | 'none' — the "focus on next" line in the email
   const [builderExpanded, setBuilderExpanded]     = useState<Set<string>>(new Set());
   const [editingRecordId, setEditingRecordId]   = useState<string|null>(null);
   const [editScoreText, setEditScoreText]       = useState('');
@@ -514,7 +515,7 @@ export const GradingPortal: React.FC<{
     setIsSubmitting(false);
     clearDraftAfterSubmit();
     setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
-    setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');
+    setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
   };
 
   // Saves the grade to the database WITHOUT emailing the student. Records with
@@ -536,7 +537,7 @@ export const GradingPortal: React.FC<{
     setIsSubmitting(false);
     clearDraftAfterSubmit();
     setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
-    setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');
+    setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
   };
 
   // CHANGE 2: submitGrade now saves a JSON object to the DB instead of a plain string
@@ -564,8 +565,8 @@ export const GradingPortal: React.FC<{
       const statusNote = isAbsent?`**Status:** ABSENT (0%)`:`**Score Breakdown:**\n${prettyScore}`;
       const isFinalSend = assessmentName === 'Final Test';
       const progressBlock = isAbsent ? '' : (isFinalSend
-        ? buildTermReviewEmailText(projectedInsights, projectedStanding(), feedbackTips)
-        : buildProgressEmailText(projectedInsights));
+        ? buildTermReviewEmailText(projectedInsights, projectedStanding(), feedbackTips, emailFocus)
+        : buildProgressEmailText(projectedInsights, emailFocus));
       const body = `Hello ${selectedStudent.full_name},\n\n${isFinalSend ? 'I have finished grading your final assessment, and your official results for the term are now available. Below is a detailed breakdown of your performance, a review of your term, and my personal feedback.' : 'I have finished grading your recent assessment, and your official results are now available. Below is a detailed breakdown of your performance, along with my personal feedback.'}\n\n**Assessment:** ${assessmentName} (${assessmentWeight}% of Final Grade)\n\n${statusNote}${progressBlock}\n\n**Instructor Feedback:**\n"${feedback||'Please review your scores carefully.'}"\n\nBest regards,\n\nDr. Chouit Abderraouf\nLit & Learn\n📧 dr.chouit@litnlearn.com\n🌐 https://litnlearn.com`;
       const { error: emailError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject: isFinalSend ? 'Final Test Results & Your Term in Review' : `Official Assessment Grade: ${assessmentName}`,messageBody:body,replyTo:'dr.chouit@litnlearn.com'}});
       if (emailError) throw new Error(emailError.message);
@@ -575,7 +576,7 @@ export const GradingPortal: React.FC<{
       setIsSubmitting(false);
       clearDraftAfterSubmit();
       setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
-      setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');
+      setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
     }
   };
 
@@ -708,7 +709,7 @@ export const GradingPortal: React.FC<{
         )}
         {!dAbsent && dInsights && dIsFinal && (
           <div style={{background:'#F8FAFC',padding:'16px',borderRadius:'8px',border:'1px solid #E2E8F0',margin:'12px 0'}}>
-            {buildTermReviewEmailText(dInsights, dTermGrade, feedbackTips).trim().split('\n').filter((l:string)=>l.trim()).map((line:string,i:number)=>(
+            {buildTermReviewEmailText(dInsights, dTermGrade, feedbackTips, pr ? 'auto' : emailFocus).trim().split('\n').filter((l:string)=>l.trim()).map((line:string,i:number)=>(
               <p key={i} style={{margin: i===0?'0 0 8px':'6px 0', fontWeight: i===0?'700':'400'}}>{i===0 ? line.replace(/\*\*/g,'') : boldify(line)}</p>
             ))}
           </div>
@@ -724,7 +725,10 @@ export const GradingPortal: React.FC<{
             {dInsights.skills.map((s:any)=>(
               <p key={s.key} style={{margin:'2px 0'}}>{s.label} — {s.latest}% · {studentSkillWord(s)}</p>
             ))}
-            <p style={{margin:'10px 0 2px'}}>The best area to focus on next is <strong>{dInsights.weakest.label}</strong>.</p>
+            {(()=>{ const ov = pr ? 'auto' : emailFocus; if (ov==='none') return null;
+              const f = (ov!=='auto') ? (dInsights.skills.find((s:any)=>s.key===ov) || focusSkillForEmail(dInsights)) : focusSkillForEmail(dInsights);
+              return f ? <p style={{margin:'10px 0 2px'}}>The best area to focus on next is <strong>{f.label}</strong>.</p>
+                       : <p style={{margin:'10px 0 2px'}}>No single area stands out for extra focus right now — keep up the balanced work.</p>; })()}
           </div>
         )}
         <p><strong>Instructor Feedback:</strong></p>
@@ -1168,6 +1172,16 @@ export const GradingPortal: React.FC<{
                     <textarea value={feedback} onChange={e=>setFeedback(e.target.value)} placeholder="Generate a draft with AI, then edit — or write your own..." rows={4} style={{width:'100%',boxSizing:'border-box',padding:'13px 14px',borderRadius:'13px',border:'1px solid #E3E7EF',background:'#FAFBFD',color:'#334155',fontSize:'0.98rem',outline:'none',resize:'vertical',lineHeight:'1.6'}}/>
                     )}
                     {insights && <div style={{display:'inline-flex',alignItems:'center',gap:'6px',marginTop:'10px',background:'#F5F5FF',border:'1px solid #E5E4FB',color:'#4F46E5',fontSize:'0.75rem',fontWeight:'600',padding:'5px 11px',borderRadius:'999px'}}>💡 AI uses this student's performance insights</div>}
+                    {projectedInsights && projectedInsights.count > 1 && (!hasBeenGraded || editingRecordId) && (
+                      <div style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'10px',flexWrap:'wrap'}}>
+                        <span style={{fontSize:'0.78rem',fontWeight:'600',color:'#475569'}}>Email “focus on next” area:</span>
+                        <select value={emailFocus} onChange={e=>setEmailFocus(e.target.value)} style={{padding:'6px 10px',borderRadius:'9px',border:'1px solid #E3E7EF',background:'#fff',color:'#334155',fontSize:'0.8rem',outline:'none',cursor:'pointer'}}>
+                          <option value="auto">Auto{(()=>{const f=focusSkillForEmail(projectedInsights);return f?` (${f.label})`:' (balanced — no focus line)';})()}</option>
+                          {INSIGHT_SKILLS.map(sk=><option key={sk.key} value={sk.key}>{sk.label}</option>)}
+                          <option value="none">Don't include the line</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   {editingRecordId ? (
