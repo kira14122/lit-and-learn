@@ -79,7 +79,7 @@ export const AboutPage = (_props: AboutPageProps) => {
         <div style={{ marginBottom: '44px' }}>
           <h3 style={{ fontSize: '1.8rem', color: '#0F172A', margin: '0 0 18px 0', letterSpacing: '-0.5px' }}>About Me</h3>
           <p style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', margin: '0 0 20px 0' }}>
-            I'm Dr. Chouit Abderraouf — an English educator, a researcher in applied linguistics and translation studies, and the teacher behind Lit & Learn. I created this platform as a free and open space for anyone who wishes to learn and practise English — my own students and curious learners everywhere alike.
+            I'm Dr. Chouit Abderraouf — an English educator, a researcher in applied linguistics and translation studies, and the teacher behind Lit & Learn. I created this platform as a free and open space for anyone who wishes to learn and practice English — my own students and curious learners everywhere alike.
           </p>
           <p style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', margin: '0 0 20px 0' }}>
             Literature has always been at the heart of how I learn and teach. Reading, more than anything, is what shaped my own command of English, and it remains the surest path I know to genuine fluency. Through stories, essays, and ideas drawn from across the world, language becomes something alive — words seen in real context, voices worth understanding, and topics worth discussing.
@@ -88,7 +88,7 @@ export const AboutPage = (_props: AboutPageProps) => {
             I also believe that language is acquired through use, and that practice refines mastery only when it is deliberate and well-guided. So in my approach the learner takes the lead — reading widely and engaging with thought-provoking ideas — while I guide the way and illuminate the finer, trickier points of the language.
           </p>
           <p style={{ color: '#475569', fontSize: '1.2rem', lineHeight: '1.9', margin: 0 }}>
-            Lit & Learn brings that spirit into a single place: rigorous yet warm, rooted in literature, and always evolving. Wherever you begin, my aim is to help you read deeply, practise meaningfully, and arrive at a confident, lasting command of English.
+            Lit & Learn brings that spirit into a single place: rigorous yet warm, rooted in literature, and always evolving. Wherever you begin, my aim is to help you read deeply, practice meaningfully, and arrive at a confident, lasting command of English.
           </p>
         </div>
 
