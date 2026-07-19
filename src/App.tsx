@@ -790,13 +790,64 @@ function LitAndLearnMain() {
                                           {grade.assessment_name}
                                         </td>
                                         <td data-label="Score" style={{ padding: '20px 24px' }}>
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                                            {grade.score.split('\n').map((line: string, i: number) => line.trim() ? (
-                                              <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
-                                                {line}
-                                              </span>
-                                            ) : null)}
-                                          </div>
+                                          {(() => {
+                                            let parsed: any = null;
+                                            try { parsed = JSON.parse(grade.score); } catch { /* legacy plain-text score */ }
+
+                                            if (!parsed || typeof parsed !== 'object') {
+                                              // Old format: plain text, one line per skill
+                                              return (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                                  {String(grade.score).split('\n').map((line: string, i: number) => line.trim() ? (
+                                                    <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
+                                                      {line}
+                                                    </span>
+                                                  ) : null)}
+                                                </div>
+                                              );
+                                            }
+
+                                            if (parsed.isAbsent) {
+                                              return (
+                                                <span style={{ background: '#FFF7ED', color: '#EA580C', padding: '6px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
+                                                  Absent
+                                                </span>
+                                              );
+                                            }
+
+                                            if (parsed.notApplicable) {
+                                              return (
+                                                <span style={{ background: '#F1F5F9', color: '#64748B', padding: '6px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
+                                                  Not Applicable
+                                                </span>
+                                              );
+                                            }
+
+                                            const skills: [string, any][] = [
+                                              ['Listening', parsed.listening],
+                                              ['Grammar & Vocab', parsed.grammar],
+                                              ['Reading', parsed.reading],
+                                              ['Writing', parsed.writing],
+                                              ['Speaking', parsed.speaking],
+                                            ].filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, any][];
+
+                                            const total = skills.reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
+                                            const maxPoints = Number(parsed.maxPoints) || 0;
+                                            const perSkillMax = maxPoints && skills.length ? maxPoints / skills.length : 0;
+
+                                            return (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                                <span style={{ background: '#4F46E5', color: '#ffffff', padding: '5px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '1rem', display: 'inline-block' }}>
+                                                  {total}{maxPoints ? ` / ${maxPoints}` : ''} pts
+                                                </span>
+                                                {skills.map(([label, v], i) => (
+                                                  <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.9rem', display: 'inline-block' }}>
+                                                    {label}: {v}{perSkillMax ? ` / ${perSkillMax}` : ''}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            );
+                                          })()}
                                         </td>
                                         <td data-label="Feedback" style={{ padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
                                           "{grade.feedback || 'Excellent work!'}"
