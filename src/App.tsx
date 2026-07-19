@@ -802,8 +802,26 @@ function LitAndLearnMain() {
                                           <div style={{ color: '#0F172A', fontWeight: '800', fontSize: '1.2rem' }}>{grade.assessment_name}</div>
                                           <div style={{ color: '#94A3B8', fontWeight: '500', fontSize: '0.9rem', marginTop: '2px' }}>
                                             {new Date(grade.date_recorded).toLocaleDateString()}
-                                            {isJson && parsed.weight ? <span style={{ color: '#CBD5E1' }}> · </span> : null}
-                                            {isJson && parsed.weight ? <span style={{ color: '#64748B', fontWeight: '600' }}>{parsed.weight}% of final grade</span> : null}
+                                            {(() => {
+                                              if (!isJson) return null;
+                                              const weight = Number(parsed.weight) || 0;
+                                              if (!weight) return null;
+                                              if (isNA) {
+                                                return <><span style={{ color: '#CBD5E1' }}> · </span><span style={{ color: '#64748B', fontWeight: '600' }}>Excluded from final grade</span></>;
+                                              }
+                                              const earned = isAbsent || !maxPoints ? 0 : (total / maxPoints) * weight;
+                                              const earnedStr = (Math.round(earned * 10) / 10).toFixed(1).replace(/\.0$/, '');
+                                              const earnedColor = isAbsent ? '#EA580C' : '#10B981';
+                                              return (
+                                                <>
+                                                  <span style={{ color: '#CBD5E1' }}> · </span>
+                                                  <span style={{ fontWeight: '700' }}>
+                                                    <span style={{ color: earnedColor }}>Earned {earnedStr}%</span>
+                                                    <span style={{ color: '#64748B' }}> of {weight}%</span>
+                                                  </span>
+                                                </>
+                                              );
+                                            })()}
                                           </div>
                                         </div>
                                         {isAbsent ? (
