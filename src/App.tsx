@@ -124,6 +124,7 @@ function LitAndLearnMain() {
 
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [officialGrades, setOfficialGrades] = useState<any[]>([]); 
+  const [openFeedbackIdx, setOpenFeedbackIdx] = useState<number | null>(null);
   const [unitMetadataList, setUnitMetadataList] = useState<any[]>([]);
   const [publishedAssessments, setPublishedAssessments] = useState<any[]>([]);
 
@@ -770,92 +771,90 @@ function LitAndLearnMain() {
                                 <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>No official assessments have been recorded yet.</p>
                               </div>
                             ) : (
-                              <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
-                                <table className="mobile-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                                  <thead>
-                                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
-                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Date</th>
-                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Assessment</th>
-                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Score</th>
-                                      <th style={{ padding: '16px 24px', color: '#475569', fontWeight: '600', fontSize: '1.05rem' }}>Teacher Feedback</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {officialGrades.map((grade, idx) => (
-                                      <tr key={idx} style={{ borderBottom: idx === officialGrades.length - 1 ? 'none' : '1px solid #F1F5F9', transition: 'background 0.2s' }}>
-                                        <td data-label="Date" style={{ padding: '20px 24px', color: '#64748B', fontWeight: '500' }}>
-                                          {new Date(grade.date_recorded).toLocaleDateString()}
-                                        </td>
-                                        <td data-label="Assessment" style={{ padding: '20px 24px', color: '#0F172A', fontWeight: '600', fontSize: '1.1rem' }}>
-                                          {grade.assessment_name}
-                                        </td>
-                                        <td data-label="Score" style={{ padding: '20px 24px' }}>
-                                          {(() => {
-                                            let parsed: any = null;
-                                            try { parsed = JSON.parse(grade.score); } catch { /* legacy plain-text score */ }
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {officialGrades.map((grade, idx) => {
+                                  let parsed: any = null;
+                                  try { parsed = JSON.parse(grade.score); } catch { /* legacy plain-text score */ }
+                                  const isJson = parsed && typeof parsed === 'object';
+                                  const isAbsent = isJson && parsed.isAbsent;
+                                  const isNA = isJson && parsed.notApplicable;
 
-                                            if (!parsed || typeof parsed !== 'object') {
-                                              // Old format: plain text, one line per skill
-                                              return (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                                                  {String(grade.score).split('\n').map((line: string, i: number) => line.trim() ? (
-                                                    <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
-                                                      {line}
-                                                    </span>
-                                                  ) : null)}
-                                                </div>
-                                              );
-                                            }
+                                  const skills: [string, any][] = isJson && !isAbsent && !isNA ? ([
+                                    ['Listening', parsed.listening],
+                                    ['Grammar & Vocab', parsed.grammar],
+                                    ['Reading', parsed.reading],
+                                    ['Writing', parsed.writing],
+                                    ['Speaking', parsed.speaking],
+                                  ].filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, any][]) : [];
 
-                                            if (parsed.isAbsent) {
-                                              return (
-                                                <span style={{ background: '#FFF7ED', color: '#EA580C', padding: '6px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
-                                                  Absent
-                                                </span>
-                                              );
-                                            }
+                                  const total = skills.reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
+                                  const maxPoints = isJson ? (Number(parsed.maxPoints) || 0) : 0;
+                                  const perSkillMax = maxPoints && skills.length ? maxPoints / skills.length : 0;
+                                  const hasFeedback = !!(grade.feedback && grade.feedback.trim());
+                                  const feedbackOpen = openFeedbackIdx === idx;
 
-                                            if (parsed.notApplicable) {
-                                              return (
-                                                <span style={{ background: '#F1F5F9', color: '#64748B', padding: '6px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '0.95rem', display: 'inline-block' }}>
-                                                  Not Applicable
-                                                </span>
-                                              );
-                                            }
+                                  return (
+                                    <div key={idx} style={{ border: '1px solid #E2E8F0', borderRadius: '20px', padding: '24px', background: '#ffffff', boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
 
-                                            const skills: [string, any][] = [
-                                              ['Listening', parsed.listening],
-                                              ['Grammar & Vocab', parsed.grammar],
-                                              ['Reading', parsed.reading],
-                                              ['Writing', parsed.writing],
-                                              ['Speaking', parsed.speaking],
-                                            ].filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, any][];
+                                      {/* HEADER: name + date left, status/total right */}
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: skills.length ? '16px' : '0' }}>
+                                        <div>
+                                          <div style={{ color: '#0F172A', fontWeight: '800', fontSize: '1.2rem' }}>{grade.assessment_name}</div>
+                                          <div style={{ color: '#94A3B8', fontWeight: '500', fontSize: '0.9rem', marginTop: '2px' }}>{new Date(grade.date_recorded).toLocaleDateString()}</div>
+                                        </div>
+                                        {isAbsent ? (
+                                          <span style={{ background: '#FFF7ED', color: '#EA580C', padding: '8px 18px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.95rem' }}>Absent</span>
+                                        ) : isNA ? (
+                                          <span style={{ background: '#F1F5F9', color: '#64748B', padding: '8px 18px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.95rem' }}>Not Applicable</span>
+                                        ) : isJson ? (
+                                          <span style={{ background: '#4F46E5', color: '#ffffff', padding: '8px 18px', borderRadius: '9999px', fontWeight: '800', fontSize: '1.05rem', boxShadow: '0 6px 14px rgba(79,70,229,0.25)' }}>
+                                            {total}{maxPoints ? ` / ${maxPoints}` : ''} pts
+                                          </span>
+                                        ) : null}
+                                      </div>
 
-                                            const total = skills.reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
-                                            const maxPoints = Number(parsed.maxPoints) || 0;
-                                            const perSkillMax = maxPoints && skills.length ? maxPoints / skills.length : 0;
+                                      {/* SKILL CHIPS: horizontal, wrapping on small screens */}
+                                      {isJson && skills.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                          {skills.map(([label, v], i) => (
+                                            <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 14px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem' }}>
+                                              {label}: {v}{perSkillMax ? ` / ${perSkillMax}` : ''}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
 
-                                            return (
-                                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                                                <span style={{ background: '#4F46E5', color: '#ffffff', padding: '5px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '1rem', display: 'inline-block' }}>
-                                                  {total}{maxPoints ? ` / ${maxPoints}` : ''} pts
-                                                </span>
-                                                {skills.map(([label, v], i) => (
-                                                  <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '6px', fontWeight: '700', fontSize: '0.9rem', display: 'inline-block' }}>
-                                                    {label}: {v}{perSkillMax ? ` / ${perSkillMax}` : ''}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            );
-                                          })()}
-                                        </td>
-                                        <td data-label="Feedback" style={{ padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                                          "{grade.feedback || 'Excellent work!'}"
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                      {/* LEGACY plain-text scores */}
+                                      {!isJson && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                          {String(grade.score).split('\n').map((line: string, i: number) => line.trim() ? (
+                                            <span key={i} style={{ background: '#EEF2FF', color: '#4F46E5', padding: '6px 14px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.9rem' }}>{line}</span>
+                                          ) : null)}
+                                        </div>
+                                      )}
+
+                                      {/* FEEDBACK: only if it exists, collapsed by default */}
+                                      {hasFeedback && (
+                                        <div style={{ marginTop: '18px' }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenFeedbackIdx(feedbackOpen ? null : idx)}
+                                            style={{ background: feedbackOpen ? '#EEF2FF' : 'transparent', color: '#4F46E5', border: '2px solid #E0E7FF', padding: '10px 20px', borderRadius: '9999px', fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                                          >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                            {feedbackOpen ? 'Hide teacher feedback' : 'Read teacher feedback'}
+                                            <span style={{ fontSize: '0.75rem', transform: feedbackOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                                          </button>
+                                          {feedbackOpen && (
+                                            <div style={{ marginTop: '14px', background: '#F8FAFC', borderLeft: '4px solid #4F46E5', borderRadius: '0 14px 14px 0', padding: '20px 24px', color: '#475569', fontStyle: 'italic', lineHeight: '1.7', whiteSpace: 'pre-wrap', animation: 'fadeInDown 0.25s ease-out' }}>
+                                              {grade.feedback}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </SignedIn>
