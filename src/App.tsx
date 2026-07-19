@@ -792,7 +792,9 @@ function LitAndLearnMain() {
                                   if (!weightSum) return null;
                                   const pct = Math.round((earnedSum / weightSum) * 1000) / 10;
                                   const earnedStr = (Math.round(earnedSum * 10) / 10).toFixed(1).replace(/\.0$/, '');
-                                  const barColor = pct >= 80 ? '#10B981' : pct >= 60 ? '#818CF8' : pct >= 40 ? '#F59E0B' : '#EF4444';
+                                  // Softer tiers than the skill bars: this is a term-in-progress
+                                  // number, so red is reserved for truly critical standing.
+                                  const barColor = pct >= 80 ? '#10B981' : pct >= 50 ? '#818CF8' : pct >= 25 ? '#F59E0B' : '#EF4444';
                                   return (
                                     <div style={{ background: '#0F172A', borderRadius: '20px', padding: '26px 28px', color: '#ffffff' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
