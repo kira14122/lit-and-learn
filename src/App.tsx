@@ -218,7 +218,9 @@ function LitAndLearnMain() {
         const { data: lessonData } = await supabase.from('completed_lessons').select('lesson_id').eq('user_id', userId);
         if (lessonData) setCompletedLessons(lessonData.map(l => l.lesson_id));
 
-        const { data: gradesData } = await supabase.from('student_grades').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        // Fetch grades via RPC bridge: matches both the Clerk ID and any
+        // roster profile sharing this student's email (case-insensitive)
+        const { data: gradesData } = await supabase.rpc('get_my_grades');
         if (gradesData) setOfficialGrades(gradesData);
 
         if (user) {
