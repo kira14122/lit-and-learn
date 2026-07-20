@@ -97,7 +97,9 @@ export const ContactPage: React.FC = () => {
 
           /* ---------- GUEST VIEW: no form, just a sign-in prompt ---------- */
           <div style={{ textAlign: 'center', backgroundColor: '#F8FAFC', border: '2px dashed #E2E8F0', borderRadius: '20px', padding: '48px 32px' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '16px' }}>🔒</div>
+            <div style={{ width: '56px', height: '56px', backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            </div>
             <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem', color: '#0F172A', fontWeight: '800' }}>Students only</h2>
             <p style={{ color: '#64748B', fontSize: '1.05rem', margin: '0 0 28px 0', lineHeight: '1.6', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
               To keep messages secure and spam-free, please sign in to your Lit &amp; Learn account before contacting Dr. Chouit.
