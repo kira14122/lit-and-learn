@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { client } from '../sanityClient';
 
 // --- Premium Line-Art SVGs ---
@@ -133,6 +133,24 @@ export const PracticeHub = () => {
     setIsComplete(false);
     setScore(0);
   };
+
+  // Deep-link support (used by the homepage "Recently added" feed):
+  //   /practice?topic=<id>  -> jump straight into that practice
+  //   /practice?cat=<name>  -> pre-filter the list to a category
+  // Runs once, after topics have loaded.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || topics.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const cat = params.get('cat');
+    const topicId = params.get('topic');
+    if (cat) setSelectedCategory(cat);
+    if (topicId) {
+      const match = topics.find((t: any) => t._id === topicId);
+      if (match) handleStartTopic(match);
+    }
+    deepLinkDone.current = true;
+  }, [topics]);
 
   const handleAnswerClick = (key: string) => {
     if (selectedAnswer) return; 

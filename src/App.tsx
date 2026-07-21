@@ -11,6 +11,7 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { ContactPage } from './components/ContactPage';
 import { PracticeHub } from './components/PracticeHub';
 import { WritingLab } from './components/WritingLab';
+import { Homepage } from './components/Homepage';
 import { BookReviews } from './components/BookReviews';
 import { LivePlayer } from './components/LivePlayer'; 
 import { ExamCheckIn } from './components/ExamCheckIn';
@@ -595,7 +596,11 @@ function LitAndLearnMain() {
           <div className="app-container" style={styles.container}>
             {!isOverlayActive ? (
               <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '50px', gap: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '24px' }}>
+                {/* On the home landing the Homepage component supplies its own hero,
+                    so the big page title/subtitle is hidden here. It still shows while
+                    searching (so "Search Results" appears) and on every other route. */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: (location.pathname === '/' && !searchTerm) ? 'flex-end' : 'space-between', alignItems: 'flex-end', marginBottom: (location.pathname === '/' && !searchTerm) ? '24px' : '50px', gap: '20px', borderBottom: (location.pathname === '/' && !searchTerm) ? 'none' : '2px solid #F1F5F9', paddingBottom: (location.pathname === '/' && !searchTerm) ? '0' : '24px' }}>
+                  {!(location.pathname === '/' && !searchTerm) && (
                   <div>
                     <h2 style={{ fontSize: '2.5rem', color: '#0F172A', margin: '0 0 8px 0', fontWeight: '600', letterSpacing: '-1px' }}>
                       {searchTerm ? 'Search Results' : currentTabName}
@@ -612,6 +617,7 @@ function LitAndLearnMain() {
                         'Welcome to Lit & Learn.'}
                     </p>
                   </div>
+                  )}
 
                   <div style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
                     <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}><IconSearch size={20} /></div>
@@ -972,229 +978,11 @@ function LitAndLearnMain() {
 
                     {/* --- ROUTE: ENGLISH CORNER (HOME) --- */}
                     <Route path="/" element={
-                      <div>
-                        {!activeLevel ? (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-
-                            {/* --- FEATURED: WRITING LAB (the "Write." manifesto card) --- */}
-                            <div className="soft-card" style={{ maxWidth: '1000px', margin: '0 auto 40px auto', background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '32px', boxShadow: '0 20px 45px -18px rgba(15,23,42,0.12)', padding: '36px 40px 32px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', borderBottom: '1px solid #0F172A', paddingBottom: '14px' }}>
-                                <span className="wl-kicker" style={{ fontSize: '0.72rem', letterSpacing: '2.5px', color: '#0F172A', fontWeight: '600' }}>THE MASTER WRITING COURSE</span>
-                                {WRITING_LAB_IS_NEW && (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '0.72rem', letterSpacing: '2px', color: '#B45309', fontWeight: '600' }}>
-                                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#F59E0B' }} />NEW
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ position: 'relative', padding: '26px 0 10px' }}>
-                                <h3 className="wl-serif wl-write" style={{ fontStyle: 'italic', fontWeight: '600', lineHeight: '0.95', color: '#0F172A', letterSpacing: '-2px', margin: 0 }}>Write<span style={{ color: '#4F46E5' }}>.</span></h3>
-                                <svg className="wl-pen" style={{ position: 'absolute', right: '8px', top: '18px', transform: 'rotate(6deg)' }} viewBox="0 0 24 24" fill="none" stroke="#D4A017" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                              </div>
-                              <p style={{ fontSize: '1.1rem', color: '#475569', lineHeight: '1.65', maxWidth: '440px', margin: 0 }}>From your first sentence to full academic essays — one lesson at a time.</p>
-                              <p className="wl-serif" style={{ fontStyle: 'italic', fontSize: '1.15rem', color: '#B45309', margin: '10px 0 26px' }}>Free, for everyone. Always.</p>
-                              <div className="wl-manifesto-foot" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px', borderTop: '1px solid #E2E8F0', paddingTop: '20px', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', gap: '32px' }}>
-                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>9</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>MODULES</div></div>
-                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>67</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>LESSONS</div></div>
-                                  <div><div style={{ fontSize: '1.35rem', fontWeight: '600', color: '#0F172A' }}>A1–C1</div><div style={{ fontSize: '0.68rem', letterSpacing: '1.5px', color: '#94A3B8', fontWeight: '600' }}>ALL LEVELS</div></div>
-                                </div>
-                                <button onClick={() => handleNavigation('/writing')} className="wl-cta" style={{ background: '#4F46E5', color: '#ffffff', border: 'none', padding: '15px 30px', borderRadius: '9999px', fontWeight: '700', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 24px -8px rgba(79,70,229,0.45)', transition: 'all 0.2s', fontFamily: '"Fredoka", sans-serif' }}>Start the course →</button>
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '30px', maxWidth: '1000px', margin: '0 auto' }}>
-                              {LEVELS.map((lvl, index) => {
-                                const colors = [ { bg: '#EEF2FF', icon: '#4F46E5' }, { bg: '#FEF3C7', icon: '#D97706' }, { bg: '#ECFDF5', icon: '#10B981' } ];
-                                return (
-                                  <button key={lvl.name} onClick={() => setActiveLevel(lvl.name)} className="soft-card" style={{ flex: '1 1 280px', maxWidth: '320px', padding: '40px 40px', backgroundColor: '#ffffff', border: '1px solid #F1F5F9', borderRadius: '32px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', transition: 'all 0.3s', boxShadow: '0 10px 40px -10px rgba(0,0,0,0.03)' }}>
-                                    <div style={{ background: colors[index].bg, color: colors[index].icon, width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                      {React.cloneElement(lvl.icon, { size: 36 })}
-                                    </div>
-                                    <h3 style={{ fontSize: '2rem', color: '#0F172A', margin: 0 }}>{lvl.name}</h3>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ) : !activeSubLevel ? (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ marginBottom: '30px', textAlign: 'center' }}>
-                              <div style={{ display: 'inline-block', textAlign: 'left', width: '100%', maxWidth: '1000px' }}>
-                                <BackButton onClick={() => setActiveLevel(null)} text="Back to Levels" />
-                                <h3 style={{ fontSize: '2.2rem', color: '#0F172A', margin: '16px 0 8px 0' }}>Select a Path</h3>
-                                <p style={{ color: '#64748B', fontSize: '1.1rem', margin: 0 }}>{activeLevel} Curriculum</p>
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                              {LEVELS.find(l => l.name === activeLevel)?.subLevels.map(sub => (
-                                <button key={sub} className="soft-card" style={{ flex: '1 1 250px', maxWidth: '300px', padding: '30px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', fontSize: '1.3rem', fontWeight: '600', color: '#4F46E5', cursor: 'pointer', textAlign: 'center' }} onClick={() => setActiveSubLevel(sub)}>
-                                  {sub}
-                                </button> 
-                              ))}
-                            </div>
-                          </div>
-                        ) : !activeUnit ? (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', flexWrap: 'wrap', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-                              <div>
-                                <BackButton onClick={() => setActiveSubLevel(null)} text="Back to Paths" />
-                                <h2 style={{ margin: '16px 0 4px 0', color: '#0F172A', fontWeight: '600', fontSize: '2.5rem' }}>{activeSubLevel} Curriculum</h2>
-                                <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '500' }}>{activeLevel}</span>
-                              </div>
-                              {(() => {
-                                const currentPathAssessments = publishedAssessments.filter(a => a.level === activeLevel && a.subLevel === activeSubLevel);
-                                const uniqueUnitsPublished = new Set(currentPathAssessments.map(a => a.unit)).size;
-                                const isFinalExamUnlocked = uniqueUnitsPublished >= 12;
-
-                                return (
-                                  <div className="final-exam-wrapper" style={{ display: 'flex', justifyContent: 'flex-end', flexGrow: 1, minWidth: '280px' }}>
-                                    <button 
-                                      onClick={() => startQuiz(true)} 
-                                      disabled={!isFinalExamUnlocked}
-                                      className="soft-card final-exam-btn"
-                                      style={{ background: '#ffffff', border: isFinalExamUnlocked ? '2px solid #EEF2FF' : '1px solid #E2E8F0', padding: '16px 24px', borderRadius: '20px', cursor: isFinalExamUnlocked ? 'pointer' : 'not-allowed', boxShadow: isFinalExamUnlocked ? '0 10px 20px rgba(79, 70, 229, 0.1)' : '0 2px 5px rgba(15, 23, 42, 0.02)', display: 'flex', alignItems: 'center', gap: '16px', transition: 'all 0.2s', opacity: isFinalExamUnlocked ? 1 : 0.8, maxWidth: '350px', width: '100%' }}
-                                    >
-                                      <div style={{ background: isFinalExamUnlocked ? '#EEF2FF' : '#F1F5F9', color: isFinalExamUnlocked ? '#4F46E5' : '#94A3B8', padding: '14px', borderRadius: '14px', display: 'flex' }}>
-                                        {isFinalExamUnlocked ? <IconStar size={24} /> : <IconLock size={20} />}
-                                      </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
-                                        <span style={{ fontWeight: '700', fontSize: '1.25rem', color: isFinalExamUnlocked ? '#4F46E5' : '#475569', lineHeight: '1.2' }}>Final Exam</span>
-                                        {!isFinalExamUnlocked ? (
-                                          <span style={{ color: '#94A3B8', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Locked • {uniqueUnitsPublished}/12 Units</span>
-                                        ) : (
-                                          <span style={{ color: '#10B981', fontSize: '0.85rem', fontWeight: '600', marginTop: '4px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Ready to Start</span>
-                                        )}
-                                      </div>
-                                    </button>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                            
-                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-                              {[1,2,3,4,5,6,7,8,9,10,11,12].map(u => {
-                                const meta = getUnitMeta(u);
-                                return ( 
-                                  <button key={u} className="soft-card" style={{ flex: '1 1 200px', maxWidth: '280px', padding: '40px 20px', backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '24px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', transition: 'all 0.3s', justifyContent: 'center' }} onClick={() => setActiveUnit(u)}>
-                                    <h3 style={{ margin: '0', fontSize: '2rem', color: '#0F172A', fontWeight: '700', letterSpacing: '-0.5px' }}>Unit {u}</h3>
-                                    {meta.title && (
-                                      <>
-                                        <div style={{ width: '40px', height: '3px', background: '#4F46E5', borderRadius: '2px', margin: '8px 0' }} />
-                                        <span style={{ display: 'block', color: '#64748B', fontWeight: '600', fontSize: '1.1rem', lineHeight: '1.4' }}>{meta.title}</span>
-                                      </>
-                                    )}
-                                  </button> 
-                                )
-                              })}
-                            </div>
-
-                          </div>
-                        ) : (
-                          <div style={{ animation: 'fadeInDown 0.3s ease-out' }}>
-                            <div style={{ marginBottom: '30px' }}>
-                              <BackButton onClick={() => setActiveUnit(null)} text="Back to Units" />
-                            </div>
-                            <div style={{ maxWidth: '850px', margin: '0 auto' }}>
-                              
-                              <div style={{ textAlign: 'center', marginBottom: '50px' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', color: '#64748B', padding: '6px 16px', borderRadius: '9999px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
-                                  {activeLevel} • {activeSubLevel}
-                                </span>
-                                <h2 style={{ margin: '0 0 16px', fontWeight: '700', fontSize: '3.5rem', color: '#0F172A', letterSpacing: '-1px', lineHeight: '1.1' }}>
-                                  Unit {activeUnit}{getUnitMeta(activeUnit).title ? `: ${getUnitMeta(activeUnit).title}` : ''}
-                                </h2>
-                                {getUnitMeta(activeUnit).desc && (
-                                  <p style={{ color: '#64748B', fontSize: '1.2rem', margin: '0 auto', maxWidth: '650px', lineHeight: '1.6' }}>{getUnitMeta(activeUnit).desc}</p>
-                                )}
-                              </div>
-
-                              {getUnitMeta(activeUnit).objectives.length > 0 && (
-                                <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '30px', marginBottom: '60px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(0,0,0,0.02)' }}>
-                                  <h3 style={{ margin: '0 0 20px 0', fontSize: '1.4rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div style={{ color: '#4F46E5', display: 'flex' }}><IconTarget size={20} /></div>
-                                    Unit Objectives
-                                  </h3>
-                                  <ul style={{ margin: 0, paddingLeft: '20px', color: '#475569', fontSize: '1.1rem', lineHeight: '1.8', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    {getUnitMeta(activeUnit).objectives.map((obj: string, i: number) => <li key={i}>{obj}</li>)}
-                                  </ul>
-                                </div>
-                              )}
-
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                {unitLessons.length > 0 ? unitLessons.map((lesson, index) => {
-                                  const isCompleted = completedLessons.includes(lesson._id);
-                                  const isLocked = index > 0 && !completedLessons.includes(unitLessons[index - 1]._id);
-                                  let cardBg = '#ffffff'; let border = '2px solid #E2E8F0'; 
-                                  if (isCompleted) { border = '2px solid #10B981'; }
-                                  else if (!isLocked) { border = '2px solid #4F46E5'; }
-
-                                  return (
-                                    <div key={lesson._id} className="soft-card lesson-card-wrapper" style={{ background: cardBg, border, borderRadius: '24px', transition: 'all 0.3s', marginBottom: index === unitLessons.length - 1 ? '40px' : '0' }}>
-                                      
-                                      <div className="lesson-info-group">
-                                        <div className="lesson-badge" style={{ background: isCompleted ? '#ECFDF5' : (isLocked ? '#F8FAFC' : '#EEF2FF'), color: isCompleted ? '#10B981' : (isLocked ? '#94A3B8' : '#4F46E5') }}>
-                                          {lesson.lessonOrder}
-                                        </div>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1.5rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.3' }}>{lesson.title}</h3>
-                                          {lesson.grammarFocus && (
-                                            <p style={{ margin: '0', color: '#475569', fontSize: '1.05rem', lineHeight: '1.5' }}>
-                                              <strong style={{ color: '#94A3B8', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '6px' }}>Focus:</strong>
-                                              {lesson.grammarFocus}
-                                            </p>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      <div className="lesson-action-group">
-                                        {isCompleted && <span className="status-text"><IconCheck size={16} /> Completed</span>}
-                                        <button 
-                                          onClick={() => { handleMarkLessonComplete(lesson._id); setActiveLessonData(lesson); setIsInteractiveLesson(true); }} 
-                                          style={{ background: isCompleted ? '#F1F5F9' : '#4F46E5', color: isCompleted ? '#475569' : '#ffffff', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: 'pointer', boxShadow: isCompleted ? 'none' : '0 10px 20px -5px rgba(79, 70, 229, 0.3)', whiteSpace: 'nowrap', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: isLocked ? 0.5 : 1 }}
-                                          disabled={isLocked}
-                                        >
-                                          {isLocked ? <><IconLock size={18} /> Locked</> : isCompleted ? 'Review' : 'Start Lesson'}
-                                        </button>
-                                      </div>
-
-                                    </div>
-                                  )
-                                }) : (
-                                  <div style={{ background: '#F8FAFC', border: '2px dashed #CBD5E1', borderRadius: '24px', padding: '40px', textAlign: 'center', marginBottom: '40px' }}>
-                                    <span style={{ color: '#94A3B8', fontSize: '1.1rem', fontWeight: '500' }}>No lessons published for this unit yet.</span>
-                                  </div>
-                                )}
-
-                                <div style={{ display: 'flex', alignItems: 'stretch', gap: '24px', opacity: allLessonsCompleted ? 1 : 0.5, pointerEvents: allLessonsCompleted ? 'auto' : 'none', transition: 'all 0.3s' }}>
-                                  <div className="soft-card assessment-card-wrapper" style={{ flexGrow: 1, background: allLessonsCompleted ? '#ffffff' : '#F8FAFC', border: allLessonsCompleted ? '2px solid #4F46E5' : '2px dashed #E2E8F0', borderRadius: '24px', transition: 'all 0.3s' }}>
-                                    
-                                    <div className="lesson-info-group">
-                                       <div className="lesson-badge" style={{ background: allLessonsCompleted ? '#EEF2FF' : '#F1F5F9', color: allLessonsCompleted ? '#4F46E5' : '#94A3B8' }}>
-                                         {allLessonsCompleted ? <IconStar size={24} /> : <IconLock size={20} />}
-                                       </div>
-                                       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                          <h3 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: '600', color: '#0F172A', lineHeight: '1.2' }}>Unit Assessment</h3>
-                                          <p style={{ color: '#64748B', margin: 0, fontSize: '1.05rem', lineHeight: '1.5' }}>
-                                            {allLessonsCompleted ? 'You have completed all lessons. You are ready to be tested.' : 'Complete all lessons to unlock the assessment.'}
-                                          </p>
-                                       </div>
-                                    </div>
-                                    
-                                    <div className="assessment-action-group lesson-action-group">
-                                      <button onClick={() => startQuiz(false)} disabled={!allLessonsCompleted} style={{ background: allLessonsCompleted ? '#4F46E5' : '#E2E8F0', color: allLessonsCompleted ? '#ffffff' : '#94A3B8', border: 'none', padding: '14px 28px', borderRadius: '16px', fontWeight: '700', fontSize: '1.05rem', cursor: allLessonsCompleted ? 'pointer' : 'not-allowed', boxShadow: allLessonsCompleted ? '0 10px 20px -5px rgba(79, 70, 229, 0.3)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', whiteSpace: 'nowrap', width: '100%' }}>
-                                        <IconQuiz size={18} /> {allLessonsCompleted ? 'Start Assessment' : 'Locked'}
-                                      </button>
-                                    </div>
-
-                                  </div>
-                                </div>
-
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <Homepage
+                        reviews={reviews}
+                        onNavigate={handleNavigation}
+                        onSelectBook={setSelectedBook}
+                      />
                     } />
 
                     {/* --- ROUTE: RESOURCES --- */}
