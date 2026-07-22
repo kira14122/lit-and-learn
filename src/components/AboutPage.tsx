@@ -30,8 +30,8 @@ const CREDENTIALS = ['PhD in English Linguistics', 'TESOL Certified', 'NY State 
 const FEATURES = [
   {
     title: 'English Corner', icon: <IconBook />, bg: '#EEF2FF', color: '#4F46E5',
-    tagline: 'Structured interactive lessons from beginner to advanced.',
-    details: 'Your main learning path. Pick your level (Beginner, Intermediate, or Advanced), choose a sub-level, then work through the units. Each unit has interactive lessons to complete in order, and once you finish them all, a unit assessment unlocks to test what you\'ve learned.',
+    tagline: 'The home page — every course on one shelf.',
+    details: 'Your starting point. English Corner is the home page, where all the courses sit together on one shelf: Writing Lab is live now, with Reading Lab and Grammar Lab on the way. Each course is self-contained — you open one and work through its modules and lessons in order, rather than picking a level first. The level range (A1–C1) is marked on each course so you can see what fits you. Below the shelf you\'ll also find whatever was added most recently and the latest book reviews.',
   },
   {
     title: 'Practice Hub', icon: <IconTarget />, bg: '#EFF6FF', color: '#3B82F6',
@@ -39,9 +39,9 @@ const FEATURES = [
     details: 'Quick, standalone exercises for fast practice. Use it any time you want to drill grammar or vocabulary without going through a full lesson.',
   },
   {
-    title: 'Writing Lab', icon: <IconPen />, bg: '#FFF1F2', color: '#F43F5E',
-    tagline: 'A guided course that builds your writing step by step.',
-    details: 'A structured writing course you work through module by module. Each one moves you from noticing what makes writing clear to producing it yourself — combining sentences, fixing weak ones, and making deliberate choices about style. Your progress is saved as you go, so you can always pick up where you left off.',
+    title: 'Writing Lab', icon: <IconPen />, bg: '#EEF2FF', color: '#4F46E5',
+    tagline: 'The live course — writing built step by step.',
+    details: 'The first full course on the shelf, covering A1 to C1. You work through it module by module: each one moves you from noticing what makes writing clear to producing it yourself — combining sentences, fixing weak ones, and making deliberate choices about style. Your progress is saved as you go, so you can always pick up where you left off.',
   },
   {
     title: 'Book Reviews', icon: <IconStar />, bg: '#F3E8FF', color: '#A855F7',
