@@ -42,8 +42,29 @@ export default function LitLearnLogo() {
     <>
       <style>{`
         .litlearn-logo { font-size: 62px; }
+        .litlearn-tagline { font-size: 0.245em; letter-spacing: 0.24em; }
         @media (max-width: 768px) { .litlearn-logo { font-size: 47px; } }
-        @media (max-width: 420px) { .litlearn-logo { font-size: 38px; } }
+        @media (max-width: 560px) {
+          /* On a narrow screen the side-by-side lockup puts the icon on the
+             left, which pushes the wordmark (the element the eye actually
+             reads) right of the screen's centre line — it looks crooked.
+             Stacking the icon above the wordmark gives every element one
+             shared centre, so the header reads perfectly balanced. */
+          .litlearn-logo {
+            flex-direction: column !important;
+            gap: 0.12em !important;
+            font-size: 50px;
+          }
+          .litlearn-tagline { font-size: 0.2em; letter-spacing: 0.13em; }
+        }
+        @media (max-width: 400px) {
+          .litlearn-logo { font-size: 44px; }
+          .litlearn-tagline { letter-spacing: 0.1em; }
+        }
+        @media (max-width: 340px) {
+          .litlearn-logo { font-size: 38px; }
+          .litlearn-tagline { letter-spacing: 0.07em; }
+        }
       `}</style>
       <div
         className="litlearn-logo"
@@ -73,11 +94,10 @@ export default function LitLearnLogo() {
           </svg>
 
           <div
+            className="litlearn-tagline"
             style={{
               fontFamily: "'Fredoka', sans-serif",
               fontWeight: 500,
-              fontSize: '0.245em',
-              letterSpacing: '0.24em',
               color: GRAY,
               marginTop: '0.5em',
               whiteSpace: 'nowrap',

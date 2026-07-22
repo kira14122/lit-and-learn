@@ -73,10 +73,12 @@ export function MobileNav({ TABS, currentPath, onNavigate, writingLabIsNew = fal
           /* Hide the existing horizontal scroll row on phones. */
           nav.mobile-nav-container { display: none !important; }
 
-          /* Floating menu button, top-right. */
+          /* Floating menu button, top-right. Sits level with the logo block
+             rather than hovering above it, so the header reads as one line
+             instead of two unrelated elements. */
           .ll-mnav-trigger {
             display: flex; align-items: center; justify-content: center;
-            position: fixed; top: 14px; right: 16px; z-index: 900;
+            position: fixed; top: 30px; right: 16px; z-index: 900;
             width: 46px; height: 46px; border-radius: 14px;
             background: #ffffff; border: 1px solid #E2E8F0; color: #334155;
             box-shadow: 0 6px 16px rgba(15,23,42,0.08); cursor: pointer;

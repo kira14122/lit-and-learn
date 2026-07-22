@@ -477,6 +477,11 @@ function LitAndLearnMain() {
         /* --- MOBILE OVERRIDES --- */
         @media (max-width: 768px) {
           .app-container { padding: 0 16px !important; }
+          /* With the page title hidden on the home landing, the lone search bar
+             was hugging the right edge at 350px, leaving a gap on the left that
+             nothing else shared — it read as crooked. Full width on phones so
+             both edges line up with the cards below. */
+          .header-search { max-width: 100% !important; }
           .page-header h1 { font-size: 3.2rem !important; }
           .responsive-card { padding: 30px 20px !important; border-radius: 24px !important; max-height: 85vh !important; }
           .modal-close-btn { top: 16px !important; right: 16px !important; width: 36px !important; height: 36px !important; font-size: 1.1rem !important; }
@@ -619,7 +624,7 @@ function LitAndLearnMain() {
                   </div>
                   )}
 
-                  <div style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
+                  <div className="header-search" style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
                     <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }}><IconSearch size={20} /></div>
                     <input 
                       type="text" placeholder="Search everything..." 
