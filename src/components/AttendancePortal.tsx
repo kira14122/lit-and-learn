@@ -109,6 +109,8 @@ export function AttendancePortal() {
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Student | null>(null);
+  const [pendingClear, setPendingClear] = useState<{ log: Log; name: string; at: string } | null>(null);
+  const [pendingIn, setPendingIn] = useState<{ studentId: string; name: string; session: string } | null>(null);
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
   const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
@@ -191,9 +193,14 @@ export function AttendancePortal() {
     setPendingDelete(null);
     load(true);
   };
-  const checkInNow = async (studentId: string, session: string) => {
+  const confirmCheckIn = async () => {
+    if (!pendingIn) return;
     const sb = await authed();
-    await sb.from('attendance_logs').insert({ student_id: studentId, session, log_date: date, check_in: new Date().toISOString() });
+    await sb.from('attendance_logs').insert({
+      student_id: pendingIn.studentId, session: pendingIn.session,
+      log_date: date, check_in: new Date().toISOString(),
+    });
+    setPendingIn(null);
     load(true);
   };
   // One tap writes the class-end time on every checked-in student who has
@@ -205,6 +212,16 @@ export function AttendancePortal() {
       .filter(x => x.l && x.l.check_in && !x.l.check_out));
     await Promise.all(targets.map(({ se, l }) =>
       sb.from('attendance_logs').update({ check_out: hmToIso(date, SESSION_END[se]) }).eq('id', l!.id)));
+    load(true);
+  };
+
+  // Removes today's record for one session — the student returns to A and
+  // drops off the export. Used when someone appears briefly then leaves.
+  const confirmClear = async () => {
+    if (!pendingClear) return;
+    const sb = await authed();
+    await sb.from('attendance_logs').delete().eq('id', pendingClear.log.id);
+    setPendingClear(null);
     load(true);
   };
 
@@ -329,24 +346,24 @@ export function AttendancePortal() {
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Attendance ${date}</title>
       <style>
         @page { size: A4; margin: 15mm; }
-        body { font-family: Helvetica, Arial, sans-serif; color:#000; margin:0; font-size:12px; }
+        body { font-family: "Times New Roman", Times, serif; color:#000; margin:0; font-size:12pt; }
         .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
         .hdr div { line-height:1.9; }
-        .term { font-weight:bold; font-size:14px; }
+        .term { font-weight:bold; font-size:13pt; }
         .fld { display:inline-block; min-width:150px; border-bottom:1px solid #000; padding:0 4px; }
         table { width:100%; border-collapse:collapse; }
-        th, td { border:1px solid #000; padding:0 6px; font-size:12px; }
-        th { background:#EDEDED; text-align:left; height:26px; font-size:11px; }
-        td { height:27px; }
-        td.n { width:30px; text-align:center; } td.sec { width:58px; text-align:center; } td.t { width:62px; text-align:center; } td.sg { width:150px; }
-        .foot { margin-top:34px; font-size:12px; }
+        th, td { border:1px solid #000; padding:2px 6px; font-size:12pt; }
+        th { background:#EDEDED; text-align:left; height:26px; font-size:11pt; }
+        td { height:28px; }
+        td.n { width:32px; text-align:center; } td.sec { width:62px; text-align:center; } td.t { width:78px; text-align:center; } td.sg { width:150px; }
+        .foot { margin-top:34px; font-size:12pt; }
         .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }
       </style></head><body>
       <div class="hdr">
         <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
         <div><div>Date: <span class="fld">${pretty}</span></div><div>Instructor: <span class="fld">${instructor}</span></div></div>
       </div>
-      <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:58px">Section</th>${cols.map(c => `<th style="width:62px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
+      <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:62px">Section</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
       <tbody>${bodyHtml}</tbody></table>
       <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>
       </body></html>`;
@@ -356,8 +373,8 @@ export function AttendancePortal() {
 
   // ---- column templates keep every row aligned ----
   const todayCols = cls.classType === 'weekday'
-    ? 'minmax(160px,1fr) 60px 120px 130px 80px'
-    : 'minmax(140px,1fr) 60px 120px 130px 60px 120px 130px';
+    ? 'minmax(160px,1fr) 60px 120px 130px 90px'
+    : 'minmax(130px,1fr) 60px 115px 125px 90px 60px 115px 125px 90px';
   const manageCols = cls.hasSections
     ? 'minmax(160px,1fr) 110px 200px'
     : 'minmax(160px,1fr) 200px';
@@ -380,11 +397,17 @@ export function AttendancePortal() {
               onChange={e => setTime(l, 'check_out', e.target.value)}
               title="Blank = stayed to the end"
             />
+            <button
+              style={ui.tDanger}
+              onClick={() => setPendingClear({ log: l, name: stu.name, at: toHM(l.check_in) })}
+              title="Remove today's check-in — the student goes back to A and drops off the sheet"
+            >Clear</button>
           </>
         ) : (
           <>
             <span style={ui.mono}>—</span>
-            <button style={ui.tBtn} onClick={() => checkInNow(stu.id, se)}>Check in</button>
+            <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in</button>
+            <span />
           </>
         )}
       </>
@@ -497,7 +520,7 @@ export function AttendancePortal() {
               <span>Student</span>
               {cls.classType === 'weekday'
                 ? <><span>Mark</span><span>In</span><span>Out</span><span /></>
-                : <><span>AM</span><span>In</span><span>Out</span><span>PM</span><span>In</span><span>Out</span></>}
+                : <><span>AM</span><span>In</span><span>Out</span><span /><span>PM</span><span>In</span><span>Out</span><span /></>}
             </div>
             {loading ? (
               <div style={{ padding: 20, color: C.faint }}>Loading…</div>
@@ -577,6 +600,53 @@ export function AttendancePortal() {
           </>
         )}
       </div>
+
+      {/* ---- manual check-in dialog ---- */}
+      {pendingIn && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingIn(null)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Check in {pendingIn.name}?</h3>
+            <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              Their arrival will be recorded as <strong>{toHM(new Date().toISOString())}</strong>.
+              {date !== todayLocal() && <> This is for <strong>{new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</strong>, not today.</>}
+              {' '}You can correct the time afterwards in the In box.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setPendingIn(null)}>Cancel</button>
+              <button style={ui.primary} onClick={confirmCheckIn}>Check in</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- clear check-in dialog ---- */}
+      {pendingClear && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingClear(null)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Remove {pendingClear.name}'s check-in?</h3>
+            <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              Their arrival at {pendingClear.at} will be deleted for today. They go back to <strong>A</strong> and
+              will not appear on the printed sheet. Their name stays on your roster and their other days are untouched.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setPendingClear(null)}>Cancel</button>
+              <button style={{ ...ui.primary, background: C.red }} onClick={confirmClear}>Remove check-in</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- delete dialog ---- */}
       {pendingDelete && (
