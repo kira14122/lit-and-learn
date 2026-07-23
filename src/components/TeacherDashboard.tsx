@@ -6,6 +6,7 @@ import { generateStudentFeedback } from '../aiGenerator';
 import { client } from '../sanityClient'; 
 import { ActivityGenerator } from './ActivityGenerator';
 import { ExamMode } from './ExamMode';
+import { AttendancePortal } from './AttendancePortal';
 
 const IconMail      = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash     = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
@@ -24,6 +25,8 @@ const IconHourglass = () => (<svg width="20" height="20" viewBox="0 0 24 24" fil
 const IconInfinity  = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"></path></svg>);
 const IconSparkles  = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>);
 const IconClipboard = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>);
+const IconCalendarCheck = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><polyline points="9 16 11 18 15 14"></polyline></svg>);
+const IconExternal  = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>);
 const IconArchive   = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>);
 const IconRestore   = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M4 9h11a5 5 0 0 1 0 10h-5"></path></svg>);
 
@@ -44,7 +47,7 @@ export const TeacherDashboard: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Core UI ───────────────────────────────────────────────────────────────
-  const [adminTab, setAdminTab] = useState<'inbox'|'grading'|'arena'|'studio'|'exam'>('inbox');
+  const [adminTab, setAdminTab] = useState<'inbox'|'grading'|'arena'|'studio'|'exam'|'attendance'>('inbox');
   const [toastMessage, setToastMessage] = useState<{text:string,type:'success'|'error'}|null>(null);
   const showToast = (text:string, type:'success'|'error') => { setToastMessage({text,type}); setTimeout(()=>setToastMessage(null),4000); };
 
@@ -298,7 +301,7 @@ export const TeacherDashboard: React.FC = () => {
       {/* Nav tabs */}
       <div style={{display:'flex',justifyContent:'center',marginBottom:'40px'}}>
         <div style={{display:'inline-flex',flexWrap:'wrap',justifyContent:'center',backgroundColor:'#fff',padding:'8px',borderRadius:'9999px',boxShadow:'0 10px 30px rgba(0,0,0,0.03)',gap:'8px'}}>
-          {([['inbox','#4F46E5',<IconMail/>,'Inbox'],['grading','#4F46E5',<IconUsers/>,'Grading Portal'],['arena','#F59E0B',<IconPlay/>,'Live Arena'],['studio','#8B5CF6',<IconSparkles/>,'Content Studio'],['exam','#E11D48',<IconClipboard/>,'Exam Mode']] as [string,string,React.ReactNode,string][]).map(([tab,color,icon,label])=>(
+          {([['inbox','#4F46E5',<IconMail/>,'Inbox'],['grading','#4F46E5',<IconUsers/>,'Grading Portal'],['arena','#F59E0B',<IconPlay/>,'Live Arena'],['studio','#8B5CF6',<IconSparkles/>,'Content Studio'],['exam','#E11D48',<IconClipboard/>,'Exam Mode'],['attendance','#0D9488',<IconCalendarCheck/>,'Attendance']] as [string,string,React.ReactNode,string][]).map(([tab,color,icon,label])=>(
             <button key={tab} onClick={()=>setAdminTab(tab as any)} style={{background:adminTab===tab?color:'transparent',color:adminTab===tab?'#fff':'#64748B',border:'none',padding:'14px 28px',borderRadius:'9999px',fontWeight:'600',fontSize:'1.1rem',cursor:'pointer',transition:'all 0.2s',display:'flex',alignItems:'center',gap:'8px'}}>
               {icon} {label}
             </button>
@@ -534,6 +537,26 @@ export const TeacherDashboard: React.FC = () => {
       {adminTab==='studio' && <ActivityGenerator/>}
        {/* ── EXAM MODE ── */}
       {adminTab==='exam' && <ExamMode/>}
+
+      {/* ── ATTENDANCE ── */}
+      {adminTab==='attendance' && (
+        <div style={{backgroundColor:'#fff',borderRadius:'32px',padding:'32px',border:'1px solid #E2E8F0',boxShadow:'0 10px 30px rgba(0,0,0,0.02)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'32px',paddingBottom:'20px',borderBottom:'2px solid #F1F5F9',flexWrap:'wrap',gap:'12px'}}>
+            <div>
+              <h2 style={{margin:'0 0 4px',fontSize:'2rem',color:'#0F172A',fontWeight:'600',letterSpacing:'-0.5px'}}>Attendance</h2>
+              <p style={{color:'#64748B',fontSize:'1.05rem',margin:0}}>Check-in times, roster and printable sheet.</p>
+            </div>
+            <button
+              onClick={()=>{ const w=window.open('/display','_blank'); if(!w){ window.location.href='/display'; } }}
+              style={{background:'#0D9488',border:'none',color:'#fff',padding:'12px 22px',borderRadius:'12px',fontWeight:'600',fontSize:'0.98rem',cursor:'pointer',display:'flex',alignItems:'center',gap:'8px',boxShadow:'0 4px 10px rgba(13,148,136,0.2)'}}
+              title="Opens the rotating QR code full screen — put this on the classroom TV."
+            >
+              <IconExternal/> Open Class Display
+            </button>
+          </div>
+          <AttendancePortal/>
+        </div>
+      )}
     </div>
   );
 };

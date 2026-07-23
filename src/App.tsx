@@ -18,6 +18,8 @@ import { ExamCheckIn } from './components/ExamCheckIn';
 import { ExamDisplay } from './components/ExamDisplay';
 import { MobileNav } from './components/MobileNav';
 import { AboutPage } from './components/AboutPage';
+import { CheckInPage } from './components/CheckInPage';
+import { CheckInDisplay } from './components/CheckInDisplay';
 import LitLearnLogo, { SerifAmp } from './components/LitLearnLogo';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
@@ -81,6 +83,8 @@ function LitAndLearnMain() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const isCheckInRoute = location.pathname.startsWith('/checkin');
+  const isDisplayRoute = location.pathname.startsWith('/display');
   const isPlayRoute = location.pathname.startsWith('/play');
   const isExamRoute = location.pathname.startsWith('/exam');
   const isTeacherAdmin = user?.primaryEmailAddress?.emailAddress === 'kira14122@gmail.com';
@@ -551,7 +555,21 @@ function LitAndLearnMain() {
         }
       `}</style>
 
-      {isPlayRoute ? (
+      {isCheckInRoute ? (
+        <Routes>
+          <Route path="/checkin" element={<CheckInPage />} />
+        </Routes>
+      ) : isDisplayRoute ? (
+        <Routes>
+          <Route path="/display" element={
+            // Wait for Clerk before judging, or a fresh tab redirects
+            // to home before the session has loaded.
+            !isLoaded ? <div style={{minHeight:'100vh',background:'#0F172A'}} />
+            : isTeacherAdmin ? <CheckInDisplay />
+            : <Navigate to="/" />
+          } />
+        </Routes>
+      ) : isPlayRoute ? (
         <Routes>
           <Route path="/play" element={<LivePlayer />} />
         </Routes>
@@ -968,6 +986,7 @@ function LitAndLearnMain() {
                     <Route path="/admin" element={
                       isTeacherAdmin ? <TeacherDashboard /> : <Navigate to="/" />
                     } />
+
 
                     {/* --- ROUTE: BOOK REVIEWS --- */}
                     <Route path="/reviews" element={
