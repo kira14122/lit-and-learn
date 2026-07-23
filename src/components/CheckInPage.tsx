@@ -32,6 +32,14 @@ const s: Record<string, any> = {
   sessRow: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' as const, margin: '16px 0 20px' },
   pill: (active: boolean) => ({ background: active ? INDIGO : '#fff', color: active ? '#fff' : '#3F4C63', border: active ? 'none' : '1px solid #E2E8F0', padding: '9px 20px', borderRadius: 9999, fontWeight: 600, fontSize: '0.92rem', cursor: 'pointer', fontFamily: 'inherit' }),
 
+  filterRow: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' as const, marginBottom: 12 },
+  chip: (active: boolean) => ({
+    fontFamily: 'inherit', cursor: 'pointer', borderRadius: 9999, padding: '8px 18px',
+    fontWeight: 600, fontSize: '0.88rem',
+    background: active ? INDIGO : '#fff', color: active ? '#fff' : '#3F4C63',
+    border: active ? 'none' : '1px solid #E2E8F0',
+  }),
+  search: { fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' as const, border: '1px solid #E2E8F0', borderRadius: 14, padding: '13px 16px', fontSize: '1rem', color: '#0F172A', background: '#fff', marginBottom: 12 },
   list: { background: '#fff', border: '1px solid #EEF2F7', borderRadius: 20, overflow: 'hidden', boxShadow: '0 12px 40px -18px rgba(15,23,42,0.18)' },
   row: (done: boolean) => ({
     width: '100%', textAlign: 'left' as const, fontFamily: 'inherit', cursor: done ? 'default' : 'pointer',
@@ -107,6 +115,8 @@ export function CheckInPage() {
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState<Student | null>(null);
   const [notice, setNotice] = useState('');
+  const [section, setSection] = useState<1 | 2>(1);   // morning class only
+  const [query, setQuery] = useState('');
   const [toast, setToast] = useState('');
 
   const [clock, setClock] = useState<string>(nowInNewYork());
@@ -166,6 +176,15 @@ export function CheckInPage() {
     setConfirming(null);
   };
 
+  // Section chips narrow the list; search narrows it further. A searching
+  // student sees matches from either section, so nobody gets stuck on the
+  // wrong chip.
+  const q = query.trim().toLowerCase();
+  const visible = students.filter(st => {
+    if (q) return st.name.toLowerCase().includes(q);
+    return classType === 'weekday' ? st.section === section : true;
+  });
+
   return (
     <div style={s.page}>
       <div style={s.wrap}>
@@ -201,11 +220,27 @@ export function CheckInPage() {
           <div style={s.card}>No students on this list yet. Your teacher will add you.</div>
         ) : (
           <>
-            <p style={{ textAlign: 'center', color: '#64748B', fontSize: '0.88rem', margin: '0 0 12px' }}>
-              Find your name, then tap it to check in.
-            </p>
+            {classType === 'weekday' && (
+              <div style={s.filterRow}>
+                <button style={s.chip(section === 1)} onClick={() => { setSection(1); setQuery(''); }}>Section 1</button>
+                <button style={s.chip(section === 2)} onClick={() => { setSection(2); setQuery(''); }}>Section 2</button>
+              </div>
+            )}
+
+            <input
+              style={s.search}
+              placeholder="Search your name…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+
             <div style={s.list}>
-              {students.map(st => {
+              {visible.length === 0 && (
+                <div style={{ padding: '22px 18px', color: '#64748B', textAlign: 'center' }}>
+                  No match{classType === 'weekday' ? ` in Section ${section}` : ''}. Check the other section, or clear the search.
+                </div>
+              )}
+              {visible.map(st => {
                 const isDone = !!done[st.id];
                 return (
                   <button
