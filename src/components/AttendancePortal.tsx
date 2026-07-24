@@ -474,7 +474,12 @@ export function AttendancePortal() {
             <button style={ui.primary} onClick={printSheet}>Export sheet</button>
           </>
         )}
-        <button style={ui.secondary} onClick={() => setShowSettings(v => !v)}>Settings</button>
+        <button
+          style={showSettings
+            ? { ...ui.secondary, background: C.indigoSoft, color: C.indigo, borderColor: C.indigo }
+            : ui.secondary}
+          onClick={() => setShowSettings(v => !v)}
+        >Settings{showSettings ? ' ×' : ''}</button>
       </div>
 
       {/* ---- status line ---- */}
