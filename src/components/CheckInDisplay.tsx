@@ -123,8 +123,8 @@ export function CheckInDisplay() {
     <div style={s.page}>
       <div style={s.wrap}>
         <div style={s.top}>
-          <button style={s.pill(classType === 'weekday')} onClick={() => switchClass('weekday')}>Weekday</button>
-          <button style={s.pill(classType === 'weekend')} onClick={() => switchClass('weekend')}>Weekend</button>
+          <button style={s.pill(classType === 'weekday')} onClick={() => switchClass('weekday')}>Level 4 · Morning</button>
+          <button style={s.pill(classType === 'weekend')} onClick={() => switchClass('weekend')}>Level 4 · Weekend</button>
           {classType === 'weekend' && (
             <>
               <span style={{ width: 12 }} />

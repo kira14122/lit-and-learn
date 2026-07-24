@@ -3,6 +3,7 @@ import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import {
   scoreWeekday, scoreWeekendMorning, scoreWeekendAfternoon, type Mark,
+  type ScheduleConfig, DEFAULT_SCHEDULE, normaliseSchedule,
 } from './attendanceScoring';
 
 // Attendance.
@@ -35,7 +36,10 @@ const DEFAULTS = { instructor: 'Dr. Chouit Abderraouf', term: 'Summer Term 2026'
 const remembered = (k: string, f: string) => { try { return localStorage.getItem(`ll_att_${k}`) || f; } catch { return f; } };
 const remember = (k: string, v: string) => { try { localStorage.setItem(`ll_att_${k}`, v); } catch { /* ignore */ } };
 
-const SESSION_END: Record<string, string> = { single: '14:00', morning: '12:00', afternoon: '16:30' };
+const sessionEndOf = (sc: ScheduleConfig, se: string): string =>
+  se === 'single' ? sc.weekday.dayEnd
+  : se === 'morning' ? sc.weekendMorning.sessionEnd
+  : sc.weekendAfternoon.sessionEnd;
 const todayLocal = () => new Date().toLocaleDateString('en-CA');
 const toHM = (iso: string | null): string => {
   if (!iso) return '';
@@ -121,6 +125,9 @@ export function AttendancePortal() {
   useEffect(() => { remember('level', level); }, [level]);
   useEffect(() => { remember('blankout', blankTimeOut ? '1' : ''); }, [blankTimeOut]);
   const [codeOn, setCodeOn] = useState(false);
+  const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
+  const [schedDraft, setSchedDraft] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
+  const [schedMsg, setSchedMsg] = useState('');
 
   const authed = useCallback(async () => getSupabaseClient((await getToken({ template: 'supabase' })) ?? undefined), [getToken]);
   const sessionsFor = (c: ClassDef): string[] => c.classType === 'weekday' ? ['single'] : ['morning', 'afternoon'];
@@ -147,6 +154,11 @@ export function AttendancePortal() {
     (logRows || []).forEach((l: any) => { map[`${l.student_id}:${l.session}`] = l; });
     const { data: secretRow } = await sb.from('attendance_settings').select('value').eq('key', 'checkin_secret').maybeSingle();
     setCodeOn(Boolean((secretRow?.value as any)?.enabled));
+
+    const { data: schedRow } = await sb.from('attendance_settings').select('value').eq('key', 'schedule').maybeSingle();
+    const sc = normaliseSchedule(schedRow?.value);
+    setSchedule(sc);
+    setSchedDraft(sc);
     setAllStudents(byClass);
     setLogs(map);
     if (!quiet) setLoading(false);
@@ -211,7 +223,7 @@ export function AttendancePortal() {
       .map(se => ({ se, l: logs[`${stu.id}:${se}`] }))
       .filter(x => x.l && x.l.check_in && !x.l.check_out));
     await Promise.all(targets.map(({ se, l }) =>
-      sb.from('attendance_logs').update({ check_out: hmToIso(date, SESSION_END[se]) }).eq('id', l!.id)));
+      sb.from('attendance_logs').update({ check_out: hmToIso(date, sessionEndOf(schedule, se)) }).eq('id', l!.id)));
     load(true);
   };
 
@@ -242,10 +254,32 @@ export function AttendancePortal() {
     // The scoring engine expects 24h "HH:MM" — never the display format.
     const ci = l?.check_in ? toHM24(l.check_in) : null;
     const co = l?.check_out ? toHM24(l.check_out) : null;
-    if (session === 'single') return scoreWeekday(ci, co);
-    if (session === 'morning') return scoreWeekendMorning(ci, co);
-    return scoreWeekendAfternoon(ci, co);
+    if (session === 'single') return scoreWeekday(ci, co, schedule);
+    if (session === 'morning') return scoreWeekendMorning(ci, co, schedule);
+    return scoreWeekendAfternoon(ci, co, schedule);
   };
+
+  // ---- schedule ----
+  const saveSchedule = async (next: ScheduleConfig) => {
+    const sb = await authed();
+    const { error } = await sb.from('attendance_settings')
+      .upsert({ key: 'schedule', value: next, updated_at: new Date().toISOString() });
+    if (error) { setSchedMsg(`Could not save: ${error.message}`); return; }
+    setSchedule(next);
+    setSchedDraft(next);
+    setSchedMsg('Saved.');
+    setTimeout(() => setSchedMsg(''), 2500);
+  };
+  const editSched = (path: string[], value: any) => {
+    setSchedDraft(prev => {
+      const next: any = JSON.parse(JSON.stringify(prev));
+      let node = next;
+      for (let i = 0; i < path.length - 1; i++) node = node[path[i]];
+      node[path[path.length - 1]] = value;
+      return next;
+    });
+  };
+  const schedDirty = JSON.stringify(schedDraft) !== JSON.stringify(schedule);
 
   // ---- records ----
   const loadRecords = useCallback(async () => {
@@ -273,7 +307,9 @@ export function AttendancePortal() {
     classLogs.forEach((l: any) => byKey.set(`${l.student_id}:${l.log_date}:${l.session}`, l));
 
     const scoreOf = (se: string, ci: string | null, co: string | null): Mark =>
-      se === 'single' ? scoreWeekday(ci, co) : se === 'morning' ? scoreWeekendMorning(ci, co) : scoreWeekendAfternoon(ci, co);
+      se === 'single' ? scoreWeekday(ci, co, schedule)
+      : se === 'morning' ? scoreWeekendMorning(ci, co, schedule)
+      : scoreWeekendAfternoon(ci, co, schedule);
 
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
@@ -333,7 +369,7 @@ export function AttendancePortal() {
       sess.forEach(se => {
         const l = logs[`${stu.id}:${se}`];
         const cin = toHM(l?.check_in || null);
-        const cout = blankTimeOut ? '' : (!cin ? '' : (toHM(l?.check_out || null) || hm24To12(SESSION_END[se])));
+        const cout = blankTimeOut ? '' : (!cin ? '' : (toHM(l?.check_out || null) || hm24To12(sessionEndOf(schedule, se))));
         times.push(cin, cout);
       });
       return '<tr>'
@@ -433,7 +469,7 @@ export function AttendancePortal() {
           <>
             <input type="date" style={ui.input} value={date} onChange={e => setDate(e.target.value)} />
             <button style={ui.secondary} onClick={checkEveryoneOut} title="Writes the class-end time on everyone still checked in. Edit any row afterwards for early leavers.">
-              All out at {cls.classType === 'weekday' ? '2:00' : 'class end'}
+              All out at {cls.classType === 'weekday' ? hm24To12(schedule.weekday.dayEnd) : 'class end'}
             </button>
             <button style={ui.primary} onClick={printSheet}>Export sheet</button>
           </>
@@ -672,7 +708,7 @@ export function AttendancePortal() {
 
       {/* ---- settings ---- */}
       {showSettings && (
-        <div style={{ background: C.bgSoft, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px', marginTop: 22 }}>
+        <div style={{ background: C.bgSoft, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px', marginTop: 22, boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' }}>
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '0 0 10px' }}>Printed sheet header</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input style={{ ...ui.input, width: 170 }} value={term} onChange={e => setTerm(e.target.value)} placeholder="Term" />
@@ -683,7 +719,91 @@ export function AttendancePortal() {
             <input type="checkbox" checked={blankTimeOut} onChange={e => setBlankTimeOut(e.target.checked)} />
             Print Time out blank (students write it when signing)
           </label>
-          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '18px 0 10px' }}>Screen code</div>
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Class times</div>
+          <p style={{ margin: '0 0 12px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
+            These drive the P / L / A marks and decide when the QR code works.
+            Saving applies everywhere at once — the student page and the database follow immediately.
+          </p>
+
+          {/* Level 4 · Morning */}
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Morning</div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.graceEnd}
+                  onChange={e => editSched(['weekday','graceEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.dayEnd}
+                  onChange={e => editSched(['weekday','dayEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.checkinOpen}
+                  onChange={e => editSched(['weekday','checkinOpen'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.checkinClose}
+                  onChange={e => editSched(['weekday','checkinClose'], e.target.value)} /></label>
+            </div>
+          </div>
+
+          {/* Weekend morning */}
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend — morning</div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.graceEnd}
+                  onChange={e => editSched(['weekendMorning','graceEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Absent after<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.lateCutoff}
+                  onChange={e => editSched(['weekendMorning','lateCutoff'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Session ends<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.sessionEnd}
+                  onChange={e => editSched(['weekendMorning','sessionEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.checkinOpen}
+                  onChange={e => editSched(['weekendMorning','checkinOpen'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.checkinClose}
+                  onChange={e => editSched(['weekendMorning','checkinClose'], e.target.value)} /></label>
+            </div>
+          </div>
+
+          {/* Weekend afternoon */}
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 12, boxSizing: 'border-box', maxWidth: '100%' }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend — afternoon</div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Back by<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.graceEnd}
+                  onChange={e => editSched(['weekendAfternoon','graceEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.sessionEnd}
+                  onChange={e => editSched(['weekendAfternoon','sessionEnd'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.checkinOpen}
+                  onChange={e => editSched(['weekendAfternoon','checkinOpen'], e.target.value)} /></label>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.checkinClose}
+                  onChange={e => editSched(['weekendAfternoon','checkinClose'], e.target.value)} /></label>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button style={{ ...ui.primary, opacity: schedDirty ? 1 : 0.45, cursor: schedDirty ? 'pointer' : 'default' }}
+              disabled={!schedDirty} onClick={() => saveSchedule(schedDraft)}>Save times</button>
+            {schedDirty && <button style={ui.secondary} onClick={() => setSchedDraft(schedule)}>Discard</button>}
+            <button style={ui.secondary} onClick={() => setSchedDraft(normaliseSchedule(null))}>Reset to defaults</button>
+            {schedMsg && <span style={{ fontSize: '0.85rem', color: C.sub }}>{schedMsg}</span>}
+          </div>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 8px' }}>Testing</div>
+          <label style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, fontSize: '0.88rem', color: C.sub, cursor: 'pointer', lineHeight: 1.5, maxWidth: 620 }}>
+            <input type="checkbox" style={{ marginTop: 3 }} checked={Boolean(schedule.testingMode)}
+              onChange={e => saveSchedule({ ...schedule, testingMode: e.target.checked })} />
+            <span>
+              <strong style={{ color: C.ink }}>Accept the QR at any hour</strong> — for testing outside class time.
+              {schedule.testingMode && <span style={{ color: C.red, fontWeight: 600 }}> Currently ON — turn this off before class.</span>}
+            </span>
+          </label>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 10px' }}>Screen code</div>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.88rem', color: C.sub, cursor: 'pointer' }}>
             <input type="checkbox" checked={codeOn} onChange={e => toggleCode(e.target.checked)} />
             Only accept check-ins scanned from the classroom screen

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getSupabaseClient } from '../supabaseClient';
-import { CHECKIN_WINDOWS, isCheckInOpen, nowInNewYork } from './attendanceScoring';
+import { windowFor, isCheckInOpen, nowInNewYork, type ScheduleConfig, DEFAULT_SCHEDULE, normaliseSchedule } from './attendanceScoring';
 
 // Public, no-login attendance check-in. Students scan the QR on the
 // classroom screen, find their name in a list, and CONFIRM before their
@@ -15,10 +15,16 @@ interface Student { id: string; name: string; section: number; }
 const INDIGO = '#4F46E5';
 const GREEN = '#059669';
 
-const CLASS_INFO: Record<ClassType, { title: string; sub: string }> = {
-  weekday: { title: 'Level 4 · Morning', sub: 'Sections 1 & 2 · 10:00 – 2:00' },
-  weekend: { title: 'Level 4 · Weekend', sub: 'Section 1 · 9:00 – 4:30' },
+const CLASS_TITLE: Record<ClassType, string> = {
+  weekday: 'Level 4 · Morning',
+  weekend: 'Level 4 · Weekend',
 };
+// The hours shown here follow the saved schedule, so students never see
+// stale times after the teacher edits them in Settings.
+const classSub = (c: ClassType, sc: ScheduleConfig): string =>
+  c === 'weekday'
+    ? `Sections 1 & 2 · ${hm24To12(sc.weekday.checkinOpen)} – ${hm24To12(sc.weekday.dayEnd)}`
+    : `Section 1 · ${hm24To12(sc.weekendMorning.checkinOpen)} – ${hm24To12(sc.weekendAfternoon.sessionEnd)}`;
 
 const s: Record<string, any> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: 'linear-gradient(180deg, #EEF2FF 0%, #F3F6F8 220px)', minHeight: '100vh', color: '#0F172A', padding: '28px 16px 64px', boxSizing: 'border-box' },
@@ -117,6 +123,7 @@ export function CheckInPage() {
   const [notice, setNotice] = useState('');
   const [section, setSection] = useState<1 | 2>(1);   // morning class only
   const [query, setQuery] = useState('');
+  const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [toast, setToast] = useState('');
 
   const [clock, setClock] = useState<string>(nowInNewYork());
@@ -124,10 +131,10 @@ export function CheckInPage() {
     const t = setInterval(() => setClock(nowInNewYork()), 20000);
     return () => clearInterval(t);
   }, []);
-  const open = isCheckInOpen(session, clock);
+  const open = isCheckInOpen(session, clock, schedule);
 
   const supabase = getSupabaseClient(); // no token -> anonymous/public
-  const info = CLASS_INFO[classType];
+  const info = { title: CLASS_TITLE[classType], sub: classSub(classType, schedule) };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,6 +153,13 @@ export function CheckInPage() {
 
     const map: Record<string, string> = {};
     (logs || []).forEach((l: any) => { if (l.check_in) map[l.student_id] = l.check_in; });
+
+    const { data: schedRow } = await supabase
+      .from('attendance_settings')
+      .select('value')
+      .eq('key', 'schedule')
+      .maybeSingle();
+    setSchedule(normaliseSchedule(schedRow?.value));
 
     setStudents((roster || []).map((r: any) => ({ id: r.id, name: r.name, section: r.section ?? 1 })));
     setDone(map);
@@ -205,7 +219,7 @@ export function CheckInPage() {
           <div style={s.card}>
             <p style={{ fontSize: '1.15rem', fontWeight: 600, margin: '0 0 8px', color: '#0F172A' }}>Check-in is closed</p>
             <p style={{ margin: 0, lineHeight: 1.6 }}>
-              It opens at {hm24To12(CHECKIN_WINDOWS[session]?.open)} and closes at {hm24To12(CHECKIN_WINDOWS[session]?.close)}.<br />
+              It opens at {hm24To12(windowFor(session, schedule)?.open)} and closes at {hm24To12(windowFor(session, schedule)?.close)}.<br />
               If you are here and it will not open, tell your teacher.
             </p>
           </div>
