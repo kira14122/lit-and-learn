@@ -1,74 +1,60 @@
 // attendanceScoring.ts
 // Pure scoring engine for Lit & Learn attendance.
-// Give it the tap times, it returns the marks. No UI, no side effects.
+// Give it the tap times, it returns the mark. No UI, no side effects.
 //
-// All timing is data, not code: the schedule below is only the FALLBACK.
-// The live schedule is stored in Supabase (attendance_settings, key
-// 'schedule') and edited from the Attendance portal, so class times and
-// check-in hours can change without touching this file or the SQL.
+// Both classes work the same way: ONE arrival, ONE departure, ONE mark
+// per day. The schedule below is only the FALLBACK — the live schedule
+// is stored in Supabase (attendance_settings, key 'schedule') and edited
+// in the portal, so times change without touching this file or the SQL.
 
 export type Mark = "P" | "L" | "A";
 
 // A time is either "HH:MM" (24h) or null (no tap recorded).
 export type Time = string | null;
 
+export interface DayRules {
+  graceEnd: string;      // in by this -> on-time side; after -> L
+  dayEnd: string;        // must stay to this for P
+  checkinOpen: string;   // QR accepted from
+  checkinClose: string;  // QR accepted until
+}
+
 export interface ScheduleConfig {
-  weekday: {
-    graceEnd: string;      // in by this -> on-time side; after -> L
-    dayEnd: string;        // must stay to this for P
-    checkinOpen: string;   // QR accepted from
-    checkinClose: string;  // QR accepted until
-  };
-  weekendMorning: {
-    graceEnd: string;      // in by this -> P band
-    lateCutoff: string;    // arrival after this -> A
-    sessionEnd: string;    // break; "stayed to end" means reaching this
-    minMinutes: number;    // present under this -> A
-    checkinOpen: string;
-    checkinClose: string;
-  };
-  weekendAfternoon: {
-    graceEnd: string;      // back by this -> P band
-    sessionEnd: string;    // must stay to this for P
-    checkinOpen: string;
-    checkinClose: string;
-  };
+  weekday: DayRules;
+  weekend: DayRules;
   /** Testing switch: when true the QR is accepted at any hour. */
   testingMode?: boolean;
 }
 
 export const DEFAULT_SCHEDULE: ScheduleConfig = {
-  weekday: {
-    graceEnd: "10:30",
-    dayEnd: "14:00",
-    checkinOpen: "09:45",
-    checkinClose: "12:00",
-  },
-  weekendMorning: {
-    graceEnd: "09:30",
-    lateCutoff: "11:00",
-    sessionEnd: "12:00",
-    minMinutes: 60,
-    checkinOpen: "08:45",
-    checkinClose: "12:00",
-  },
-  weekendAfternoon: {
-    graceEnd: "13:30",
-    sessionEnd: "16:30",
-    checkinOpen: "12:45",
-    checkinClose: "16:30",
-  },
+  weekday: { graceEnd: "10:30", dayEnd: "14:00", checkinOpen: "09:45", checkinClose: "12:00" },
+  weekend: { graceEnd: "09:30", dayEnd: "16:30", checkinOpen: "08:45", checkinClose: "16:30" },
   testingMode: false,
 };
 
-/** Fills any missing field from the defaults, so a partial saved schedule can never break scoring. */
+/**
+ * Fills missing fields from the defaults so a partial saved schedule can
+ * never break scoring. Also migrates the older two-session weekend shape
+ * (weekendMorning / weekendAfternoon) to the single-session one.
+ */
 export function normaliseSchedule(raw: any): ScheduleConfig {
   const d = DEFAULT_SCHEDULE;
   if (!raw || typeof raw !== "object") return d;
+
+  let weekend = { ...d.weekend, ...(raw.weekend || {}) };
+  if (!raw.weekend && (raw.weekendMorning || raw.weekendAfternoon)) {
+    // migrate from the old split-session schedule
+    weekend = {
+      graceEnd:     raw.weekendMorning?.graceEnd     ?? d.weekend.graceEnd,
+      dayEnd:       raw.weekendAfternoon?.sessionEnd ?? d.weekend.dayEnd,
+      checkinOpen:  raw.weekendMorning?.checkinOpen  ?? d.weekend.checkinOpen,
+      checkinClose: raw.weekendAfternoon?.checkinClose ?? d.weekend.checkinClose,
+    };
+  }
+
   return {
     weekday: { ...d.weekday, ...(raw.weekday || {}) },
-    weekendMorning: { ...d.weekendMorning, ...(raw.weekendMorning || {}) },
-    weekendAfternoon: { ...d.weekendAfternoon, ...(raw.weekendAfternoon || {}) },
+    weekend,
     testingMode: Boolean(raw.testingMode),
   };
 }
@@ -80,57 +66,33 @@ function toMin(t: Time): number | null {
   return h * 60 + m;
 }
 
-// If no check-out was tapped, the student stayed to the session end.
-function effectiveOut(out: Time, sessionEnd: string): number {
+// If no departure was tapped, the student stayed to the end of the day.
+function effectiveOut(out: Time, dayEnd: string): number {
   const o = toMin(out);
-  return o == null ? toMin(sessionEnd)! : o;
+  return o == null ? toMin(dayEnd)! : o;
 }
 
-// ---- Weekday morning class: one mark ----
+/** The one scoring rule, used by both classes. */
+export function scoreDay(checkIn: Time, checkOut: Time, rules: DayRules): Mark {
+  const inM = toMin(checkIn);
+  if (inM == null) return "A";                       // never came
+  const outM = effectiveOut(checkOut, rules.dayEnd);
+  if (inM > toMin(rules.graceEnd)!) return "L";      // arrived late
+  if (outM >= toMin(rules.dayEnd)!) return "P";      // on time + stayed
+  return "L";                                        // on time but left early
+}
+
 export function scoreWeekday(checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE): Mark {
-  const inM = toMin(checkIn);
-  if (inM == null) return "A";                          // never came
-  const cfg = sc.weekday;
-  const outM = effectiveOut(checkOut, cfg.dayEnd);
-  if (inM > toMin(cfg.graceEnd)!) return "L";           // arrived late
-  if (outM >= toMin(cfg.dayEnd)!) return "P";           // on time + stayed
-  return "L";                                           // on time but left early
+  return scoreDay(checkIn, checkOut, sc.weekday);
 }
 
-// ---- Weekend morning session ----
-export function scoreWeekendMorning(checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE): Mark {
-  const inM = toMin(checkIn);
-  if (inM == null) return "A";                          // never came
-  const cfg = sc.weekendMorning;
-  if (inM > toMin(cfg.lateCutoff)!) return "A";         // arrived after the cutoff
-  const outM = effectiveOut(checkOut, cfg.sessionEnd);
-  if (outM - inM < cfg.minMinutes) return "A";          // present under the minimum
-  if (inM <= toMin(cfg.graceEnd)! && outM >= toMin(cfg.sessionEnd)!) return "P";
-  return "L";
+export function scoreWeekend(checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE): Mark {
+  return scoreDay(checkIn, checkOut, sc.weekend);
 }
 
-// ---- Weekend afternoon session ----
-export function scoreWeekendAfternoon(checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE): Mark {
-  const inM = toMin(checkIn);
-  if (inM == null) return "A";                          // never came back after lunch
-  const cfg = sc.weekendAfternoon;
-  if (inM > toMin(cfg.graceEnd)!) return "L";           // back late -> L regardless
-  const outM = effectiveOut(checkOut, cfg.sessionEnd);
-  if (outM >= toMin(cfg.sessionEnd)!) return "P";
-  return "L";                                           // back on time but left early
-}
-
-export interface WeekendMarks { morning: Mark; afternoon: Mark; }
-
-export function scoreWeekend(
-  morningIn: Time, morningOut: Time,
-  afternoonIn: Time, afternoonOut: Time,
-  sc: ScheduleConfig = DEFAULT_SCHEDULE,
-): WeekendMarks {
-  return {
-    morning: scoreWeekendMorning(morningIn, morningOut, sc),
-    afternoon: scoreWeekendAfternoon(afternoonIn, afternoonOut, sc),
-  };
+/** Marks for a session key ('single' = weekday, 'day' = weekend). */
+export function scoreSession(session: string, checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE): Mark {
+  return session === "day" ? scoreWeekend(checkIn, checkOut, sc) : scoreWeekday(checkIn, checkOut, sc);
 }
 
 // ---- Check-in windows (the QR's opening hours) ----
@@ -138,10 +100,8 @@ export function scoreWeekend(
 // "opens at 9:45 AM" instead of a silent failure.
 
 export function windowFor(session: string, sc: ScheduleConfig = DEFAULT_SCHEDULE): { open: string; close: string } | null {
-  if (session === "single") return { open: sc.weekday.checkinOpen, close: sc.weekday.checkinClose };
-  if (session === "morning") return { open: sc.weekendMorning.checkinOpen, close: sc.weekendMorning.checkinClose };
-  if (session === "afternoon") return { open: sc.weekendAfternoon.checkinOpen, close: sc.weekendAfternoon.checkinClose };
-  return null;
+  const r = session === "day" ? sc.weekend : session === "single" ? sc.weekday : null;
+  return r ? { open: r.checkinOpen, close: r.checkinClose } : null;
 }
 
 /** Current wall-clock time in New York ("HH:MM"), whatever the device is set to. */

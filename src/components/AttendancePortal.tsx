@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import {
-  scoreWeekday, scoreWeekendMorning, scoreWeekendAfternoon, type Mark,
+  scoreSession, type Mark,
   type ScheduleConfig, DEFAULT_SCHEDULE, normaliseSchedule,
 } from './attendanceScoring';
 
@@ -37,9 +37,7 @@ const remembered = (k: string, f: string) => { try { return localStorage.getItem
 const remember = (k: string, v: string) => { try { localStorage.setItem(`ll_att_${k}`, v); } catch { /* ignore */ } };
 
 const sessionEndOf = (sc: ScheduleConfig, se: string): string =>
-  se === 'single' ? sc.weekday.dayEnd
-  : se === 'morning' ? sc.weekendMorning.sessionEnd
-  : sc.weekendAfternoon.sessionEnd;
+  se === 'day' ? sc.weekend.dayEnd : sc.weekday.dayEnd;
 const todayLocal = () => new Date().toLocaleDateString('en-CA');
 const toHM = (iso: string | null): string => {
   if (!iso) return '';
@@ -78,7 +76,7 @@ const ui: Record<string, any> = {
   // small in-table controls, all 30px
   tBtn: { fontFamily: 'inherit', cursor: 'pointer', background: '#fff', color: C.sub, border: `1px solid ${C.line}`, borderRadius: 9, padding: '0 12px', height: 30, fontWeight: 600, fontSize: '0.82rem' },
   tDanger: { fontFamily: 'inherit', cursor: 'pointer', background: '#fff', color: C.red, border: `1px solid #FECACA`, borderRadius: 9, padding: '0 12px', height: 30, fontWeight: 600, fontSize: '0.82rem' },
-  tInput: { fontFamily: 'inherit', border: `1px solid ${C.line}`, borderRadius: 9, padding: '0 8px', height: 30, fontSize: '0.82rem', color: C.ink, background: '#fff', boxSizing: 'border-box' as const },
+  tInput: { fontFamily: 'inherit', border: `1px solid ${C.line}`, borderRadius: 9, padding: '0 6px', height: 30, width: 118, fontSize: '0.82rem', color: C.ink, background: '#fff', boxSizing: 'border-box' as const },
 
   chip: (m: Mark) => {
     const c = m === 'P' ? [C.greenSoft, C.green] : m === 'L' ? [C.amberSoft, C.amber] : [C.redSoft, C.red];
@@ -86,10 +84,31 @@ const ui: Record<string, any> = {
   },
   sTag: { display: 'inline-block', background: C.bgSoft, border: `1px solid ${C.lineSoft}`, color: C.faint, borderRadius: 6, padding: '1px 7px', fontSize: '0.72rem', fontWeight: 700 },
 
-  table: { background: '#fff', border: `1px solid ${C.lineSoft}`, borderRadius: 16, overflow: 'hidden' },
+  table: { background: '#fff', border: `1px solid ${C.lineSoft}`, borderRadius: 16, overflowX: 'auto' as const },
   thead: { display: 'grid', padding: '0 18px', height: 40, alignItems: 'center', background: C.bgSoft, borderBottom: `1px solid ${C.lineSoft}`, fontSize: '0.72rem', textTransform: 'uppercase' as const, letterSpacing: '0.7px', color: C.faint, fontWeight: 700 },
   tr: { display: 'grid', padding: '0 18px', minHeight: 52, alignItems: 'center', borderBottom: `1px solid ${C.lineSoft}` },
   mono: { fontVariantNumeric: 'tabular-nums', color: C.sub, fontSize: '0.9rem' },
+
+  // page header + tabs
+  page: { maxWidth: 1080, margin: '0 auto' },
+  kicker: { fontSize: '0.72rem', textTransform: 'uppercase' as const, letterSpacing: '0.7px', color: C.faint, fontWeight: 700, marginBottom: 4 },
+  h1: { fontSize: '1.35rem', fontWeight: 600, letterSpacing: '-0.3px', margin: 0 },
+  tabRow: { display: 'flex', gap: 22, borderBottom: `1px solid ${C.line}`, marginBottom: 16 },
+  tab: (a: boolean) => ({
+    fontFamily: 'inherit', cursor: 'pointer', background: 'none', border: 'none',
+    padding: '10px 2px', fontSize: '0.95rem', fontWeight: 600,
+    color: a ? C.ink : C.faint,
+    borderBottom: a ? `2px solid ${C.indigo}` : '2px solid transparent',
+    marginBottom: -1,
+  }),
+  iconBtn: { fontFamily: 'inherit', cursor: 'pointer', background: '#fff', color: C.sub, border: `1px solid ${C.line}`, borderRadius: 10, width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem' },
+  addCard: { background: C.bgSoft, borderRadius: 14, padding: 14, marginBottom: 16 },
+  segSm: { display: 'inline-flex', border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', height: 28 },
+  segSmBtn: (a: boolean) => ({
+    fontFamily: 'inherit', cursor: 'pointer', border: 'none', padding: '0 10px', height: 26,
+    fontWeight: 600, fontSize: '0.78rem',
+    background: a ? C.indigoSoft : '#fff', color: a ? C.indigo : C.faint,
+  }),
 };
 
 export function AttendancePortal() {
@@ -108,6 +127,9 @@ export function AttendancePortal() {
   const [logs, setLogs] = useState<Record<string, Log>>({});
   const [newName, setNewName] = useState('');
   const [newSection, setNewSection] = useState<1 | 2>(1);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -115,6 +137,7 @@ export function AttendancePortal() {
   const [pendingDelete, setPendingDelete] = useState<Student | null>(null);
   const [pendingClear, setPendingClear] = useState<{ log: Log; name: string; at: string } | null>(null);
   const [pendingIn, setPendingIn] = useState<{ studentId: string; name: string; session: string } | null>(null);
+  const [pendingClearVisitors, setPendingClearVisitors] = useState(false);
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
   const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
@@ -125,12 +148,14 @@ export function AttendancePortal() {
   useEffect(() => { remember('level', level); }, [level]);
   useEffect(() => { remember('blankout', blankTimeOut ? '1' : ''); }, [blankTimeOut]);
   const [codeOn, setCodeOn] = useState(false);
+  const [visitorMode, setVisitorMode] = useState(false);
+  const [visitors, setVisitors] = useState<any[]>([]);
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedDraft, setSchedDraft] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedMsg, setSchedMsg] = useState('');
 
   const authed = useCallback(async () => getSupabaseClient((await getToken({ template: 'supabase' })) ?? undefined), [getToken]);
-  const sessionsFor = (c: ClassDef): string[] => c.classType === 'weekday' ? ['single'] : ['morning', 'afternoon'];
+  const sessionsFor = (c: ClassDef): string[] => c.classType === 'weekday' ? ['single'] : ['day'];
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -159,10 +184,21 @@ export function AttendancePortal() {
     const sc = normaliseSchedule(schedRow?.value);
     setSchedule(sc);
     setSchedDraft(sc);
+
+    const { data: vmRow } = await sb.from('attendance_settings').select('value').eq('key', 'visitor_mode').maybeSingle();
+    setVisitorMode(Boolean((vmRow?.value as any)?.enabled));
+
+    // Today's walk-in visitors for the class currently being viewed.
+    const { data: vRows } = await sb.from('attendance_students')
+      .select('id, name, visitor_level, visitor_date, visitor_class')
+      .eq('class_type', 'visitor').eq('active', true).eq('visitor_date', date)
+      .order('name', { ascending: true });
+    // Older visitor rows have no visitor_class; treat those as weekday.
+    setVisitors((vRows || []).filter((v: any) => (v.visitor_class || 'weekday') === cls.classType));
     setAllStudents(byClass);
     setLogs(map);
     if (!quiet) setLoading(false);
-  }, [authed, date]);
+  }, [authed, date, classId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -173,7 +209,7 @@ export function AttendancePortal() {
 
   const students = allStudents[classId] || [];
   const sess = sessionsFor(cls);
-  const primarySession = cls.classType === 'weekday' ? 'single' : (new Date().getHours() < 13 ? 'morning' : 'afternoon');
+  const primarySession = cls.classType === 'weekday' ? 'single' : 'day';
   const inCount = students.filter(s => logs[`${s.id}:${primarySession}`]?.check_in).length;
 
   // ---- actions ----
@@ -185,6 +221,19 @@ export function AttendancePortal() {
     setNewName('');
     load(true);
   };
+  // Paste a whole class at once: one name per line.
+  const addBulk = async () => {
+    const names = bulkText.split('\n').map(n => n.trim()).filter(Boolean);
+    if (!names.length || bulkBusy) return;
+    setBulkBusy(true);
+    const sb = await authed();
+    await sb.from('attendance_students').insert(
+      names.map(name => ({ name, class_type: cls.classType, section: cls.hasSections ? newSection : 1, active: true })),
+    );
+    setBulkText(''); setShowBulk(false); setBulkBusy(false);
+    load(true);
+  };
+
   const saveName = async (id: string) => {
     const name = editName.trim();
     if (!name) { setEditingId(null); return; }
@@ -219,7 +268,9 @@ export function AttendancePortal() {
   // no departure yet. Individual rows can still be edited afterwards.
   const checkEveryoneOut = async () => {
     const sb = await authed();
-    const targets = students.flatMap(stu => sess
+    // Everyone present today — roster students and visiting students alike.
+    const everyone = [...students, ...visitors];
+    const targets = everyone.flatMap(stu => sess
       .map(se => ({ se, l: logs[`${stu.id}:${se}`] }))
       .filter(x => x.l && x.l.check_in && !x.l.check_out));
     await Promise.all(targets.map(({ se, l }) =>
@@ -242,6 +293,24 @@ export function AttendancePortal() {
     await sb.from('attendance_logs').update({ [field]: hm ? hmToIso(date, hm) : null }).eq('id', log.id);
     load(true);
   };
+  const toggleVisitorMode = async (on: boolean) => {
+    const sb = await authed();
+    const { error } = await sb.from('attendance_settings')
+      .upsert({ key: 'visitor_mode', value: { enabled: on }, updated_at: new Date().toISOString() });
+    if (!error) setVisitorMode(on);
+  };
+  const removeVisitor = async (id: string) => {
+    const sb = await authed();
+    await sb.from('attendance_students').delete().eq('id', id);
+    load(true);
+  };
+  const removeAllVisitors = async () => {
+    const sb = await authed();
+    await Promise.all(visitors.map(v => sb.from('attendance_students').delete().eq('id', v.id)));
+    setPendingClearVisitors(false);
+    load(true);
+  };
+
   const toggleCode = async (on: boolean) => {
     const sb = await authed();
     const { data: row } = await sb.from('attendance_settings').select('value').eq('key', 'checkin_secret').maybeSingle();
@@ -254,9 +323,7 @@ export function AttendancePortal() {
     // The scoring engine expects 24h "HH:MM" — never the display format.
     const ci = l?.check_in ? toHM24(l.check_in) : null;
     const co = l?.check_out ? toHM24(l.check_out) : null;
-    if (session === 'single') return scoreWeekday(ci, co, schedule);
-    if (session === 'morning') return scoreWeekendMorning(ci, co, schedule);
-    return scoreWeekendAfternoon(ci, co, schedule);
+    return scoreSession(session, ci, co, schedule);
   };
 
   // ---- schedule ----
@@ -307,9 +374,7 @@ export function AttendancePortal() {
     classLogs.forEach((l: any) => byKey.set(`${l.student_id}:${l.log_date}:${l.session}`, l));
 
     const scoreOf = (se: string, ci: string | null, co: string | null): Mark =>
-      se === 'single' ? scoreWeekday(ci, co, schedule)
-      : se === 'morning' ? scoreWeekendMorning(ci, co, schedule)
-      : scoreWeekendAfternoon(ci, co, schedule);
+      scoreSession(se, ci, co, schedule);
 
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
@@ -357,7 +422,7 @@ export function AttendancePortal() {
   // ---- export (unchanged school sheet) ----
   const printSheet = () => {
     const pretty = new Date(`${date}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const cols = cls.classType === 'weekday' ? ['Time in', 'Time out'] : ['AM in', 'AM out', 'PM in', 'PM out'];
+    const cols = ['Time in', 'Time out'];
     // Only students who actually attended appear on the signed sheet —
     // an absent student must never have a signable row.
     const attended = students.filter(stu => sess.some(se => logs[`${stu.id}:${se}`]?.check_in));
@@ -373,16 +438,31 @@ export function AttendancePortal() {
         times.push(cin, cout);
       });
       return '<tr>'
-        + `<td class="n">${i + 1}</td><td class="nm">${stu.name}</td><td class="sec">S${stu.section}</td>`
+        + `<td class="n">${i + 1}</td><td class="nm">${stu.name.toUpperCase()}</td><td class="sec">S${stu.section}</td>`
         + times.map(t => `<td class="t">${t}</td>`).join('')
         + '<td class="sg"></td></tr>';
     }).join('');
-    const w = window.open('', '_blank');
-    if (!w) { alert('Please allow pop-ups for this site so the sheet can open.'); return; }
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Attendance ${date}</title>
-      <style>
+    // --- visitor sheet body (their own page) ---
+    const vAttended = visitors.filter(v => sess.some(se => logs[`${v.id}:${se}`]?.check_in));
+    const vBody = vAttended.map((v, i) => {
+      const times: string[] = [];
+      sess.forEach(se => {
+        const l = logs[`${v.id}:${se}`];
+        const cin = toHM(l?.check_in || null);
+        const cout = blankTimeOut ? '' : (!cin ? '' : (toHM(l?.check_out || null) || hm24To12(sessionEndOf(schedule, se))));
+        times.push(cin, cout);
+      });
+      return '<tr>'
+        + `<td class="n">${i + 1}</td><td class="nm">${v.name.toUpperCase()}</td><td class="sec">${v.visitor_level || '—'}</td>`
+        + times.map(t => `<td class="t">${t}</td>`).join('')
+        + '<td class="sg"></td></tr>';
+    }).join('');
+
+    const styles = `
         @page { size: A4; margin: 15mm; }
         body { font-family: "Times New Roman", Times, serif; color:#000; margin:0; font-size:12pt; }
+        .sheet { page-break-after: always; }
+        .sheet:last-child { page-break-after: auto; }
         .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
         .hdr div { line-height:1.9; }
         .term { font-weight:bold; font-size:13pt; }
@@ -391,29 +471,39 @@ export function AttendancePortal() {
         th, td { border:1px solid #000; padding:2px 6px; font-size:12pt; }
         th { background:#EDEDED; text-align:left; height:26px; font-size:11pt; }
         td { height:28px; }
-        td.n { width:32px; text-align:center; } td.sec { width:62px; text-align:center; } td.t { width:78px; text-align:center; } td.sg { width:150px; }
+        td.n { width:32px; text-align:center; } td.sec { width:78px; text-align:center; } td.t { width:78px; text-align:center; } td.sg { width:150px; }
         .foot { margin-top:34px; font-size:12pt; }
-        .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }
-      </style></head><body>
-      <div class="hdr">
-        <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
-        <div><div>Date: <span class="fld">${pretty}</span></div><div>Instructor: <span class="fld">${instructor}</span></div></div>
-      </div>
-      <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:62px">Section</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
-      <tbody>${bodyHtml}</tbody></table>
-      <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>
-      </body></html>`;
+        .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }`;
+
+    const classSheet = `
+      <div class="sheet">
+        <div class="hdr">
+          <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
+          <div><div>Date: <span class="fld">${pretty}</span></div><div>Instructor: <span class="fld">${instructor}</span></div></div>
+        </div>
+        <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:62px">Section</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
+        <tbody>${bodyHtml}</tbody></table>
+        <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>
+      </div>`;
+
+    const visitorSheet = vAttended.length ? `
+      <div class="sheet">
+        <div class="hdr">
+          <div><div class="term">${term} — Visiting students</div><div>Hosted in: <span class="fld">Level ${level} (${cls.tag})</span></div></div>
+          <div><div>Date: <span class="fld">${pretty}</span></div><div>Instructor: <span class="fld">${instructor}</span></div></div>
+        </div>
+        <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:78px">Their level</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
+        <tbody>${vBody}</tbody></table>
+        <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>
+      </div>` : '';
+
+    const w = window.open('', '_blank');
+    if (!w) { alert('Please allow pop-ups for this site so the sheet can open.'); return; }
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Attendance ${date}</title>
+      <style>${styles}</style></head><body>${classSheet}${visitorSheet}</body></html>`;
     w.document.write(html); w.document.close(); w.focus();
     setTimeout(() => w.print(), 300);
   };
-
-  // ---- column templates keep every row aligned ----
-  const todayCols = cls.classType === 'weekday'
-    ? 'minmax(160px,1fr) 60px 120px 130px 90px'
-    : 'minmax(130px,1fr) 60px 115px 125px 90px 60px 115px 125px 90px';
-  const manageCols = cls.hasSections
-    ? 'minmax(160px,1fr) 110px 200px'
-    : 'minmax(160px,1fr) 200px';
 
   const Session = ({ stu, se }: { stu: Student; se: string }) => {
     const l = logs[`${stu.id}:${se}`];
@@ -441,8 +531,9 @@ export function AttendancePortal() {
           </>
         ) : (
           <>
-            <span style={ui.mono}>—</span>
-            <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in</button>
+            <span style={{ gridColumn: 'span 2' }}>
+              <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in now</button>
+            </span>
             <span />
           </>
         )}
@@ -450,208 +541,307 @@ export function AttendancePortal() {
     );
   };
 
+  const cols = 'minmax(0,1fr) 56px 118px 118px 88px';
+  const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 168px' : 'minmax(0,1fr) 168px';
+  const sectionCounts = cls.hasSections
+    ? `${students.filter(s => s.section === 1).length} in section 1, ${students.filter(s => s.section === 2).length} in section 2`
+    : '';
+
   return (
-    <div style={ui.wrap}>
-      {/* ---- one toolbar ---- */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={ui.seg}>
-          {CLASSES.map(c => (
-            <button key={c.id} style={ui.segBtn(c.id === classId)} onClick={() => setClassId(c.id)}>{c.title}</button>
-          ))}
-        </div>
-        <div style={ui.seg}>
-          <button style={ui.segBtn(view === 'today')} onClick={() => setView('today')}>Today</button>
-          <button style={ui.segBtn(view === 'manage')} onClick={() => setView('manage')}>Manage</button>
-          <button style={ui.segBtn(view === 'records')} onClick={() => setView('records')}>Records</button>
-        </div>
-        <div style={{ flex: 1 }} />
-        {view === 'today' && (
-          <>
-            <input type="date" style={ui.input} value={date} onChange={e => setDate(e.target.value)} />
-            <button style={ui.secondary} onClick={checkEveryoneOut} title="Writes the class-end time on everyone still checked in. Edit any row afterwards for early leavers.">
-              All out at {cls.classType === 'weekday' ? hm24To12(schedule.weekday.dayEnd) : 'class end'}
+    <div style={{ ...ui.wrap, ...ui.page }}>
+      {/* ---------- header: which class ---------- */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div>
+          <div style={ui.kicker}>Class</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h2 style={ui.h1}>{cls.title}</h2>
+            <button style={ui.tBtn} onClick={() => setClassId(classId === 'am' ? 'wk' : 'am')}>
+              Switch to {classId === 'am' ? 'weekend' : 'morning'}
             </button>
-            <button style={ui.primary} onClick={printSheet}>Export sheet</button>
-          </>
-        )}
+          </div>
+        </div>
         <button
-          style={showSettings
-            ? { ...ui.secondary, background: C.indigoSoft, color: C.indigo, borderColor: C.indigo }
-            : ui.secondary}
+          style={showSettings ? { ...ui.iconBtn, background: C.indigoSoft, color: C.indigo, borderColor: C.indigo } : ui.iconBtn}
           onClick={() => setShowSettings(v => !v)}
-        >Settings{showSettings ? ' ×' : ''}</button>
+          title="Settings"
+        >⚙</button>
       </div>
 
-      {/* ---- status line ---- */}
-      <p style={{ margin: '0 0 14px', color: C.sub, fontSize: '0.92rem' }}>
-        {view === 'today'
-          ? <>{inCount} of {students.length} checked in{date === todayLocal() ? ' · updates live' : ''}</>
-          : view === 'manage'
-          ? <>{students.length} student{students.length === 1 ? '' : 's'} in {cls.title}</>
-          : <>P counts as a full session and L as half, following the school rule. Click a student for their day-by-day record.</>}
-      </p>
+      {/* ---------- tabs ---------- */}
+      <div style={ui.tabRow}>
+        <button style={ui.tab(view === 'today')} onClick={() => setView('today')}>Today</button>
+        <button style={ui.tab(view === 'manage')} onClick={() => setView('manage')}>Manage</button>
+        <button style={ui.tab(view === 'records')} onClick={() => setView('records')}>Records</button>
+      </div>
 
-      {/* ---- records toolbar ---- */}
-      {view === 'records' && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-          <div style={ui.seg}>
-            <button style={ui.segBtn(false)} onClick={() => setPreset('week')}>This week</button>
-            <button style={ui.segBtn(false)} onClick={() => setPreset('month')}>This month</button>
-            <button style={ui.segBtn(false)} onClick={() => setPreset('all')}>Whole term</button>
-          </div>
-          <input type="date" style={ui.input} value={rStart} onChange={e => setRStart(e.target.value)} />
-          <span style={{ color: C.faint }}>to</span>
-          <input type="date" style={ui.input} value={rEnd} onChange={e => setREnd(e.target.value)} />
-          <div style={{ flex: 1 }} />
-          <button style={ui.secondary} onClick={downloadRecordsCsv}>Download CSV</button>
-        </div>
-      )}
-
-      {/* ---- the table ---- */}
-      <div style={ui.table}>
-        {view === 'records' ? (() => {
-          if (rLoading || loading) return <div style={{ padding: 20, color: C.faint }}>Loading…</div>;
-          const { rows, heldDays } = buildRecords();
-          if (heldDays.length === 0) return <div style={{ padding: 20, color: C.faint }}>No class days with check-ins in this range yet.</div>;
-          const recCols = 'minmax(160px,1fr) 90px 60px 60px 60px 130px';
-          return (
-            <>
-              <div style={{ ...ui.thead, gridTemplateColumns: recCols, gap: 12 }}>
-                <span>Student</span><span>Sessions</span><span>P</span><span>L</span><span>A</span><span>Rate</span>
-              </div>
-              {rows.map(r => (
-                <React.Fragment key={r.stu.id}>
-                  <div
-                    style={{ ...ui.tr, gridTemplateColumns: recCols, gap: 12, cursor: 'pointer', background: expanded === r.stu.id ? C.bgSoft : '#fff' }}
-                    onClick={() => setExpanded(expanded === r.stu.id ? null : r.stu.id)}
-                  >
-                    <span style={{ fontWeight: 600 }}>
-                      {r.stu.name}
-                      {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{r.stu.section}</span>}
-                    </span>
-                    <span style={ui.mono}>{r.total}</span>
-                    <span style={{ color: C.green, fontWeight: 700 }}>{r.P}</span>
-                    <span style={{ color: C.amber, fontWeight: 700 }}>{r.L}</span>
-                    <span style={{ color: C.red, fontWeight: 700 }}>{r.A}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 700, minWidth: 42 }}>{r.rate}%</span>
-                      <span style={{ width: 52, height: 6, background: C.lineSoft, borderRadius: 9999, overflow: 'hidden' }}>
-                        <span style={{ display: 'block', height: '100%', width: `${r.rate}%`, background: r.rate >= 80 ? C.green : r.rate >= 60 ? '#D97706' : C.red, borderRadius: 9999 }} />
-                      </span>
-                    </span>
-                  </div>
-                  {expanded === r.stu.id && (
-                    <div style={{ background: C.bgSoft, borderBottom: `1px solid ${C.lineSoft}`, padding: '10px 18px 14px' }}>
-                      {r.daily.map(d => (
-                        <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', fontSize: '0.88rem' }}>
-                          <span style={{ ...ui.mono, minWidth: 150 }}>{new Date(`${d.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                          {d.marks.map((m, i) => <span key={i} style={ui.chip(m)}>{m}</span>)}
-                          {d.in1 && <span style={ui.mono}>in {d.in1}{d.out1 ? ` · out ${d.out1}` : ''}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </React.Fragment>
-              ))}
-            </>
-          );
-        })() : view === 'today' ? (
-          <>
-            <div style={{ ...ui.thead, gridTemplateColumns: todayCols, gap: 12 }}>
-              <span>Student</span>
-              {cls.classType === 'weekday'
-                ? <><span>Mark</span><span>In</span><span>Out</span><span /></>
-                : <><span>AM</span><span>In</span><span>Out</span><span /><span>PM</span><span>In</span><span>Out</span><span /></>}
+      {/* ================= TODAY ================= */}
+      {view === 'today' && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <input type="date" style={{ ...ui.input, height: 36 }} value={date} onChange={e => setDate(e.target.value)} />
+              <span style={{ fontSize: '0.9rem', color: C.sub }}>
+                {inCount} of {students.length} checked in{date === todayLocal() ? ' · updates live' : ''}
+              </span>
             </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button style={{ ...ui.secondary, height: 36 }} onClick={checkEveryoneOut}
+                title="Writes the class-end time on everyone still checked in.">
+                All out at {hm24To12(cls.classType === 'weekday' ? schedule.weekday.dayEnd : schedule.weekend.dayEnd)}
+              </button>
+              <button style={{ ...ui.primary, height: 36 }} onClick={printSheet}>Export sheet</button>
+            </div>
+          </div>
+
+          <div style={ui.table}>
+            <div style={{ ...ui.thead, gridTemplateColumns: cols, gap: 10 }}>
+              <span>Student</span><span>Mark</span><span>In</span><span>Out</span><span />
+            </div>
+
             {loading ? (
               <div style={{ padding: 20, color: C.faint }}>Loading…</div>
-            ) : students.length === 0 ? (
-              <div style={{ padding: 20, color: C.faint }}>No students yet — switch to Manage to add your class.</div>
+            ) : students.length === 0 && visitors.length === 0 ? (
+              <div style={{ padding: '26px 20px', color: C.faint }}>
+                No students in this class yet. Open <strong style={{ color: C.sub }}>Manage</strong> to add them.
+              </div>
             ) : students.map(stu => (
-              <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: todayCols, gap: 12 }}>
+              <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10 }}>
                 <span style={{ fontWeight: 600 }}>
                   {stu.name}
                   {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{stu.section}</span>}
                 </span>
                 {sess.map(se => <Session key={se} stu={stu} se={se} />)}
-                {cls.classType === 'weekday' && <span />}
               </div>
             ))}
-          </>
-        ) : (
-          <>
-            <div style={{ ...ui.thead, gridTemplateColumns: manageCols, gap: 12 }}>
-              <span>Student</span>
-              {cls.hasSections && <span>Section</span>}
-              <span style={{ textAlign: 'right' as const }}>Actions</span>
-            </div>
-            {loading ? (
-              <div style={{ padding: 20, color: C.faint }}>Loading…</div>
-            ) : students.length === 0 ? (
-              <div style={{ padding: 20, color: C.faint }}>No students yet — add your class below.</div>
-            ) : students.map(stu => (
-              <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: manageCols, gap: 12 }}>
-                {editingId === stu.id ? (
-                  <span style={{ display: 'inline-flex', gap: 6 }}>
-                    <input
-                      style={{ ...ui.tInput, width: 200 }} value={editName} autoFocus
-                      onChange={e => setEditName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') saveName(stu.id); if (e.key === 'Escape') setEditingId(null); }}
-                    />
-                    <button style={{ ...ui.tBtn, color: C.indigo, borderColor: C.indigo }} onClick={() => saveName(stu.id)}>Save</button>
-                  </span>
-                ) : (
-                  <span style={{ fontWeight: 600 }}>{stu.name}</span>
-                )}
-                {cls.hasSections && (
-                  <span style={{ display: 'inline-flex', border: `1px solid ${C.line}`, borderRadius: 9, overflow: 'hidden', width: 'fit-content' }}>
-                    {[1, 2].map(n => (
-                      <button key={n} style={{
-                        fontFamily: 'inherit', cursor: 'pointer', border: 'none', padding: '0 12px', height: 28,
-                        fontWeight: 600, fontSize: '0.8rem',
-                        background: stu.section === n ? C.indigoSoft : '#fff',
-                        color: stu.section === n ? C.indigo : C.faint,
-                      }} onClick={() => stu.section !== n && moveToSection(stu.id, n)}>S{n}</button>
-                    ))}
-                  </span>
-                )}
-                <span style={{ display: 'inline-flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button style={ui.tBtn} onClick={() => { setEditingId(stu.id); setEditName(stu.name); }}>Rename</button>
-                  <button style={ui.tDanger} onClick={() => setPendingDelete(stu)}>Delete</button>
-                </span>
-              </div>
-            ))}
-            {/* add row lives inside the table */}
-            <div style={{ display: 'flex', gap: 10, padding: '14px 18px', background: C.bgSoft, flexWrap: 'wrap' }}>
+
+            {visitors.length > 0 && (
+              <>
+                <div style={{ padding: '8px 18px', background: '#FFFBEB', borderTop: `1px solid ${C.lineSoft}`, borderBottom: `1px solid ${C.lineSoft}`, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: '#92400E', fontWeight: 700 }}>
+                  Visiting students today
+                </div>
+                {visitors.map(v => (
+                  <div key={v.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10, background: '#FFFEF9' }}>
+                    <span style={{ fontWeight: 600 }}>
+                      {v.name}
+                      <span style={{ ...ui.sTag, marginLeft: 8, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
+                    </span>
+                    {sess.map(se => {
+                      const l = logs[`${v.id}:${se}`];
+                      if (!l) {
+                        return (
+                          <React.Fragment key={se}>
+                            <span style={{ color: C.faint }}>—</span>
+                            <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not this session</span>
+                            <span />
+                          </React.Fragment>
+                        );
+                      }
+                      return <Session key={se} stu={{ id: v.id, name: v.name, section: 1 }} se={se} />;
+                    })}
+                  </div>
+                ))}
+                <div style={{ padding: '10px 18px', background: '#FFFEF9' }}>
+                  <button style={ui.tDanger} onClick={() => setPendingClearVisitors(true)}>Remove all visitors</button>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ================= MANAGE ================= */}
+      {view === 'manage' && (
+        <>
+          <div style={ui.addCard}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <input
-                style={{ ...ui.input, minWidth: 220, flex: 1 }}
-                placeholder="New student name"
+                style={{ ...ui.input, height: 36, flex: 1, minWidth: 200 }}
+                placeholder="Student name"
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') addStudent(); }}
               />
               {cls.hasSections && (
-                <div style={ui.seg}>
-                  <button style={ui.segBtn(newSection === 1)} onClick={() => setNewSection(1)}>Section 1</button>
-                  <button style={ui.segBtn(newSection === 2)} onClick={() => setNewSection(2)}>Section 2</button>
+                <div style={{ ...ui.segSm, height: 36 }}>
+                  {[1, 2].map(n => (
+                    <button key={n} style={{ ...ui.segSmBtn(newSection === n), height: 34, padding: '0 14px', fontSize: '0.85rem' }}
+                      onClick={() => setNewSection(n as 1 | 2)}>S{n}</button>
+                  ))}
                 </div>
               )}
-              <button style={ui.primary} onClick={addStudent}>Add student</button>
+              <button style={{ ...ui.primary, height: 36 }} onClick={addStudent}>Add</button>
             </div>
-          </>
-        )}
-      </div>
 
-      {/* ---- manual check-in dialog ---- */}
+            {!showBulk ? (
+              <button
+                style={{ background: 'none', border: 'none', padding: '10px 0 0', fontFamily: 'inherit', fontSize: '0.85rem', color: C.indigo, cursor: 'pointer', fontWeight: 600 }}
+                onClick={() => setShowBulk(true)}
+              >Adding a whole class? Paste a list of names</button>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                <textarea
+                  style={{ ...ui.input, height: 130, width: '100%', padding: '10px 12px', lineHeight: 1.6, resize: 'vertical' as const }}
+                  placeholder={'One name per line:\nIris Ramirez\nYoussef Benali\nDaphne Bauer'}
+                  value={bulkText}
+                  onChange={e => setBulkText(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                  <button style={{ ...ui.primary, height: 36 }} onClick={addBulk} disabled={bulkBusy}>
+                    {bulkBusy ? 'Adding…' : `Add ${bulkText.split('\n').map(n => n.trim()).filter(Boolean).length || ''} students`.trim()}
+                  </button>
+                  <button style={{ ...ui.secondary, height: 36 }} onClick={() => { setShowBulk(false); setBulkText(''); }}>Cancel</button>
+                  {cls.hasSections && <span style={{ fontSize: '0.85rem', color: C.sub }}>All added to Section {newSection}</span>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: C.sub }}>
+            {students.length} student{students.length === 1 ? '' : 's'}{sectionCounts ? ` · ${sectionCounts}` : ''}
+          </p>
+
+          <div style={ui.table}>
+            {loading ? (
+              <div style={{ padding: 20, color: C.faint }}>Loading…</div>
+            ) : students.length === 0 ? (
+              <div style={{ padding: '26px 20px', color: C.faint }}>No students yet — add them above.</div>
+            ) : students.map(stu => {
+              const editing = editingId === stu.id;
+              return (
+                <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: manageCols, gap: 10, background: editing ? C.bgSoft : '#fff' }}>
+                  {editing ? (
+                    <input
+                      style={{ ...ui.tInput, width: '100%', height: 32, fontSize: '0.92rem' }}
+                      value={editName} autoFocus
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveName(stu.id); if (e.key === 'Escape') setEditingId(null); }}
+                    />
+                  ) : (
+                    <span style={{ fontWeight: 600 }}>{stu.name}</span>
+                  )}
+
+                  {cls.hasSections && (
+                    <div style={ui.segSm}>
+                      {[1, 2].map(n => (
+                        <button key={n} style={ui.segSmBtn(stu.section === n)}
+                          onClick={() => stu.section !== n && moveToSection(stu.id, n)}>S{n}</button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    {editing ? (
+                      <>
+                        <button style={{ ...ui.tBtn, color: C.indigo, borderColor: C.indigo }} onClick={() => saveName(stu.id)}>Save</button>
+                        <button style={ui.tBtn} onClick={() => setEditingId(null)}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button style={ui.tBtn} onClick={() => { setEditingId(stu.id); setEditName(stu.name); }}>Rename</button>
+                        <button style={ui.tDanger} onClick={() => setPendingDelete(stu)}>Delete</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* ================= RECORDS ================= */}
+      {view === 'records' && (
+        <>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ ...ui.seg, height: 36 }}>
+              <button style={{ ...ui.segBtn(false), height: 28 }} onClick={() => setPreset('week')}>This week</button>
+              <button style={{ ...ui.segBtn(false), height: 28 }} onClick={() => setPreset('month')}>This month</button>
+              <button style={{ ...ui.segBtn(false), height: 28 }} onClick={() => setPreset('all')}>Whole term</button>
+            </div>
+            <input type="date" style={{ ...ui.input, height: 36 }} value={rStart} onChange={e => setRStart(e.target.value)} />
+            <span style={{ color: C.faint }}>to</span>
+            <input type="date" style={{ ...ui.input, height: 36 }} value={rEnd} onChange={e => setREnd(e.target.value)} />
+            <div style={{ flex: 1 }} />
+            <button style={{ ...ui.secondary, height: 36 }} onClick={downloadRecordsCsv}>Download CSV</button>
+          </div>
+
+          <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: C.sub }}>
+            P counts as a full day and L as half. Click a student for their day-by-day record.
+          </p>
+
+          <div style={ui.table}>
+            {(() => {
+              if (rLoading || loading) return <div style={{ padding: 20, color: C.faint }}>Loading…</div>;
+              const { rows, heldDays } = buildRecords();
+              if (heldDays.length === 0) return <div style={{ padding: '26px 20px', color: C.faint }}>No class days with check-ins in this range yet.</div>;
+              const recCols = 'minmax(0,1fr) 80px 52px 52px 52px 130px';
+              return (
+                <>
+                  <div style={{ ...ui.thead, gridTemplateColumns: recCols, gap: 10 }}>
+                    <span>Student</span><span>Days</span><span>P</span><span>L</span><span>A</span><span>Rate</span>
+                  </div>
+                  {rows.map(r => (
+                    <React.Fragment key={r.stu.id}>
+                      <div
+                        style={{ ...ui.tr, gridTemplateColumns: recCols, gap: 10, cursor: 'pointer', background: expanded === r.stu.id ? C.bgSoft : '#fff' }}
+                        onClick={() => setExpanded(expanded === r.stu.id ? null : r.stu.id)}
+                      >
+                        <span style={{ fontWeight: 600 }}>
+                          {r.stu.name}
+                          {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{r.stu.section}</span>}
+                        </span>
+                        <span style={ui.mono}>{r.total}</span>
+                        <span style={{ color: C.green, fontWeight: 700 }}>{r.P}</span>
+                        <span style={{ color: C.amber, fontWeight: 700 }}>{r.L}</span>
+                        <span style={{ color: C.red, fontWeight: 700 }}>{r.A}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 700, minWidth: 42 }}>{r.rate}%</span>
+                          <span style={{ width: 52, height: 6, background: C.lineSoft, borderRadius: 9999, overflow: 'hidden' }}>
+                            <span style={{ display: 'block', height: '100%', width: `${r.rate}%`, background: r.rate >= 80 ? C.green : r.rate >= 60 ? '#D97706' : C.red, borderRadius: 9999 }} />
+                          </span>
+                        </span>
+                      </div>
+                      {expanded === r.stu.id && (
+                        <div style={{ background: C.bgSoft, borderBottom: `1px solid ${C.lineSoft}`, padding: '10px 18px 14px' }}>
+                          {r.daily.map(d => (
+                            <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', fontSize: '0.88rem' }}>
+                              <span style={{ ...ui.mono, minWidth: 150 }}>{new Date(`${d.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                              {d.marks.map((m, i) => <span key={i} style={ui.chip(m)}>{m}</span>)}
+                              {d.in1 && <span style={ui.mono}>in {d.in1}{d.out1 ? ` · out ${d.out1}` : ''}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
+        </>
+      )}
+
+      {/* ---------- dialogs ---------- */}
+      {pendingClearVisitors && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingClearVisitors(false)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Remove all {visitors.length} visitor{visitors.length === 1 ? '' : 's'}?</h3>
+            <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              This deletes today's visiting students and their check-ins. Export the visitor sheet first if you still need it. Your own class is untouched.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setPendingClearVisitors(false)}>Cancel</button>
+              <button style={{ ...ui.primary, background: C.red }} onClick={removeAllVisitors}>Remove all</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingIn && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
-          onClick={() => setPendingIn(null)}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
-            onClick={e => e.stopPropagation()}
-          >
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingIn(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Check in {pendingIn.name}?</h3>
             <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
               Their arrival will be recorded as <strong>{toHM(new Date().toISOString())}</strong>.
@@ -666,16 +856,10 @@ export function AttendancePortal() {
         </div>
       )}
 
-      {/* ---- clear check-in dialog ---- */}
       {pendingClear && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
-          onClick={() => setPendingClear(null)}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
-            onClick={e => e.stopPropagation()}
-          >
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingClear(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Remove {pendingClear.name}'s check-in?</h3>
             <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
               Their arrival at {pendingClear.at} will be deleted for today. They go back to <strong>A</strong> and
@@ -689,16 +873,10 @@ export function AttendancePortal() {
         </div>
       )}
 
-      {/* ---- delete dialog ---- */}
       {pendingDelete && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
-          onClick={() => setPendingDelete(null)}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(420px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
-            onClick={e => e.stopPropagation()}
-          >
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingDelete(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(420px, 90vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Delete {pendingDelete.name}?</h3>
             <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
               Their attendance history is deleted with them. This cannot be undone.
@@ -711,7 +889,7 @@ export function AttendancePortal() {
         </div>
       )}
 
-      {/* ---- settings ---- */}
+      {/* ---------- settings ---------- */}
       {showSettings && (
         <div style={{ background: C.bgSoft, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px', marginTop: 22, boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' }}>
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '0 0 10px' }}>Printed sheet header</div>
@@ -724,69 +902,45 @@ export function AttendancePortal() {
             <input type="checkbox" checked={blankTimeOut} onChange={e => setBlankTimeOut(e.target.checked)} />
             Print Time out blank (students write it when signing)
           </label>
+
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Class times</div>
           <p style={{ margin: '0 0 12px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
-            These drive the P / L / A marks and decide when the QR code works.
-            Saving applies everywhere at once — the student page and the database follow immediately.
+            These drive the P / L / A marks and decide when the QR code works. Saving applies everywhere at once.
           </p>
 
-          {/* Level 4 · Morning */}
           <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
             <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Morning</div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.graceEnd}
-                  onChange={e => editSched(['weekday','graceEnd'], e.target.value)} /></label>
+                  onChange={e => editSched(['weekday', 'graceEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.dayEnd}
-                  onChange={e => editSched(['weekday','dayEnd'], e.target.value)} /></label>
+                  onChange={e => editSched(['weekday', 'dayEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.checkinOpen}
-                  onChange={e => editSched(['weekday','checkinOpen'], e.target.value)} /></label>
+                  onChange={e => editSched(['weekday', 'checkinOpen'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.checkinClose}
-                  onChange={e => editSched(['weekday','checkinClose'], e.target.value)} /></label>
+                  onChange={e => editSched(['weekday', 'checkinClose'], e.target.value)} /></label>
             </div>
           </div>
 
-          {/* Weekend morning */}
-          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
-            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend — morning</div>
+          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 12, boxSizing: 'border-box', maxWidth: '100%' }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend</div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.graceEnd}
-                  onChange={e => editSched(['weekendMorning','graceEnd'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>Absent after<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.lateCutoff}
-                  onChange={e => editSched(['weekendMorning','lateCutoff'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>Session ends<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.sessionEnd}
-                  onChange={e => editSched(['weekendMorning','sessionEnd'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.checkinOpen}
-                  onChange={e => editSched(['weekendMorning','checkinOpen'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendMorning.checkinClose}
-                  onChange={e => editSched(['weekendMorning','checkinClose'], e.target.value)} /></label>
-            </div>
-          </div>
-
-          {/* Weekend afternoon */}
-          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 12, boxSizing: 'border-box', maxWidth: '100%' }}>
-            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend — afternoon</div>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>Back by<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.graceEnd}
-                  onChange={e => editSched(['weekendAfternoon','graceEnd'], e.target.value)} /></label>
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.graceEnd}
+                  onChange={e => editSched(['weekend', 'graceEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.sessionEnd}
-                  onChange={e => editSched(['weekendAfternoon','sessionEnd'], e.target.value)} /></label>
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.dayEnd}
+                  onChange={e => editSched(['weekend', 'dayEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.checkinOpen}
-                  onChange={e => editSched(['weekendAfternoon','checkinOpen'], e.target.value)} /></label>
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.checkinOpen}
+                  onChange={e => editSched(['weekend', 'checkinOpen'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekendAfternoon.checkinClose}
-                  onChange={e => editSched(['weekendAfternoon','checkinClose'], e.target.value)} /></label>
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.checkinClose}
+                  onChange={e => editSched(['weekend', 'checkinClose'], e.target.value)} /></label>
             </div>
           </div>
 
@@ -808,7 +962,17 @@ export function AttendancePortal() {
             </span>
           </label>
 
-          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 10px' }}>Screen code</div>
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 8px' }}>Combined class (visitors)</div>
+          <label style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, fontSize: '0.88rem', color: C.sub, cursor: 'pointer', lineHeight: 1.5, maxWidth: 620 }}>
+            <input type="checkbox" style={{ marginTop: 3 }} checked={visitorMode} onChange={e => toggleVisitorMode(e.target.checked)} />
+            <span>
+              <strong style={{ color: C.ink }}>Let visiting students add themselves</strong> — for days another teacher's class joins yours.
+              They type their name and level on the check-in screen and print on a separate sheet.
+              {visitorMode && <span style={{ color: '#B45309', fontWeight: 600 }}> Currently ON — turn off when the classes separate again.</span>}
+            </span>
+          </label>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 8px' }}>Screen code</div>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.88rem', color: C.sub, cursor: 'pointer' }}>
             <input type="checkbox" checked={codeOn} onChange={e => toggleCode(e.target.checked)} />
             Only accept check-ins scanned from the classroom screen

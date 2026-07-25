@@ -11,7 +11,7 @@ import { getSupabaseClient } from '../supabaseClient';
 // Teacher-only: mount it behind the same admin gate as the portal.
 
 type ClassType = 'weekday' | 'weekend';
-type Session = 'single' | 'morning' | 'afternoon';
+type Session = 'single' | 'day';
 
 interface Arrival { name: string; at: string; }
 
@@ -38,8 +38,7 @@ function defaultClass(): ClassType {
   return d === 5 || d === 6 ? 'weekend' : 'weekday';
 }
 function defaultSession(c: ClassType): Session {
-  if (c === 'weekday') return 'single';
-  return new Date().getHours() < 13 ? 'morning' : 'afternoon';
+  return c === 'weekend' ? 'day' : 'single';
 }
 const toHM = (iso: string) => {
   const d = new Date(iso);
@@ -125,13 +124,7 @@ export function CheckInDisplay() {
         <div style={s.top}>
           <button style={s.pill(classType === 'weekday')} onClick={() => switchClass('weekday')}>Level 4 · Morning</button>
           <button style={s.pill(classType === 'weekend')} onClick={() => switchClass('weekend')}>Level 4 · Weekend</button>
-          {classType === 'weekend' && (
-            <>
-              <span style={{ width: 12 }} />
-              <button style={s.pill(session === 'morning')} onClick={() => setSession('morning')}>Morning</button>
-              <button style={s.pill(session === 'afternoon')} onClick={() => setSession('afternoon')}>Afternoon</button>
-            </>
-          )}
+
           <div style={{ flex: 1 }} />
           <button style={s.pill(showList)} onClick={() => setShowList(v => !v)}>
             {showList ? 'Hide arrivals' : 'Show arrivals'}

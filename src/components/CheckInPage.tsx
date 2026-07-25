@@ -8,7 +8,7 @@ import { windowFor, isCheckInOpen, nowInNewYork, type ScheduleConfig, DEFAULT_SC
 // Mounted at /checkin, outside the app chrome and outside any Clerk gate.
 
 type ClassType = 'weekday' | 'weekend';
-type Session = 'single' | 'morning' | 'afternoon';
+type Session = 'single' | 'day';
 
 interface Student { id: string; name: string; section: number; }
 
@@ -24,7 +24,7 @@ const CLASS_TITLE: Record<ClassType, string> = {
 const classSub = (c: ClassType, sc: ScheduleConfig): string =>
   c === 'weekday'
     ? `Sections 1 & 2 · ${hm24To12(sc.weekday.checkinOpen)} – ${hm24To12(sc.weekday.dayEnd)}`
-    : `Section 1 · ${hm24To12(sc.weekendMorning.checkinOpen)} – ${hm24To12(sc.weekendAfternoon.sessionEnd)}`;
+    : `Section 1 · ${hm24To12(sc.weekend.checkinOpen)} – ${hm24To12(sc.weekend.dayEnd)}`;
 
 const s: Record<string, any> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: 'linear-gradient(180deg, #EEF2FF 0%, #F3F6F8 220px)', minHeight: '100vh', color: '#0F172A', padding: '28px 16px 64px', boxSizing: 'border-box' },
@@ -101,8 +101,7 @@ function defaultClass(): ClassType {
   return day === 5 || day === 6 ? 'weekend' : 'weekday';
 }
 function defaultSession(cls: ClassType): Session {
-  if (cls === 'weekday') return 'single';
-  return new Date().getHours() < 13 ? 'morning' : 'afternoon';
+  return cls === 'weekend' ? 'day' : 'single';
 }
 
 export function CheckInPage() {
@@ -110,8 +109,8 @@ export function CheckInPage() {
   const [classType] = useState<ClassType>(
     params.c === 'weekend' || params.c === 'weekday' ? params.c : defaultClass(),
   );
-  const [session, setSession] = useState<Session>(
-    params.s === 'single' || params.s === 'morning' || params.s === 'afternoon'
+  const [session] = useState<Session>(
+    params.s === 'single' || params.s === 'day'
       ? params.s
       : defaultSession(params.c === 'weekend' ? 'weekend' : defaultClass()),
   );
@@ -124,6 +123,13 @@ export function CheckInPage() {
   const [section, setSection] = useState<1 | 2>(1);   // morning class only
   const [query, setQuery] = useState('');
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
+  const [visitorMode, setVisitorMode] = useState(false);
+  const [showVisitor, setShowVisitor] = useState(false);
+  const [vName, setVName] = useState('');
+  const [vLevel, setVLevel] = useState('');
+  const [vSection, setVSection] = useState('');
+  const [vDone, setVDone] = useState<{ name: string; at: string } | null>(null);
+  const [vConfirm, setVConfirm] = useState<{ name: string; level: string; section: string } | null>(null);
   const [toast, setToast] = useState('');
 
   const [clock, setClock] = useState<string>(nowInNewYork());
@@ -136,8 +142,8 @@ export function CheckInPage() {
   const supabase = getSupabaseClient(); // no token -> anonymous/public
   const info = { title: CLASS_TITLE[classType], sub: classSub(classType, schedule) };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     const { data: roster } = await supabase
       .from('attendance_students')
       .select('id, name, section')
@@ -161,12 +167,48 @@ export function CheckInPage() {
       .maybeSingle();
     setSchedule(normaliseSchedule(schedRow?.value));
 
+    const { data: vmRow } = await supabase
+      .from('attendance_settings').select('value').eq('key', 'visitor_mode').maybeSingle();
+    setVisitorMode(Boolean((vmRow?.value as any)?.enabled));
+
     setStudents((roster || []).map((r: any) => ({ id: r.id, name: r.name, section: r.section ?? 1 })));
     setDone(map);
-    setLoading(false);
+    if (!quiet) setLoading(false);
   }, [classType, session]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Keep an already-open page current: if the teacher adds a student, or
+  // someone else checks in, this picks it up without anyone refreshing.
+  useEffect(() => {
+    const t = setInterval(() => load(true), 25000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const submitVisitor = async () => {
+    const name = (vConfirm?.name || vName).trim();
+    const level = vConfirm?.level || vLevel;
+    const sectionPick = vConfirm?.section || vSection;
+    if (!name || !level || !sectionPick || saving) return;
+    setSaving(true);
+    const today = new Date().toLocaleDateString('en-CA');
+    const label = `${level} · Section ${sectionPick}`;
+    // Visitors belong to whichever class page they scanned into, so their
+    // check-in uses that class's current session.
+    const vClass = classType;
+    const { data: created, error: e1 } = await supabase
+      .from('attendance_students')
+      .insert({ name, class_type: 'visitor', section: Number(sectionPick), active: true, visitor_level: label, visitor_date: today, visitor_class: vClass })
+      .select('id').single();
+    if (e1 || !created) { setNotice('Could not add you right now — please tell your teacher.'); setSaving(false); return; }
+    const nowIso = new Date().toISOString();
+    await supabase.from('attendance_logs')
+      .insert({ student_id: created.id, session, check_in: nowIso, token: params.t });
+    setVDone({ name, at: toHM(nowIso) });
+    setShowVisitor(false); setVConfirm(null); setVName(''); setVLevel(''); setVSection(''); setSaving(false);
+    setToast(`Checked in as visitor, ${name.split(' ')[0]} — ${toHM(nowIso)}`);
+    setTimeout(() => setToast(''), 3600);
+  };
 
   const confirmCheckIn = async () => {
     const student = confirming;
@@ -208,13 +250,6 @@ export function CheckInPage() {
           <p style={s.sub}>{info.sub}</p>
         </header>
 
-        {classType === 'weekend' && (
-          <div style={s.sessRow}>
-            <button style={s.pill(session === 'morning')} onClick={() => setSession('morning')}>Morning</button>
-            <button style={s.pill(session === 'afternoon')} onClick={() => setSession('afternoon')}>Afternoon</button>
-          </div>
-        )}
-
         {!open ? (
           <div style={s.card}>
             <p style={{ fontSize: '1.15rem', fontWeight: 600, margin: '0 0 8px', color: '#0F172A' }}>Check-in is closed</p>
@@ -230,7 +265,7 @@ export function CheckInPage() {
           </div>
         ) : loading ? (
           <div style={s.card}>Loading…</div>
-        ) : students.length === 0 ? (
+        ) : students.length === 0 && !visitorMode ? (
           <div style={s.card}>No students on this list yet. Your teacher will add you.</div>
         ) : (
           <>
@@ -251,7 +286,22 @@ export function CheckInPage() {
             <div style={s.list}>
               {visible.length === 0 && (
                 <div style={{ padding: '22px 18px', color: '#64748B', textAlign: 'center' }}>
-                  No match{classType === 'weekday' ? ` in Section ${section}` : ''}. Check the other section, or clear the search.
+                  {students.length === 0
+                    ? 'No students on this list yet.'
+                    : query
+                    ? 'No match. Try fewer letters, or the other section.'
+                    : `No students in Section ${section}. Try the other section.`}
+                </div>
+              )}
+              {visitorMode && !vDone && (
+                <button
+                  style={{ width: '100%', textAlign: 'center', fontFamily: 'inherit', cursor: 'pointer', background: '#FFFBEB', color: '#92400E', border: 'none', borderBottom: '1px solid #F1F5F9', padding: '13px 18px', fontWeight: 600, fontSize: '0.92rem' }}
+                  onClick={() => setShowVisitor(true)}
+                >Not on the list? Add your name ›</button>
+              )}
+              {vDone && (
+                <div style={{ padding: '14px 18px', background: '#F6FDF9', borderBottom: '1px solid #F1F5F9', color: '#065F46', fontWeight: 600 }}>
+                  ✓ {vDone.name} checked in as visitor · {vDone.at}
                 </div>
               )}
               {visible.map(st => {
@@ -278,6 +328,84 @@ export function CheckInPage() {
           </>
         )}
       </div>
+
+      {/* visitor confirmation — check the details before recording */}
+      {vConfirm && (
+        <div style={s.overlay} onClick={() => !saving && setVConfirm(null)}>
+          <div style={s.sheet} onClick={e => e.stopPropagation()}>
+            <div style={s.grabber} />
+            <p style={{ color: '#94A3B8', fontSize: '0.8rem', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 700 }}>
+              Checking in as
+            </p>
+            <p style={s.bigName}>{vConfirm.name}</p>
+            <p style={{ color: '#3F4C63', fontSize: '0.95rem', fontWeight: 500, margin: 0 }}>
+              {vConfirm.level} · Section {vConfirm.section} · {hm24To12(clock)}
+            </p>
+            <p style={{ color: '#64748B', fontSize: '0.85rem', margin: '10px 0 0' }}>
+              Visiting {info.title}
+            </p>
+            <button style={s.confirmBtn} onClick={submitVisitor} disabled={saving}>
+              {saving ? 'Checking you in…' : 'Yes, check me in'}
+            </button>
+            <button
+              style={s.notMeBtn}
+              onClick={() => { setVConfirm(null); setShowVisitor(true); }}
+              disabled={saving}
+            >Go back and change</button>
+          </div>
+        </div>
+      )}
+
+      {/* visitor sheet — walk-ins from a combined class */}
+      {showVisitor && (
+        <div style={s.overlay} onClick={() => !saving && setShowVisitor(false)}>
+          <div style={s.sheet} onClick={e => e.stopPropagation()}>
+            <div style={s.grabber} />
+            <p style={{ color: '#94A3B8', fontSize: '0.8rem', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 700 }}>
+              Visiting student
+            </p>
+            <p style={{ ...s.bigName, marginBottom: 14 }}>Add your name</p>
+            <input
+              style={{ ...s.search, marginBottom: 10 }}
+              placeholder="YOUR FULL NAME"
+              value={vName}
+              onChange={e => setVName(e.target.value.toUpperCase())}
+            />
+            <select
+              style={{ ...s.search, marginBottom: 10, appearance: 'none', cursor: 'pointer', color: vLevel ? '#0F172A' : '#94A3B8' }}
+              value={vLevel}
+              onChange={e => setVLevel(e.target.value)}
+            >
+              <option value="">Choose your level…</option>
+              {[1,2,3,4,5,6,7,8].map(n => <option key={n} value={`Level ${n}`}>Level {n}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              {['1','2'].map(n => (
+                <button
+                  key={n}
+                  style={{
+                    flex: 1, fontFamily: 'inherit', cursor: 'pointer', borderRadius: 14, padding: '13px',
+                    fontWeight: 600, fontSize: '1rem',
+                    background: vSection === n ? INDIGO : '#fff',
+                    color: vSection === n ? '#fff' : '#3F4C63',
+                    border: vSection === n ? 'none' : '1px solid #E2E8F0',
+                  }}
+                  onClick={() => setVSection(n)}
+                >Section {n}</button>
+              ))}
+            </div>
+            <button
+              style={{ ...s.confirmBtn, opacity: (vName.trim() && vLevel && vSection) ? 1 : 0.5 }}
+              onClick={() => {
+                setVConfirm({ name: vName.trim(), level: vLevel, section: vSection });
+                setShowVisitor(false);
+              }}
+              disabled={!vName.trim() || !vLevel || !vSection}
+            >Continue</button>
+            <button style={s.notMeBtn} onClick={() => setShowVisitor(false)} disabled={saving}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* confirm sheet — a wrong tap costs nothing */}
       {confirming && (
