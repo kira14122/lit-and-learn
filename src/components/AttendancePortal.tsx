@@ -472,7 +472,7 @@ export function AttendancePortal() {
         th { background:#EDEDED; text-align:left; height:26px; font-size:11pt; }
         td { height:28px; }
         td.n { width:32px; text-align:center; } td.sec { width:78px; text-align:center; } td.t { width:78px; text-align:center; } td.sg { width:150px; }
-        .foot { margin-top:34px; font-size:12pt; }
+        .foot { margin-top:120px; font-size:12pt; }
         .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }`;
 
     const classSheet = `
