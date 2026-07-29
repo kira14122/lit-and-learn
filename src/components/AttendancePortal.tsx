@@ -426,9 +426,13 @@ export function AttendancePortal() {
     // Only students who actually attended appear on the signed sheet —
     // an absent student must never have a signable row.
     const attended = students.filter(stu => sess.some(se => logs[`${stu.id}:${se}`]?.check_in));
-    const ordered = cls.hasSections
-      ? [...attended].sort((a, b) => a.section - b.section || a.name.localeCompare(b.name))
-      : attended;
+    // Printed in arrival order: the times then run in sequence down the
+    // page, and anyone written in by hand belongs naturally at the bottom.
+    const firstIn = (stu: Student) => {
+      const times = sess.map(se => logs[`${stu.id}:${se}`]?.check_in).filter(Boolean) as string[];
+      return times.length ? times.sort()[0] : '';
+    };
+    const ordered = [...attended].sort((a, b) => firstIn(a).localeCompare(firstIn(b)));
     const bodyHtml = ordered.map((stu, i) => {
       const times: string[] = [];
       sess.forEach(se => {
@@ -443,7 +447,12 @@ export function AttendancePortal() {
         + '<td class="sg"></td></tr>';
     }).join('');
     // --- visitor sheet body (their own page) ---
-    const vAttended = visitors.filter(v => sess.some(se => logs[`${v.id}:${se}`]?.check_in));
+    const vAttended = visitors
+      .filter(v => sess.some(se => logs[`${v.id}:${se}`]?.check_in))
+      .sort((a, b) => {
+        const t = (x: any) => (sess.map(se => logs[`${x.id}:${se}`]?.check_in).filter(Boolean) as string[]).sort()[0] || '';
+        return t(a).localeCompare(t(b));
+      });
     const vBody = vAttended.map((v, i) => {
       const times: string[] = [];
       sess.forEach(se => {

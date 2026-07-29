@@ -792,15 +792,17 @@ export const ActivityGenerator = () => {
     const across = layout.filter(p => p.direction === 'across').sort((a,b) => a.num - b.num);
     const down = layout.filter(p => p.direction === 'down').sort((a,b) => a.num - b.num);
 
-    // Fit the grid to the printable page width (~620px usable on A4 with the
-    // current margins), then clamp: never larger than 44px so small puzzles do
-    // not look cartoonish, never smaller than 22px so even a dense grid stays on
-    // one printed row. Most puzzles (10–18 columns) now land at 34–44px —
-    // clearly roomier than the old fixed 30px, while wide grids still fit.
-    const PRINT_GRID_WIDTH = 620;
-    const cellPx   = Math.max(22, Math.min(44, Math.floor(PRINT_GRID_WIDTH / maxC)));
+    // Fit the grid to the printable page width, then clamp. PRINT_GRID_WIDTH is
+    // now the worksheet's true inner width (~740px; was a too-conservative 620,
+    // which left ~130px of page unused) and the max cap is 60px (was 44). This
+    // lets puzzles fill the page instead of floating small: narrow puzzles reach
+    // ~13mm cells, and wide grids (forced by a long word like DISILLUSIONMENT)
+    // use the full width at ~9–10mm. The min floor keeps very dense grids on one
+    // printed row.
+    const PRINT_GRID_WIDTH = 740;
+    const cellPx   = Math.max(24, Math.min(60, Math.floor(PRINT_GRID_WIDTH / maxC)));
     const cellSize = `${cellPx}px`;
-    const fontSize = cellPx <= 26 ? '8px' : '10px';
+    const fontSize = cellPx <= 26 ? '8px' : cellPx <= 40 ? '10px' : '12px';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', alignItems: 'center' }}>
@@ -813,12 +815,12 @@ export const ActivityGenerator = () => {
         </div>
         <div style={{ display: 'flex', gap: '40px', width: '100%', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '4px' }}>Across</div>
-            {across.map(p => <div key={p.num} style={{ fontSize: '13px', marginBottom: '6px', lineHeight: 1.4 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+            <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Across</div>
+            {across.map(p => <div key={p.num} style={{ fontSize: '15px', marginBottom: '9px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '4px' }}>Down</div>
-            {down.map(p => <div key={p.num} style={{ fontSize: '13px', marginBottom: '6px', lineHeight: 1.4 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+            <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Down</div>
+            {down.map(p => <div key={p.num} style={{ fontSize: '15px', marginBottom: '9px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
           </div>
         </div>
       </div>
