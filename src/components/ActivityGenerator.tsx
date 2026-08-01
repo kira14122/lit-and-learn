@@ -792,35 +792,50 @@ export const ActivityGenerator = () => {
     const across = layout.filter(p => p.direction === 'across').sort((a,b) => a.num - b.num);
     const down = layout.filter(p => p.direction === 'down').sort((a,b) => a.num - b.num);
 
-    // Fit the grid to the printable page width, then clamp. PRINT_GRID_WIDTH is
-    // now the worksheet's true inner width (~740px; was a too-conservative 620,
-    // which left ~130px of page unused) and the max cap is 60px (was 44). This
-    // lets puzzles fill the page instead of floating small: narrow puzzles reach
-    // ~13mm cells, and wide grids (forced by a long word like DISILLUSIONMENT)
-    // use the full width at ~9–10mm. The min floor keeps very dense grids on one
-    // printed row.
-    const PRINT_GRID_WIDTH = 740;
-    const cellPx   = Math.max(24, Math.min(60, Math.floor(PRINT_GRID_WIDTH / maxC)));
+    // Fit the grid to the printable page so it can never spill onto a second
+    // page. Each cell is sized by whichever is tighter — the page WIDTH (per
+    // column) or the page HEIGHT (per row) — then clamped. Sizing by height too
+    // is essential: a tall, narrow puzzle (few columns, many rows) would
+    // otherwise get big cells from the width rule and run off the bottom of
+    // page 1. Because cellPx <= floor(H / maxR), the grid height (cellPx * maxR)
+    // is always <= PRINT_GRID_H, and likewise for width — so it always fits.
+    // PRINT_GRID_H leaves room for the name/date line, title and instructions
+    // that share page 1 above the grid.
+    const PRINT_GRID_W = 740;
+    const PRINT_GRID_H = 660;
+    const cellPx   = Math.max(20, Math.min(60, Math.floor(PRINT_GRID_W / maxC), Math.floor(PRINT_GRID_H / maxR)));
     const cellSize = `${cellPx}px`;
     const fontSize = cellPx <= 26 ? '8px' : cellPx <= 40 ? '10px' : '12px';
+    // Definitions auto-size to the largest font that still fits one page once
+    // Across/Down are stacked full-width. Fewer clues -> bigger font; busy
+    // puzzles step down so the block never spills onto a second definitions page.
+    const clueCount = across.length + down.length;
+    const clueF = clueCount <= 10 ? '21px' : clueCount <= 14 ? '19px' : clueCount <= 18 ? '17px' : clueCount <= 24 ? '15px' : '14px';
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', alignItems: 'center' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${maxC}, ${cellSize})`, gap: '0', margin: '0 auto' }}>
-          {grid.flatMap((row, ri) => row.map((cell, ci) => (
-            <div key={`${ri}-${ci}`} style={{ width: cellSize, height: cellSize, background: cell ? '#fff' : 'transparent', position: 'relative', border: cell ? '1.5px solid #000' : 'none' }}>
-              {cell?.num && <span style={{ position: 'absolute', top: '2px', left: '3px', fontSize: fontSize, fontWeight: 'bold', lineHeight: 1 }}>{cell.num}</span>}
-            </div>
-          )))}
-        </div>
-        <div style={{ display: 'flex', gap: '40px', width: '100%', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Across</div>
-            {across.map(p => <div key={p.num} style={{ fontSize: '15px', marginBottom: '9px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'center', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${maxC}, ${cellSize})`, gap: '0' }}>
+            {grid.flatMap((row, ri) => row.map((cell, ci) => (
+              <div key={`${ri}-${ci}`} style={{ width: cellSize, height: cellSize, background: cell ? '#fff' : 'transparent', position: 'relative', border: cell ? '1.5px solid #000' : 'none' }}>
+                {cell?.num && <span style={{ position: 'absolute', top: '2px', left: '3px', fontSize: fontSize, fontWeight: 'bold', lineHeight: 1 }}>{cell.num}</span>}
+              </div>
+            )))}
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Down</div>
-            {down.map(p => <div key={p.num} style={{ fontSize: '15px', marginBottom: '9px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+        </div>
+        {/* Definitions always start on their own page (pg-break = the same
+            forced-break class the answer key uses), so the grid owns page 1 and
+            Across/Down own page 2 — each page used to the full. The marginTop is
+            for on-screen preview only; browsers truncate a top margin that lands
+            at a forced page break, so it does not push the printed page down. */}
+        <div className="pg-break" style={{ marginTop: '32px', display: 'flex', flexDirection: 'column', gap: '22px', width: '100%' }}>
+          <div style={{ pageBreakInside: 'avoid' }}>
+            <div style={{ fontSize: clueF, fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Across</div>
+            {across.map(p => <div key={p.num} style={{ fontSize: clueF, marginBottom: '10px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
+          </div>
+          <div style={{ pageBreakInside: 'avoid' }}>
+            <div style={{ fontSize: clueF, fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '5px' }}>Down</div>
+            {down.map(p => <div key={p.num} style={{ fontSize: clueF, marginBottom: '10px', lineHeight: 1.5 }}><strong>{p.num}.</strong> <span {...ed}>{p.clue}</span></div>)}
           </div>
         </div>
       </div>
