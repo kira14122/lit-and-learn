@@ -35,7 +35,6 @@ const s: Record<string, any> = {
   title: { fontSize: '1.75rem', fontWeight: 600, letterSpacing: '-0.5px', margin: '0 0 4px' },
   sub: { color: '#3F4C63', fontSize: '0.95rem', margin: 0 },
 
-  sessRow: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' as const, margin: '16px 0 20px' },
   pill: (active: boolean) => ({ background: active ? INDIGO : '#fff', color: active ? '#fff' : '#3F4C63', border: active ? 'none' : '1px solid #E2E8F0', padding: '9px 20px', borderRadius: 9999, fontWeight: 600, fontSize: '0.92rem', cursor: 'pointer', fontFamily: 'inherit' }),
 
   filterRow: { display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' as const, marginBottom: 12 },

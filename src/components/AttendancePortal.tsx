@@ -140,6 +140,7 @@ export function AttendancePortal() {
   const [pendingClearVisitors, setPendingClearVisitors] = useState(false);
   const [editVisitor, setEditVisitor] = useState<{ id: string; name: string; level: string; section: string } | null>(null);
   const [pendingRemoveVisitor, setPendingRemoveVisitor] = useState<{ id: string; name: string } | null>(null);
+  const [promoteVisitor, setPromoteVisitor] = useState<{ id: string; name: string; section: string } | null>(null);
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
   const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
@@ -306,6 +307,25 @@ export function AttendancePortal() {
     await sb.from('attendance_students').delete().eq('id', id);
     load(true);
   };
+  // A walk-in who turns out to belong here becomes a normal student.
+  // Their id does not change, so today's check-in comes with them.
+  const confirmPromote = async () => {
+    if (!promoteVisitor) return;
+    const name = promoteVisitor.name.trim();
+    if (!name) return;
+    const sb = await authed();
+    await sb.from('attendance_students').update({
+      name,
+      class_type: cls.classType,
+      section: cls.hasSections ? Number(promoteVisitor.section) : 1,
+      visitor_level: null,
+      visitor_date: null,
+      visitor_class: null,
+    }).eq('id', promoteVisitor.id);
+    setPromoteVisitor(null);
+    load(true);
+  };
+
   const confirmRemoveVisitor = async () => {
     if (!pendingRemoveVisitor) return;
     await removeVisitor(pendingRemoveVisitor.id);
@@ -655,6 +675,14 @@ export function AttendancePortal() {
                       {v.name}
                       <span style={{ ...ui.sTag, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
                       <button
+                        style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem', color: TEAL, borderColor: TEAL }}
+                        title="This student belongs to my class — move them onto the roster"
+                        onClick={() => {
+                          const m = /Section\s*(\d)/.exec(v.visitor_level || '');
+                          setPromoteVisitor({ id: v.id, name: v.name, section: m ? m[1] : '1' });
+                        }}
+                      >Add to class</button>
+                      <button
                         style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem' }}
                         onClick={() => {
                           const m = /^(.*?)\s*·\s*Section\s*(\d)/.exec(v.visitor_level || '');
@@ -909,6 +937,51 @@ export function AttendancePortal() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button style={ui.secondary} onClick={() => setEditVisitor(null)}>Cancel</button>
               <button style={ui.primary} onClick={saveVisitor} disabled={!editVisitor.name.trim()}>Save changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promoteVisitor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPromoteVisitor(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(440px, 92vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Add to {cls.title}</h3>
+            <p style={{ margin: '0 0 18px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              They stop being a visitor and join your roster for the rest of the term.
+              Today's check-in stays with them.
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Name</label>
+            <input
+              style={{ ...ui.input, width: '100%', marginBottom: cls.hasSections ? 14 : 22 }}
+              value={promoteVisitor.name}
+              onChange={e => setPromoteVisitor({ ...promoteVisitor, name: e.target.value.toUpperCase() })}
+            />
+
+            {cls.hasSections && (
+              <>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Section in my class</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
+                  {['1', '2'].map(n => (
+                    <button key={n}
+                      style={{
+                        flex: 1, fontFamily: 'inherit', cursor: 'pointer', borderRadius: 12, padding: '11px',
+                        fontWeight: 600, fontSize: '0.95rem',
+                        background: promoteVisitor.section === n ? C.indigo : '#fff',
+                        color: promoteVisitor.section === n ? '#fff' : C.sub,
+                        border: promoteVisitor.section === n ? 'none' : `1px solid ${C.line}`,
+                      }}
+                      onClick={() => setPromoteVisitor({ ...promoteVisitor, section: n })}
+                    >Section {n}</button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setPromoteVisitor(null)}>Cancel</button>
+              <button style={{ ...ui.primary, background: TEAL }} onClick={confirmPromote} disabled={!promoteVisitor.name.trim()}>Add to class</button>
             </div>
           </div>
         </div>
