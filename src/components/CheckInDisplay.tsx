@@ -13,9 +13,12 @@ import { getSupabaseClient } from '../supabaseClient';
 type ClassType = 'weekday' | 'weekend';
 type Session = 'single' | 'day';
 
-interface Arrival { name: string; at: string; }
+interface Arrival { name: string; at: string; level?: string; }
 
 const INDIGO = '#4F46E5';
+// A classroom screen can't scroll, so show the most recent arrivals and
+// summarise the rest. Newest first, which is what students look for.
+const MAX_ROWS = 14;
 
 const s: Record<string, React.CSSProperties> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: '#0F172A', color: '#fff', minHeight: '100vh', padding: '24px 20px 40px', boxSizing: 'border-box' },
@@ -29,7 +32,7 @@ const s: Record<string, React.CSSProperties> = {
   refresh: { fontSize: '0.85rem', color: '#94A3B8', marginTop: 14 },
   listCard: { background: '#1E293B', borderRadius: 24, padding: '20px 22px' },
   listHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
-  row: { display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #334155', fontSize: '1rem' },
+  row: { display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid #334155', fontSize: '1.15rem' },
   warn: { background: '#FFFBEB', color: '#92400E', borderRadius: 14, padding: '14px 18px', fontSize: '0.95rem', marginBottom: 18 },
 };
 
@@ -56,6 +59,13 @@ export function CheckInDisplay() {
   const [tokenErr, setTokenErr] = useState<string>('');
   const [arrivals, setArrivals] = useState<Arrival[]>([]);
   const [total, setTotal] = useState(0);
+  const [visitorArrivals, setVisitorArrivals] = useState<Arrival[]>([]);
+  const [listTab, setListTab] = useState<'class' | 'visitors'>('class');
+
+  // If the visitors disappear, fall back to the class list.
+  useEffect(() => {
+    if (visitorArrivals.length === 0 && listTab === 'visitors') setListTab('class');
+  }, [visitorArrivals.length, listTab]);
   const [showList, setShowList] = useState(true);
 
   // Matches the getToken({template:'supabase'}) call used elsewhere in
@@ -85,26 +95,40 @@ export function CheckInDisplay() {
   const pullArrivals = useCallback(async () => {
     const sb = await authed();
     const today = new Date().toLocaleDateString('en-CA');
+
     const { data: roster } = await sb
       .from('attendance_students')
       .select('id, name')
       .eq('class_type', classType)
       .eq('active', true);
+
+    // Visiting students from a combined class, kept in their own list.
+    const { data: vRows } = await sb
+      .from('attendance_students')
+      .select('id, name, visitor_level, visitor_class')
+      .eq('class_type', 'visitor')
+      .eq('active', true)
+      .eq('visitor_date', today);
+    const visitorRoster = (vRows || []).filter((v: any) => (v.visitor_class || 'weekday') === classType);
+
     const { data: logs } = await sb
       .from('attendance_logs')
       .select('student_id, check_in')
       .eq('log_date', today)
       .eq('session', session);
 
-    const names = new Map<string, string>();
-    (roster || []).forEach((r: any) => names.set(r.id, r.name));
-    const list: Arrival[] = (logs || [])
-      .filter((l: any) => l.check_in && names.has(l.student_id))
-      .map((l: any) => ({ name: names.get(l.student_id)!, at: l.check_in }))
-      .sort((a, b) => (a.at < b.at ? 1 : -1));
+    const build = (people: any[]): Arrival[] => {
+      const names = new Map<string, { name: string; level?: string }>();
+      people.forEach((r: any) => names.set(r.id, { name: r.name, level: r.visitor_level }));
+      return (logs || [])
+        .filter((l: any) => l.check_in && names.has(l.student_id))
+        .map((l: any) => ({ name: names.get(l.student_id)!.name, level: names.get(l.student_id)!.level, at: l.check_in }))
+        .sort((a, b) => (a.at < b.at ? 1 : -1));
+    };
 
-    setArrivals(list);
+    setArrivals(build(roster || []));
     setTotal((roster || []).length);
+    setVisitorArrivals(build(visitorRoster));
   }, [authed, classType, session]);
 
   useEffect(() => {
@@ -148,19 +172,86 @@ export function CheckInDisplay() {
 
           {showList && (
             <div style={s.listCard}>
-              <div style={s.listHead}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Checked in</span>
-                <span style={{ color: '#94A3B8' }}>{arrivals.length} of {total}</span>
+              {/* tabs — readable from across the room */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                <button
+                  style={{
+                    fontFamily: 'inherit', cursor: 'pointer', borderRadius: 14,
+                    padding: '13px 22px', fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.1,
+                    background: listTab === 'class' ? '#4F46E5' : 'transparent',
+                    color: listTab === 'class' ? '#fff' : '#CBD5E1',
+                    border: listTab === 'class' ? 'none' : '1px solid #475569',
+                  }}
+                  onClick={() => setListTab('class')}
+                >
+                  Class
+                  <span style={{ marginLeft: 10, fontWeight: 500, opacity: 0.85, fontSize: '1.05rem' }}>
+                    {arrivals.length}/{total}
+                  </span>
+                </button>
+
+                {visitorArrivals.length > 0 && (
+                  <button
+                    style={{
+                      fontFamily: 'inherit', cursor: 'pointer', borderRadius: 14,
+                      padding: '13px 22px', fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.1,
+                      background: listTab === 'visitors' ? '#B45309' : 'transparent',
+                      color: listTab === 'visitors' ? '#fff' : '#CBD5E1',
+                      border: listTab === 'visitors' ? 'none' : '1px solid #475569',
+                    }}
+                    onClick={() => setListTab('visitors')}
+                  >
+                    Visiting
+                    <span style={{ marginLeft: 10, fontWeight: 500, opacity: 0.85, fontSize: '1.05rem' }}>
+                      {visitorArrivals.length}
+                    </span>
+                  </button>
+                )}
               </div>
-              {arrivals.length === 0 ? (
-                <p style={{ color: '#94A3B8', margin: '10px 0 0' }}>Nobody yet.</p>
+
+              {/* the active list */}
+              {listTab === 'class' ? (
+                arrivals.length === 0 ? (
+                  <p style={{ color: '#94A3B8', margin: '10px 0 0' }}>Nobody yet.</p>
+                ) : (
+                  <>
+                    {arrivals.slice(0, MAX_ROWS).map((a, i) => (
+                      <div key={i} style={s.row}>
+                        <span>{a.name}</span>
+                        <span style={{ color: '#94A3B8' }}>{toHM(a.at)}</span>
+                      </div>
+                    ))}
+                    {arrivals.length > MAX_ROWS && (
+                      <div style={{ ...s.row, borderBottom: 'none', color: '#64748B', fontSize: '0.92rem' }}>
+                        <span>+ {arrivals.length - MAX_ROWS} more checked in earlier</span>
+                        <span />
+                      </div>
+                    )}
+                  </>
+                )
               ) : (
-                arrivals.map((a, i) => (
-                  <div key={i} style={s.row}>
-                    <span>{a.name}</span>
-                    <span style={{ color: '#94A3B8' }}>{toHM(a.at)}</span>
-                  </div>
-                ))
+                <>
+                  {visitorArrivals.slice(0, MAX_ROWS).map((a, i) => (
+                    <div key={i} style={s.row}>
+                      <span>
+                        {a.name}
+                        {a.level && (
+                          <span style={{
+                            marginLeft: 8, background: '#422006', color: '#FCD34D',
+                            borderRadius: 6, padding: '2px 7px', fontSize: '0.72rem', fontWeight: 700,
+                          }}>{a.level.replace(' · ', ' ')}</span>
+                        )}
+                      </span>
+                      <span style={{ color: '#94A3B8' }}>{toHM(a.at)}</span>
+                    </div>
+                  ))}
+                  {visitorArrivals.length > MAX_ROWS && (
+                    <div style={{ ...s.row, borderBottom: 'none', color: '#64748B', fontSize: '0.92rem' }}>
+                      <span>+ {visitorArrivals.length - MAX_ROWS} more</span>
+                      <span />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

@@ -138,6 +138,8 @@ export function AttendancePortal() {
   const [pendingClear, setPendingClear] = useState<{ log: Log; name: string; at: string } | null>(null);
   const [pendingIn, setPendingIn] = useState<{ studentId: string; name: string; session: string } | null>(null);
   const [pendingClearVisitors, setPendingClearVisitors] = useState(false);
+  const [editVisitor, setEditVisitor] = useState<{ id: string; name: string; level: string; section: string } | null>(null);
+  const [pendingRemoveVisitor, setPendingRemoveVisitor] = useState<{ id: string; name: string } | null>(null);
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
   const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
@@ -304,6 +306,25 @@ export function AttendancePortal() {
     await sb.from('attendance_students').delete().eq('id', id);
     load(true);
   };
+  const confirmRemoveVisitor = async () => {
+    if (!pendingRemoveVisitor) return;
+    await removeVisitor(pendingRemoveVisitor.id);
+    setPendingRemoveVisitor(null);
+  };
+  const saveVisitor = async () => {
+    if (!editVisitor) return;
+    const name = editVisitor.name.trim();
+    if (!name) return;
+    const sb = await authed();
+    await sb.from('attendance_students').update({
+      name,
+      visitor_level: `${editVisitor.level} · Section ${editVisitor.section}`,
+      section: Number(editVisitor.section),
+    }).eq('id', editVisitor.id);
+    setEditVisitor(null);
+    load(true);
+  };
+
   const removeAllVisitors = async () => {
     const sb = await authed();
     await Promise.all(visitors.map(v => sb.from('attendance_students').delete().eq('id', v.id)));
@@ -462,7 +483,7 @@ export function AttendancePortal() {
         times.push(cin, cout);
       });
       return '<tr>'
-        + `<td class="n">${i + 1}</td><td class="nm">${v.name.toUpperCase()}</td><td class="sec">${v.visitor_level || '—'}</td>`
+        + `<td class="n">${i + 1}</td><td class="nm">${v.name.toUpperCase()}</td><td class="sec">${(/Section\s*(\d)/.exec(v.visitor_level || '') || [, '—'])[1]}</td>`
         + times.map(t => `<td class="t">${t}</td>`).join('')
         + '<td class="sg"></td></tr>';
     }).join('');
@@ -498,10 +519,10 @@ export function AttendancePortal() {
     const visitorSheet = vAttended.length ? `
       <div class="sheet">
         <div class="hdr">
-          <div><div class="term">${term} — Visiting students</div><div>Hosted in: <span class="fld">Level ${level} (${cls.tag})</span></div></div>
+          <div><div class="term">${term}</div><div>Level: <span class="fld">&nbsp;</span></div></div>
           <div><div>Date: <span class="fld">${pretty}</span></div><div>Instructor: <span class="fld">${instructor}</span></div></div>
         </div>
-        <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:78px">Their level</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
+        <table><thead><tr><th style="width:30px"></th><th>Student Name</th><th style="width:70px">Section</th>${cols.map(c => `<th style="width:78px">${c}</th>`).join('')}<th style="width:150px">Signature</th></tr></thead>
         <tbody>${vBody}</tbody></table>
         <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>
       </div>` : '';
@@ -630,9 +651,25 @@ export function AttendancePortal() {
                 </div>
                 {visitors.map(v => (
                   <div key={v.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10, background: '#FFFEF9' }}>
-                    <span style={{ fontWeight: 600 }}>
+                    <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {v.name}
-                      <span style={{ ...ui.sTag, marginLeft: 8, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
+                      <span style={{ ...ui.sTag, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
+                      <button
+                        style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          const m = /^(.*?)\s*·\s*Section\s*(\d)/.exec(v.visitor_level || '');
+                          setEditVisitor({
+                            id: v.id,
+                            name: v.name,
+                            level: m ? m[1].trim() : 'Level 1',
+                            section: m ? m[2] : '1',
+                          });
+                        }}
+                      >Edit</button>
+                      <button
+                        style={{ ...ui.tDanger, height: 24, padding: '0 8px', fontSize: '0.75rem' }}
+                        onClick={() => setPendingRemoveVisitor({ id: v.id, name: v.name })}
+                      >Remove</button>
                     </span>
                     {sess.map(se => {
                       const l = logs[`${v.id}:${se}`];
@@ -831,6 +868,68 @@ export function AttendancePortal() {
       )}
 
       {/* ---------- dialogs ---------- */}
+      {editVisitor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setEditVisitor(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(440px, 92vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.25rem', fontWeight: 600 }}>Edit visiting student</h3>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Name</label>
+            <input
+              style={{ ...ui.input, width: '100%', marginBottom: 14 }}
+              value={editVisitor.name}
+              onChange={e => setEditVisitor({ ...editVisitor, name: e.target.value.toUpperCase() })}
+            />
+
+            <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Their level</label>
+            <select
+              style={{ ...ui.input, width: '100%', marginBottom: 14, cursor: 'pointer' }}
+              value={editVisitor.level}
+              onChange={e => setEditVisitor({ ...editVisitor, level: e.target.value })}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={`Level ${n}`}>Level {n}</option>)}
+            </select>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Their section</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
+              {['1', '2'].map(n => (
+                <button key={n}
+                  style={{
+                    flex: 1, fontFamily: 'inherit', cursor: 'pointer', borderRadius: 12, padding: '11px',
+                    fontWeight: 600, fontSize: '0.95rem',
+                    background: editVisitor.section === n ? C.indigo : '#fff',
+                    color: editVisitor.section === n ? '#fff' : C.sub,
+                    border: editVisitor.section === n ? 'none' : `1px solid ${C.line}`,
+                  }}
+                  onClick={() => setEditVisitor({ ...editVisitor, section: n })}
+                >Section {n}</button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setEditVisitor(null)}>Cancel</button>
+              <button style={ui.primary} onClick={saveVisitor} disabled={!editVisitor.name.trim()}>Save changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingRemoveVisitor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => setPendingRemoveVisitor(null)}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(430px, 92vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.25rem', fontWeight: 600 }}>Remove {pendingRemoveVisitor.name}?</h3>
+            <p style={{ margin: '0 0 22px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              This visiting student and their check-in are deleted. Your own class is untouched.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => setPendingRemoveVisitor(null)}>Cancel</button>
+              <button style={{ ...ui.primary, background: C.red }} onClick={confirmRemoveVisitor}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingClearVisitors && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
           onClick={() => setPendingClearVisitors(false)}>
