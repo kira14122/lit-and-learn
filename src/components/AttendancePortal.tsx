@@ -419,7 +419,7 @@ export function AttendancePortal() {
 
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
-      const daily: { day: string; marks: Mark[]; in1: string; out1: string }[] = [];
+      const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean }[] = [];
       heldDays.forEach(day => {
         const marks = sess.map(se => {
           const l = byKey.get(`${stu.id}:${day}:${se}`);
@@ -427,7 +427,17 @@ export function AttendancePortal() {
         });
         marks.forEach(m => { if (m === 'P') P++; else if (m === 'L') L++; else A++; });
         const first = byKey.get(`${stu.id}:${day}:${sess[0]}`);
-        daily.push({ day, marks, in1: toHM(first?.check_in || null), out1: toHM(first?.check_out || null) });
+        // No recorded departure means "stayed to the end" — the same
+        // assumption the mark and the printed sheet use, so show it here
+        // too rather than leaving the line looking incomplete.
+        const realOut = toHM(first?.check_out || null);
+        const assumed = Boolean(first?.check_in) && !realOut;
+        daily.push({
+          day, marks,
+          in1: toHM(first?.check_in || null),
+          out1: realOut || (assumed ? hm24To12(sessionEndOf(schedule, sess[0])) : ''),
+          outAssumed: assumed,
+        });
       });
       const total = P + L + A;
       const rate = total ? Math.round(((P + 0.5 * L) / total) * 100) : 0;
@@ -881,7 +891,12 @@ export function AttendancePortal() {
                             <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', fontSize: '0.88rem' }}>
                               <span style={{ ...ui.mono, minWidth: 150 }}>{new Date(`${d.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                               {d.marks.map((m, i) => <span key={i} style={ui.chip(m)}>{m}</span>)}
-                              {d.in1 && <span style={ui.mono}>in {d.in1}{d.out1 ? ` · out ${d.out1}` : ''}</span>}
+                              {d.in1 && (
+                                <span style={ui.mono}>
+                                  in {d.in1}
+                                  {d.out1 && <>{' · out '}{d.out1}</>}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
