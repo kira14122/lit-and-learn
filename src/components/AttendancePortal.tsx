@@ -472,7 +472,7 @@ export function AttendancePortal() {
 
   // ---- export (unchanged school sheet) ----
   const printSheet = () => {
-    const pretty = new Date(`${date}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const pretty = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
     const cols = ['Time in', 'Time out'];
     // Only students who actually attended appear on the signed sheet —
     // an absent student must never have a signable row.

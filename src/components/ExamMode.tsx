@@ -113,6 +113,13 @@ export const ExamMode: React.FC = () => {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // Print sign-in sheet dialog
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printExam, setPrintExam] = useState<'First' | 'Second' | 'Third' | 'Final'>('First');
+  const [printTerm, setPrintTerm] = useState('');
+  const [printClassLevel, setPrintClassLevel] = useState('');
+  const [printSession, setPrintSession] = useState<'AM' | 'PM'>('AM');
+
   // ── Scoring panel ───────────────────────────────────────────────────────────
   const [scoringId, setScoringId] = useState<string | null>(null);
   const [sFluency, setSFluency] = useState<number | ''>('');
@@ -529,6 +536,75 @@ export const ExamMode: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // ── Printable sign-in sheet (Times New Roman 12pt, official school format) ────
+  const printSignInSheet = () => {
+    if (!queue) return;
+    const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+    const examDate = queue.starts_at ? new Date(queue.starts_at) : new Date();
+    const dateStr = examDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const classLevel = printClassLevel.trim() ? esc(printClassLevel.trim()) : '<span style="display:inline-block;min-width:70pt;border-bottom:1px solid #000;">&nbsp;</span>';
+
+    // Checked-in students fill the top rows; the sheet is padded with blank
+    // numbered lines down to the class size so it reads like the paper original.
+    const totalRows = Math.max(ordered.length, rosterCount, 1);
+    let rowsHtml = '';
+    for (let i = 0; i < totalRows; i++) {
+      const e = ordered[i];
+      const name = e ? esc(e.name) : '';
+      const result = e && e.scored_at ? `${entryTotal(e)}` : '';
+      rowsHtml += `<tr><td class="c">${i + 1}</td><td>${name}</td><td></td><td class="c">${result}</td></tr>`;
+    }
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(printExam)} Test — ${esc(queue.title)}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #000; margin: 0; }
+  .hdr { margin-bottom: 10pt; }
+  .hrow { position: relative; display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4pt; }
+  .hrow2 { display: flex; justify-content: space-between; align-items: baseline; }
+  .hrow .hc { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-weight: bold; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid th, table.grid td { border: 1px solid #000; padding: 5pt 8pt; font-size: 12pt; }
+  table.grid th { text-align: left; font-weight: bold; }
+  table.grid td.c, table.grid th.c { text-align: center; }
+  table.grid .num { width: 6%; } table.grid .name { width: 42%; } table.grid .sig { width: 32%; } table.grid .out { width: 20%; }
+  table.grid tbody tr { height: 26pt; }
+  .foot { margin-top: 20pt; }
+  .noprint { margin: 8pt 0 14pt; text-align: center; }
+  .noprint button { font-family: inherit; font-size: 12pt; padding: 7pt 20pt; cursor: pointer; }
+  @media print { .noprint { display: none; } }
+</style></head>
+<body>
+  <div class="noprint"><button onclick="window.print()">Print this sheet</button></div>
+  <div class="hdr">
+    <div class="hrow">
+      <span><strong>${printTerm.trim() ? esc(printTerm.trim()) : '&nbsp;'}</strong></span>
+      <span class="hc">${esc(printExam)} Test</span>
+      <span><strong>Date:</strong> ${esc(dateStr)}</span>
+    </div>
+    <div class="hrow2">
+      <span><strong>Class Level:</strong> ${classLevel} ( ${printSession} )</span>
+      <span><strong>Instructor:</strong> ${esc(queue.examiner_name || '—')}</span>
+    </div>
+  </div>
+  <table class="grid">
+    <thead><tr>
+      <th class="c num">#</th><th class="name">Student Name</th><th class="sig">Signature</th><th class="c out">Result</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="foot"><strong>Instructor Signature:</strong> ______________________________________</div>
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to open the printable sheet.', 'error'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
   // ── Delete exam ─────────────────────────────────────────────────────────────
   const confirmDelete = async () => {
     if (!deleteId) return;
@@ -572,6 +648,46 @@ export const ExamMode: React.FC = () => {
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={() => setDeleteId(null)} style={{ flex: 1, padding: '12px', background: '#F1F5F9', color: '#475569', borderRadius: '12px', fontWeight: 600, border: 'none', cursor: 'pointer' }}>Cancel</button>
               <button onClick={confirmDelete} style={{ flex: 1, padding: '12px', background: '#EF4444', color: '#fff', borderRadius: '12px', fontWeight: 600, border: 'none', cursor: 'pointer' }}>Yes, delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print sign-in sheet dialog */}
+      {printOpen && queue && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ background: '#fff', borderRadius: '24px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#0F172A', fontSize: '1.4rem' }}>Print sign-in sheet</h3>
+            <p style={{ color: '#64748B', margin: '0 0 20px', fontSize: '0.95rem', lineHeight: 1.5 }}>Lists everyone who checked in, in scan order, with a blank signature column. Scores fill in automatically for anyone already graded; blank numbered lines are added down to your class size.</p>
+
+            <label style={label}>Exam</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', flexWrap: 'wrap' }}>
+              {(['First', 'Second', 'Third', 'Final'] as const).map(x => (
+                <button key={x} onClick={() => setPrintExam(x)} style={{ flex: '1 1 auto', padding: '10px 14px', borderRadius: '10px', border: printExam === x ? `2px solid ${ROSE}` : '1px solid #CBD5E1', background: printExam === x ? '#FFE4E6' : '#fff', color: printExam === x ? ROSE : '#475569', fontWeight: 700, cursor: 'pointer' }}>{x}</button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '18px' }}>
+              <div style={{ flex: 2 }}>
+                <label style={label}>Class level</label>
+                <input value={printClassLevel} onChange={e => setPrintClassLevel(e.target.value)} placeholder="e.g. 4 (2)" style={input} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={label}>Session</label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {(['AM', 'PM'] as const).map(s => (
+                    <button key={s} onClick={() => setPrintSession(s)} style={{ flex: 1, padding: '13px 0', borderRadius: '10px', border: printSession === s ? `2px solid ${ROSE}` : '1px solid #CBD5E1', background: printSession === s ? '#FFE4E6' : '#fff', color: printSession === s ? ROSE : '#475569', fontWeight: 700, cursor: 'pointer' }}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <label style={label}>Term <span style={{ color: '#94A3B8', fontWeight: 400 }}>(optional)</span></label>
+            <input value={printTerm} onChange={e => setPrintTerm(e.target.value)} placeholder="e.g. Summer Term 2026" style={{ ...input, marginBottom: '22px' }} />
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => setPrintOpen(false)} style={{ flex: 1, padding: '12px', background: '#F1F5F9', color: '#475569', borderRadius: '12px', fontWeight: 600, border: 'none', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { printSignInSheet(); setPrintOpen(false); }} style={{ flex: 1, padding: '12px', background: ROSE, color: '#fff', borderRadius: '12px', fontWeight: 700, border: 'none', cursor: 'pointer' }}>Open printable sheet</button>
             </div>
           </div>
         </div>
@@ -811,6 +927,8 @@ export const ExamMode: React.FC = () => {
                 </button>
                 <button onClick={exportLog} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#475569', fontWeight: 700, cursor: 'pointer' }}><IconDownload /> Export order</button>
               </div>
+
+              <button onClick={() => setPrintOpen(true)} style={{ width: '100%', marginTop: '12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#fff', color: '#0F172A', fontWeight: 700, cursor: 'pointer' }}><IconClipboard /> Print sign-in sheet</button>
 
               {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '16px' }}>
