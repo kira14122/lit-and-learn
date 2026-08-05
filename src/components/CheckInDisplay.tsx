@@ -20,7 +20,8 @@ const INDIGO = '#4F46E5';
 // summarise the rest. Newest first, which is what students look for.
 const MAX_ROWS = 14;
 
-const s: Record<string, React.CSSProperties> = {
+// Values are style objects, plus a few style *builders* (e.g. pill(active)).
+const s: Record<string, any> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: '#0F172A', color: '#fff', minHeight: '100vh', padding: '24px 20px 40px', boxSizing: 'border-box' },
   wrap: { maxWidth: 1150, margin: '0 auto' },
   top: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 },

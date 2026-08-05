@@ -20,8 +20,8 @@ const CLASSES: ClassDef[] = [
   { id: 'wk', title: 'Level 4 · Weekend', classType: 'weekend', hasSections: false, tag: 'WKD' },
 ];
 
-interface Student { id: string; name: string; section: number; }
-interface Log { id: string; student_id: string; session: string; check_in: string | null; check_out: string | null; }
+interface Student { id: string; name: string; section: number; joined?: string; }
+interface Log { id: string; student_id: string; session: string; check_in: string | null; check_out: string | null; na?: boolean; }
 
 const C = {
   ink: '#0F172A', sub: '#64748B', faint: '#94A3B8',
@@ -128,6 +128,7 @@ export function AttendancePortal() {
   const [newName, setNewName] = useState('');
   const [newSection, setNewSection] = useState<1 | 2>(1);
   const [showBulk, setShowBulk] = useState(false);
+  const [query, setQuery] = useState('');
   const [bulkText, setBulkText] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -165,18 +166,21 @@ export function AttendancePortal() {
     const sb = await authed();
     const { data: roster } = await sb
       .from('attendance_students')
-      .select('id, name, section, class_type')
+      .select('id, name, section, class_type, created_at')
       .eq('active', true)
       .order('name', { ascending: true });
     const byClass: Record<string, Student[]> = {};
     CLASSES.forEach(c => {
       byClass[c.id] = (roster || [])
         .filter((r: any) => r.class_type === c.classType)
-        .map((r: any) => ({ id: r.id, name: r.name, section: r.section ?? 1 }));
+        .map((r: any) => ({
+          id: r.id, name: r.name, section: r.section ?? 1,
+          joined: r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA') : undefined,
+        }));
     });
     const { data: logRows } = await sb
       .from('attendance_logs')
-      .select('id, student_id, session, check_in, check_out')
+      .select('id, student_id, session, check_in, check_out, na')
       .eq('log_date', date);
     const map: Record<string, Log> = {};
     (logRows || []).forEach((l: any) => { map[`${l.student_id}:${l.session}`] = l; });
@@ -210,10 +214,13 @@ export function AttendancePortal() {
     return () => clearInterval(t);
   }, [date, load]);
 
-  const students = allStudents[classId] || [];
+  const allForClass = allStudents[classId] || [];
+  const students = query.trim()
+    ? allForClass.filter(s0 => s0.name.toLowerCase().includes(query.trim().toLowerCase()))
+    : allForClass;
   const sess = sessionsFor(cls);
   const primarySession = cls.classType === 'weekday' ? 'single' : 'day';
-  const inCount = students.filter(s => logs[`${s.id}:${primarySession}`]?.check_in).length;
+  const inCount = allForClass.filter(s => logs[`${s.id}:${primarySession}`]?.check_in).length;
 
   // ---- actions ----
   const addStudent = async () => {
@@ -275,7 +282,7 @@ export function AttendancePortal() {
     const everyone = [...students, ...visitors];
     const targets = everyone.flatMap(stu => sess
       .map(se => ({ se, l: logs[`${stu.id}:${se}`] }))
-      .filter(x => x.l && x.l.check_in && !x.l.check_out));
+      .filter(x => x.l && x.l.check_in && !x.l.check_out && !x.l.na));
     await Promise.all(targets.map(({ se, l }) =>
       sb.from('attendance_logs').update({ check_out: hmToIso(date, sessionEndOf(schedule, se)) }).eq('id', l!.id)));
     load(true);
@@ -288,6 +295,16 @@ export function AttendancePortal() {
     const sb = await authed();
     await sb.from('attendance_logs').delete().eq('id', pendingClear.log.id);
     setPendingClear(null);
+    load(true);
+  };
+
+  // Mark a day as not applicable to this student — they had not joined
+  // yet, or the office excused it. It leaves their totals untouched.
+  const markNotApplicable = async (studentId: string, session: string) => {
+    const sb = await authed();
+    await sb.from('attendance_logs').insert({
+      student_id: studentId, session, log_date: date, check_in: null, na: true,
+    });
     load(true);
   };
 
@@ -395,7 +412,7 @@ export function AttendancePortal() {
     const sb = await authed();
     const { data } = await sb
       .from('attendance_logs')
-      .select('id, student_id, session, check_in, check_out, log_date')
+      .select('id, student_id, session, check_in, check_out, log_date, na')
       .gte('log_date', rStart)
       .lte('log_date', rEnd)
       .order('log_date', { ascending: true });
@@ -417,10 +434,29 @@ export function AttendancePortal() {
     const scoreOf = (se: string, ci: string | null, co: string | null): Mark =>
       scoreSession(se, ci, co, schedule);
 
+    // Earliest day this student can be judged on: the day they were added,
+    // or their first recorded check-in if that is earlier (back-filled days).
+    const firstSeen = (stu: Student): string => {
+      const theirs = classLogs
+        .filter((l: any) => l.student_id === stu.id && l.check_in)
+        .map((l: any) => l.log_date as string)
+        .sort();
+      const joined = stu.joined;
+      if (theirs.length && joined) return theirs[0] < joined ? theirs[0] : joined;
+      return theirs[0] || joined || '';
+    };
+
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
+      const start = firstSeen(stu);
+      const myDays = start ? heldDays.filter(d => d >= start) : heldDays;
       const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean }[] = [];
-      heldDays.forEach(day => {
+      myDays.forEach(day => {
+        // A day marked N/A does not apply to this student: no mark, and it
+        // is left out of both the totals and the attendance rate.
+        const naDay = sess.every(se => byKey.get(`${stu.id}:${day}:${se}`)?.na);
+        if (naDay) return;
+
         const marks = sess.map(se => {
           const l = byKey.get(`${stu.id}:${day}:${se}`);
           return scoreOf(se, l?.check_in ? toHM24(l.check_in) : null, l?.check_out ? toHM24(l.check_out) : null);
@@ -476,7 +512,11 @@ export function AttendancePortal() {
     const cols = ['Time in', 'Time out'];
     // Only students who actually attended appear on the signed sheet —
     // an absent student must never have a signable row.
-    const attended = students.filter(stu => sess.some(se => logs[`${stu.id}:${se}`]?.check_in));
+    const attended = students.filter(stu =>
+      sess.some(se => {
+        const l = logs[`${stu.id}:${se}`];
+        return l?.check_in && !l.na;
+      }));
     // Printed in arrival order: the times then run in sequence down the
     // page, and anyone written in by hand belongs naturally at the bottom.
     const firstIn = (stu: Student) => {
@@ -567,6 +607,22 @@ export function AttendancePortal() {
 
   const Session = ({ stu, se }: { stu: Student; se: string }) => {
     const l = logs[`${stu.id}:${se}`];
+
+    // Not applicable: shown plainly, counted nowhere.
+    if (l?.na) {
+      return (
+        <>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            minWidth: 30, height: 30, borderRadius: 9, background: C.bgSoft,
+            border: `1px solid ${C.line}`, color: C.faint, fontWeight: 700, fontSize: '0.72rem',
+          }}>N/A</span>
+          <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not counted</span>
+          <button style={ui.tBtn} onClick={() => setPendingClear({ log: l, name: stu.name, at: 'N/A' })}>Undo</button>
+        </>
+      );
+    }
+
     const mark = markFor(stu.id, se);
     return (
       <>
@@ -591,8 +647,13 @@ export function AttendancePortal() {
           </>
         ) : (
           <>
-            <span style={{ gridColumn: 'span 2' }}>
+            <span style={{ gridColumn: 'span 2', display: 'inline-flex', gap: 8 }}>
               <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in now</button>
+              <button
+                style={{ ...ui.tBtn, color: C.faint }}
+                title="Not applicable — this day should not count for this student (joined later, excused…)"
+                onClick={() => markNotApplicable(stu.id, se)}
+              >N/A</button>
             </span>
             <span />
           </>
@@ -604,7 +665,7 @@ export function AttendancePortal() {
   const cols = 'minmax(0,1fr) 56px 118px 118px 88px';
   const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 168px' : 'minmax(0,1fr) 168px';
   const sectionCounts = cls.hasSections
-    ? `${students.filter(s => s.section === 1).length} in section 1, ${students.filter(s => s.section === 2).length} in section 2`
+    ? `${allForClass.filter(s => s.section === 1).length} in section 1, ${allForClass.filter(s => s.section === 2).length} in section 2`
     : '';
 
   return (
@@ -620,11 +681,28 @@ export function AttendancePortal() {
             </button>
           </div>
         </div>
-        <button
-          style={showSettings ? { ...ui.iconBtn, background: C.indigoSoft, color: C.indigo, borderColor: C.indigo } : ui.iconBtn}
-          onClick={() => setShowSettings(v => !v)}
-          title="Settings"
-        >⚙</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative' }}>
+            <input
+              style={{ ...ui.input, height: 38, width: 210, paddingRight: query ? 30 : 14 }}
+              placeholder="Search students…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: C.faint, fontSize: '1rem', fontFamily: 'inherit', padding: 4 }}
+                onClick={() => setQuery('')}
+                title="Clear search"
+              >×</button>
+            )}
+          </div>
+          <button
+            style={showSettings ? { ...ui.iconBtn, background: C.indigoSoft, color: C.indigo, borderColor: C.indigo } : ui.iconBtn}
+            onClick={() => setShowSettings(v => !v)}
+            title="Settings"
+          >⚙</button>
+        </div>
       </div>
 
       {/* ---------- tabs ---------- */}
@@ -641,7 +719,8 @@ export function AttendancePortal() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <input type="date" style={{ ...ui.input, height: 36 }} value={date} onChange={e => setDate(e.target.value)} />
               <span style={{ fontSize: '0.9rem', color: C.sub }}>
-                {inCount} of {students.length} checked in{date === todayLocal() ? ' · updates live' : ''}
+                {inCount} of {allForClass.length} checked in{date === todayLocal() ? ' · updates live' : ''}
+                {query.trim() && <> · showing {students.length} match{students.length === 1 ? '' : 'es'}</>}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -662,7 +741,9 @@ export function AttendancePortal() {
               <div style={{ padding: 20, color: C.faint }}>Loading…</div>
             ) : students.length === 0 && visitors.length === 0 ? (
               <div style={{ padding: '26px 20px', color: C.faint }}>
-                No students in this class yet. Open <strong style={{ color: C.sub }}>Manage</strong> to add them.
+                {query.trim()
+                  ? <>No student matches “{query.trim()}”.</>
+                  : <>No students in this class yet. Open <strong style={{ color: C.sub }}>Manage</strong> to add them.</>}
               </div>
             ) : students.map(stu => (
               <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10 }}>
@@ -685,7 +766,7 @@ export function AttendancePortal() {
                       {v.name}
                       <span style={{ ...ui.sTag, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
                       <button
-                        style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem', color: TEAL, borderColor: TEAL }}
+                        style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem', color: C.green, borderColor: C.green }}
                         title="This student belongs to my class — move them onto the roster"
                         onClick={() => {
                           const m = /Section\s*(\d)/.exec(v.visitor_level || '');
@@ -781,14 +862,18 @@ export function AttendancePortal() {
           </div>
 
           <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: C.sub }}>
-            {students.length} student{students.length === 1 ? '' : 's'}{sectionCounts ? ` · ${sectionCounts}` : ''}
+            {query.trim()
+              ? `${students.length} of ${allForClass.length} students match "${query.trim()}"`
+              : `${students.length} student${students.length === 1 ? '' : 's'}${sectionCounts ? ` · ${sectionCounts}` : ''}`}
           </p>
 
           <div style={ui.table}>
             {loading ? (
               <div style={{ padding: 20, color: C.faint }}>Loading…</div>
             ) : students.length === 0 ? (
-              <div style={{ padding: '26px 20px', color: C.faint }}>No students yet — add them above.</div>
+              <div style={{ padding: '26px 20px', color: C.faint }}>
+                {query.trim() ? `No student matches “${query.trim()}”.` : 'No students yet — add them above.'}
+              </div>
             ) : students.map(stu => {
               const editing = editingId === stu.id;
               return (
@@ -996,7 +1081,7 @@ export function AttendancePortal() {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button style={ui.secondary} onClick={() => setPromoteVisitor(null)}>Cancel</button>
-              <button style={{ ...ui.primary, background: TEAL }} onClick={confirmPromote} disabled={!promoteVisitor.name.trim()}>Add to class</button>
+              <button style={{ ...ui.primary, background: C.green }} onClick={confirmPromote} disabled={!promoteVisitor.name.trim()}>Add to class</button>
             </div>
           </div>
         </div>
