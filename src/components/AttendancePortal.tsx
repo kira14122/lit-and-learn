@@ -1202,7 +1202,19 @@ export function AttendancePortal() {
 
       {/* ---------- settings ---------- */}
       {showSettings && (
-        <div style={{ background: C.bgSoft, border: `1px solid ${C.line}`, borderRadius: 16, padding: '18px 20px', marginTop: 22, boxSizing: 'border-box', maxWidth: '100%', overflowX: 'hidden' }}>
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 9998, padding: '40px 16px', overflowY: 'auto' }}
+          onClick={() => setShowSettings(false)}
+        >
+        <div
+          style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 18, padding: '22px 24px', boxSizing: 'border-box', width: 'min(720px, 100%)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${C.lineSoft}` }}>
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>Settings</h3>
+            <button style={ui.iconBtn} onClick={() => setShowSettings(false)} title="Close">×</button>
+          </div>
+
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '0 0 10px' }}>Printed sheet header</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input style={{ ...ui.input, width: 170 }} value={term} onChange={e => setTerm(e.target.value)} placeholder="Term" />
@@ -1320,6 +1332,11 @@ export function AttendancePortal() {
             <input type="checkbox" checked={codeOn} onChange={e => toggleCode(e.target.checked)} />
             Only accept check-ins scanned from the classroom screen
           </label>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22, paddingTop: 16, borderTop: `1px solid ${C.lineSoft}` }}>
+            <button style={ui.primary} onClick={() => setShowSettings(false)}>Done</button>
+          </div>
+        </div>
         </div>
       )}
     </div>
