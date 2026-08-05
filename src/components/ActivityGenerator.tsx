@@ -81,12 +81,27 @@ function generateCrosswordLayout(items: {word: string, clue: string}[]): PlacedW
         if (cell !== '' && cell !== word[i]) return false; 
         
         if (cell === '') {
+          // Empty cell must not sit directly alongside a parallel word.
           if (dir === 'across') {
             if (r > 0 && grid[r - 1][c] !== '') return false;
             if (r < GRID_SIZE - 1 && grid[r + 1][c] !== '') return false;
           } else {
             if (c > 0 && grid[r][c - 1] !== '') return false;
             if (c < GRID_SIZE - 1 && grid[r][c + 1] !== '') return false;
+          }
+        } else {
+          // A shared (overlapping) cell is only valid as a genuine PERPENDICULAR
+          // crossing: the crossed word runs at right angles, so the cells next to
+          // this one ALONG OUR OWN DIRECTION must be empty. If one is filled, we
+          // are laying this word collinear on top of / next to an existing
+          // same-direction word — which merges two answers into one strip and
+          // creates a phantom, unsolvable clue. Reject it.
+          if (dir === 'across') {
+            if (c > 0 && grid[r][c - 1] !== '') return false;
+            if (c < GRID_SIZE - 1 && grid[r][c + 1] !== '') return false;
+          } else {
+            if (r > 0 && grid[r - 1][c] !== '') return false;
+            if (r < GRID_SIZE - 1 && grid[r + 1][c] !== '') return false;
           }
         }
       }
