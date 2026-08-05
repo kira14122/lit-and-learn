@@ -17,6 +17,8 @@ export interface DayRules {
   dayEnd: string;        // must stay to this for P
   checkinOpen: string;   // QR accepted from
   checkinClose: string;  // QR accepted until
+  /** Which weekdays the class meets: 0=Sun … 6=Sat. */
+  days: number[];
 }
 
 export interface ScheduleConfig {
@@ -27,10 +29,24 @@ export interface ScheduleConfig {
 }
 
 export const DEFAULT_SCHEDULE: ScheduleConfig = {
-  weekday: { graceEnd: "10:30", dayEnd: "14:00", checkinOpen: "09:45", checkinClose: "12:00" },
-  weekend: { graceEnd: "09:30", dayEnd: "16:30", checkinOpen: "08:45", checkinClose: "16:30" },
+  weekday: { graceEnd: "10:30", dayEnd: "14:00", checkinOpen: "09:45", checkinClose: "12:00", days: [1, 2, 3, 4] }, // Mon–Thu
+  weekend: { graceEnd: "09:30", dayEnd: "16:30", checkinOpen: "08:45", checkinClose: "16:30", days: [5, 6] },       // Fri–Sat
   testingMode: false,
 };
+
+/** Every date the class meets between two YYYY-MM-DD dates, inclusive. */
+export function meetingDays(startISO: string, endISO: string, rules: DayRules): string[] {
+  if (!startISO || !endISO || startISO > endISO) return [];
+  const out: string[] = [];
+  const d = new Date(`${startISO}T12:00:00`);
+  const end = new Date(`${endISO}T12:00:00`);
+  const meets = rules.days && rules.days.length ? rules.days : [1, 2, 3, 4];
+  while (d <= end) {
+    if (meets.includes(d.getDay())) out.push(d.toLocaleDateString("en-CA"));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
 
 /**
  * Fills missing fields from the defaults so a partial saved schedule can
@@ -52,11 +68,11 @@ export function normaliseSchedule(raw: any): ScheduleConfig {
     };
   }
 
-  return {
-    weekday: { ...d.weekday, ...(raw.weekday || {}) },
-    weekend,
-    testingMode: Boolean(raw.testingMode),
-  };
+  const weekday = { ...d.weekday, ...(raw.weekday || {}) };
+  if (!Array.isArray(weekday.days) || !weekday.days.length) weekday.days = d.weekday.days;
+  if (!Array.isArray(weekend.days) || !weekend.days.length) weekend.days = d.weekend.days;
+
+  return { weekday, weekend, testingMode: Boolean(raw.testingMode) };
 }
 
 // Convert "HH:MM" to minutes since midnight. null -> null.

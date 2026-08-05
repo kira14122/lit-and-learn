@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import {
-  scoreSession, type Mark,
+  scoreSession, meetingDays, type Mark,
   type ScheduleConfig, DEFAULT_SCHEDULE, normaliseSchedule,
 } from './attendanceScoring';
 
@@ -154,6 +154,7 @@ export function AttendancePortal() {
   const [codeOn, setCodeOn] = useState(false);
   const [visitorMode, setVisitorMode] = useState(false);
   const [visitors, setVisitors] = useState<any[]>([]);
+  const [noClassDays, setNoClassDays] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedDraft, setSchedDraft] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedMsg, setSchedMsg] = useState('');
@@ -191,6 +192,9 @@ export function AttendancePortal() {
     const sc = normaliseSchedule(schedRow?.value);
     setSchedule(sc);
     setSchedDraft(sc);
+
+    const { data: ncRow } = await sb.from('attendance_settings').select('value').eq('key', 'no_class_days').maybeSingle();
+    setNoClassDays(((ncRow?.value as any)?.dates as string[]) || []);
 
     const { data: vmRow } = await sb.from('attendance_settings').select('value').eq('key', 'visitor_mode').maybeSingle();
     setVisitorMode(Boolean((vmRow?.value as any)?.enabled));
@@ -306,6 +310,18 @@ export function AttendancePortal() {
       student_id: studentId, session, log_date: date, check_in: null, na: true,
     });
     load(true);
+  };
+
+  // Mark the day being viewed as "no class" (holiday, cancelled). It then
+  // counts for nobody, instead of everyone being absent.
+  const toggleNoClass = async () => {
+    const sb = await authed();
+    const next = noClassDays.includes(date)
+      ? noClassDays.filter(d => d !== date)
+      : [...noClassDays, date].sort();
+    const { error } = await sb.from('attendance_settings')
+      .upsert({ key: 'no_class_days', value: { dates: next }, updated_at: new Date().toISOString() });
+    if (!error) setNoClassDays(next);
   };
 
   const setTime = async (log: Log, field: 'check_in' | 'check_out', hm: string) => {
@@ -427,29 +443,30 @@ export function AttendancePortal() {
     const classLogs = rLogs.filter((l: any) => ids.has(l.student_id));
     // Class was held on a day if anyone in this class checked in —
     // holidays and cancelled days never count against a student.
-    const heldDays = [...new Set(classLogs.filter((l: any) => l.check_in).map((l: any) => l.log_date))].sort() as string[];
+    // Class days come from the meeting pattern (e.g. Mon–Thu), not from
+    // who happened to check in — a day when everyone was absent is still a
+    // class day. Days marked "no class" are excluded, and nothing before
+    // the first record is invented.
+    const recorded = classLogs.map((l: any) => l.log_date as string).sort();
+    const floor = recorded.length ? recorded[0] : rStart;
+    const from = floor > rStart ? floor : rStart;
+    const today = todayLocal();
+    const to = rEnd < today ? rEnd : today;
+    const rules = cls.classType === 'weekday' ? schedule.weekday : schedule.weekend;
+    const heldDays = meetingDays(from, to, rules).filter(d => !noClassDays.includes(d));
     const byKey = new Map<string, any>();
     classLogs.forEach((l: any) => byKey.set(`${l.student_id}:${l.log_date}:${l.session}`, l));
 
     const scoreOf = (se: string, ci: string | null, co: string | null): Mark =>
       scoreSession(se, ci, co, schedule);
 
-    // Earliest day this student can be judged on: the day they were added,
-    // or their first recorded check-in if that is earlier (back-filled days).
-    const firstSeen = (stu: Student): string => {
-      const theirs = classLogs
-        .filter((l: any) => l.student_id === stu.id && l.check_in)
-        .map((l: any) => l.log_date as string)
-        .sort();
-      const joined = stu.joined;
-      if (theirs.length && joined) return theirs[0] < joined ? theirs[0] : joined;
-      return theirs[0] || joined || '';
-    };
-
+    // Every student is judged over every day the class was held. Days that
+    // genuinely do not apply to someone (joined mid-term, excused) are
+    // marked N/A by hand — guessing from their first check-in would hide
+    // real absences at the start of term.
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
-      const start = firstSeen(stu);
-      const myDays = start ? heldDays.filter(d => d >= start) : heldDays;
+      const myDays = heldDays;
       const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean }[] = [];
       myDays.forEach(day => {
         // A day marked N/A does not apply to this student: no mark, and it
@@ -724,6 +741,13 @@ export function AttendancePortal() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                style={noClassDays.includes(date)
+                  ? { ...ui.secondary, height: 36, background: C.amberSoft, color: C.amber, borderColor: C.amber }
+                  : { ...ui.secondary, height: 36 }}
+                onClick={toggleNoClass}
+                title="Holiday or cancelled class — this day counts for nobody"
+              >{noClassDays.includes(date) ? 'No class ✓' : 'No class'}</button>
               <button style={{ ...ui.secondary, height: 36 }} onClick={checkEveryoneOut}
                 title="Writes the class-end time on everyone still checked in.">
                 All out at {hm24To12(cls.classType === 'weekday' ? schedule.weekday.dayEnd : schedule.weekend.dayEnd)}
@@ -731,6 +755,12 @@ export function AttendancePortal() {
               <button style={{ ...ui.primary, height: 36 }} onClick={printSheet}>Export sheet</button>
             </div>
           </div>
+
+          {noClassDays.includes(date) && (
+            <div style={{ background: C.amberSoft, border: `1px solid #FDE68A`, color: C.amber, borderRadius: 12, padding: '10px 14px', marginBottom: 12, fontSize: '0.9rem' }}>
+              This day is marked <strong>no class</strong> — it is excluded from everyone's attendance.
+            </div>
+          )}
 
           <div style={ui.table}>
             <div style={{ ...ui.thead, gridTemplateColumns: cols, gap: 10 }}>
@@ -1232,6 +1262,38 @@ export function AttendancePortal() {
             <button style={ui.secondary} onClick={() => setSchedDraft(normaliseSchedule(null))}>Reset to defaults</button>
             {schedMsg && <span style={{ fontSize: '0.85rem', color: C.sub }}>{schedMsg}</span>}
           </div>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Days the class meets</div>
+          <p style={{ margin: '0 0 10px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
+            Records counts every one of these days, whether or not anyone checked in. Holidays are marked
+            with the <strong>No class</strong> button on that day.
+          </p>
+          {(['weekday', 'weekend'] as const).map(k => (
+            <div key={k} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+              <span style={{ fontSize: '0.85rem', color: C.sub, width: 150 }}>
+                {k === 'weekday' ? 'Level 4 · Morning' : 'Level 4 · Weekend'}
+              </span>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((lbl, i) => {
+                const on = (schedDraft[k].days || []).includes(i);
+                return (
+                  <button key={i}
+                    style={{
+                      fontFamily: 'inherit', cursor: 'pointer', borderRadius: 9, padding: '6px 10px',
+                      fontWeight: 600, fontSize: '0.8rem',
+                      background: on ? C.indigoSoft : '#fff',
+                      color: on ? C.indigo : C.faint,
+                      border: `1px solid ${on ? C.indigo : C.line}`,
+                    }}
+                    onClick={() => {
+                      const cur = schedDraft[k].days || [];
+                      const next = cur.includes(i) ? cur.filter(d => d !== i) : [...cur, i].sort();
+                      editSched([k, 'days'], next);
+                    }}
+                  >{lbl}</button>
+                );
+              })}
+            </div>
+          ))}
 
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 8px' }}>Testing</div>
           <label style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, fontSize: '0.88rem', color: C.sub, cursor: 'pointer', lineHeight: 1.5, maxWidth: 620 }}>
