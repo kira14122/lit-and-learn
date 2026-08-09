@@ -40,6 +40,52 @@ const readCategoryFromUrl = (): string | null => {
   }
 };
 
+// --- Single downloadable resource card ---
+// Shared by the Grammar unit accordions AND the flat (non-Grammar) file lists,
+// so the card design stays identical everywhere. `displayIndex` is just the
+// number shown in the little circle badge.
+const ResourceCard = ({ res, displayIndex }: { res: any, displayIndex: number }) => {
+  const cleanTitle = res.title.replace(/^lesson\s*[0-9oO]+\s*[:-]?\s*/i, '');
+
+  return (
+    <div className="soft-card syllabus-card" style={{ backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+
+      <div className="syllabus-info" style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: '1 1 min-content' }}>
+        <div className="syllabus-number" style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F8FAFC', color: '#4F46E5', border: '2px solid #EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '1.2rem', flexShrink: 0 }}>
+          {displayIndex}
+        </div>
+        <div>
+          <h4 style={{ margin: '0 0 6px 0', color: '#0F172A', fontSize: '1.3rem', fontWeight: '600', lineHeight: '1.3' }}>{cleanTitle}</h4>
+          <div style={{ color: '#64748B', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {res.isGeneral ? 'General Guide' : `${res.level}`}
+          </div>
+        </div>
+      </div>
+
+      <div className="syllabus-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        {res.audioUrl && (
+          <div style={{ minWidth: '250px' }}>
+            <CustomAudioPlayer src={res.audioUrl} title="" />
+          </div>
+        )}
+
+        {res.fileUrl ? (
+          <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px 24px', borderRadius: '9999px', fontWeight: '700', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <IconDownloadSmall /> {res.audioUrl ? 'Worksheet' : 'Download PDF'}
+          </a>
+        ) : res.audioUrl ? (
+          <a href={res.audioUrl} target="_blank" rel="noreferrer" style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #CBD5E1', padding: '12px 24px', borderRadius: '9999px', fontWeight: '700', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <IconDownloadSmall /> Save Audio
+          </a>
+        ) : (
+          <span style={{ padding: '12px 24px', color: '#94A3B8', fontSize: '0.95rem', fontStyle: 'italic', background: '#F8FAFC', borderRadius: '9999px' }}>File pending...</span>
+        )}
+      </div>
+
+    </div>
+  );
+};
+
 export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
   // If the page was opened with ?cat=Grammar, start right in that category.
   const [activeFilter, setActiveFilter] = useState<string | null>(readCategoryFromUrl);
@@ -81,6 +127,20 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
       return numA - numB;
     });
   }, [groupedResources]);
+
+  // Flat, ungrouped list for every category EXCEPT Grammar.
+  // Units are hidden here, but we still sort by unit (then lesson order) so the
+  // files read top-to-bottom in a sensible progression rather than at random.
+  const flatResources = useMemo(() => {
+    return [...filteredResources].sort((a, b) => {
+      const unitA = parseInt(String(a.unit ?? 999), 10) || 999;
+      const unitB = parseInt(String(b.unit ?? 999), 10) || 999;
+      if (unitA !== unitB) return unitA - unitB;
+      const orderA = a.lessonOrder !== undefined ? a.lessonOrder : 999;
+      const orderB = b.lessonOrder !== undefined ? b.lessonOrder : 999;
+      return orderA - orderB;
+    });
+  }, [filteredResources]);
 
   // When the student switches category, start with every unit CLOSED.
   // They open and close whichever units they like, as many as they want.
@@ -161,7 +221,9 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
             <span style={{ color: '#64748B', fontSize: '1.1rem', fontWeight: '600' }}>Syllabus & Downloads</span>
           </div>
 
-          {sortedGroupKeys.length > 0 ? (
+          {filteredResources.length > 0 ? (
+            activeFilter === 'Grammar' ? (
+            // GRAMMAR ONLY: keep the Unit 1 / Unit 2 / Unit 3 accordions.
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {sortedGroupKeys.map(groupKey => {
                 const isExpanded = expandedGroups[groupKey];
@@ -190,46 +252,8 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
                     {isExpanded && (
                       <div className="accordion-content" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: '#F8FAFC' }}>
                         {resourcesInGroup.map((res, index) => {
-                          const cleanTitle = res.title.replace(/^lesson\s*[0-9oO]+\s*[:-]?\s*/i, '');
                           const displayIndex = res.lessonOrder !== undefined ? res.lessonOrder : index + 1;
-
-                          return (
-                            <div key={res._id} className="soft-card syllabus-card" style={{ backgroundColor: '#ffffff', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
-                              
-                              <div className="syllabus-info" style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: '1 1 min-content' }}>
-                                <div className="syllabus-number" style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F8FAFC', color: '#4F46E5', border: '2px solid #EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '1.2rem', flexShrink: 0 }}>
-                                  {displayIndex}
-                                </div>
-                                <div>
-                                  <h4 style={{ margin: '0 0 6px 0', color: '#0F172A', fontSize: '1.3rem', fontWeight: '600', lineHeight: '1.3' }}>{cleanTitle}</h4>
-                                  <div style={{ color: '#64748B', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    {res.isGeneral ? 'General Guide' : `${res.level}`}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="syllabus-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                                {res.audioUrl && (
-                                  <div style={{ minWidth: '250px' }}>
-                                    <CustomAudioPlayer src={res.audioUrl} title="" />
-                                  </div>
-                                )}
-                                
-                                {res.fileUrl ? (
-                                  <a href={res.fileUrl} target="_blank" rel="noreferrer" style={{ background: '#EEF2FF', color: '#4F46E5', padding: '12px 24px', borderRadius: '9999px', fontWeight: '700', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                    <IconDownloadSmall /> {res.audioUrl ? 'Worksheet' : 'Download PDF'}
-                                  </a>
-                                ) : res.audioUrl ? (
-                                  <a href={res.audioUrl} target="_blank" rel="noreferrer" style={{ background: '#F8FAFC', color: '#475569', border: '1px solid #CBD5E1', padding: '12px 24px', borderRadius: '9999px', fontWeight: '700', textDecoration: 'none', fontSize: '1rem', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                    <IconDownloadSmall /> Save Audio
-                                  </a>
-                                ) : (
-                                  <span style={{ padding: '12px 24px', color: '#94A3B8', fontSize: '0.95rem', fontStyle: 'italic', background: '#F8FAFC', borderRadius: '9999px' }}>File pending...</span>
-                                )}
-                              </div>
-
-                            </div>
-                          );
+                          return <ResourceCard key={res._id} res={res} displayIndex={displayIndex} />;
                         })}
                       </div>
                     )}
@@ -237,6 +261,14 @@ export const ResourceLibrary = ({ resources }: { resources: any[] }) => {
                 );
               })}
             </div>
+            ) : (
+            // EVERY OTHER CATEGORY: no units, just a flat list of files numbered 1..N.
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {flatResources.map((res, index) => (
+                <ResourceCard key={res._id} res={res} displayIndex={index + 1} />
+              ))}
+            </div>
+            )
           ) : (
              <div style={{ textAlign: 'center', padding: '80px', background: '#ffffff', borderRadius: '32px', border: '2px dashed #E2E8F0', color: '#94A3B8' }}>
                <div style={{ marginBottom: '20px', color: '#CBD5E1', display: 'flex', justifyContent: 'center' }}>
