@@ -8,7 +8,7 @@ import { windowFor, isCheckInOpen, nowInNewYork, type ScheduleConfig, DEFAULT_SC
 // Mounted at /checkin, outside the app chrome and outside any Clerk gate.
 
 type ClassType = 'weekday' | 'weekend';
-type Session = 'single' | 'day';
+type Session = 'single' | 'morning' | 'afternoon';
 
 interface Student { id: string; name: string; section: number; }
 
@@ -23,8 +23,8 @@ const CLASS_TITLE: Record<ClassType, string> = {
 // stale times after the teacher edits them in Settings.
 const classSub = (c: ClassType, sc: ScheduleConfig): string =>
   c === 'weekday'
-    ? `Sections 1 & 2 · ${hm24To12(sc.weekday.checkinOpen)} – ${hm24To12(sc.weekday.dayEnd)}`
-    : `Section 1 · ${hm24To12(sc.weekend.checkinOpen)} – ${hm24To12(sc.weekend.dayEnd)}`;
+    ? `Sections 1 & 2 · ${hm24To12(sc.weekday.checkinOpen)} – ${hm24To12(sc.weekday.sessionEnd)}`
+    : `Section 1 · ${hm24To12(sc.weekend.morning.checkinOpen)} – ${hm24To12(sc.weekend.afternoon.sessionEnd)}`;
 
 const s: Record<string, any> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: 'linear-gradient(180deg, #EEF2FF 0%, #F3F6F8 220px)', minHeight: '100vh', color: '#0F172A', padding: '28px 16px 64px', boxSizing: 'border-box' },
@@ -99,8 +99,10 @@ function defaultClass(): ClassType {
   const day = new Date().getDay(); // 5 = Fri, 6 = Sat
   return day === 5 || day === 6 ? 'weekend' : 'weekday';
 }
+// Weekend students scan once, and it always records the morning session.
+// The teacher marks the afternoon in the portal.
 function defaultSession(cls: ClassType): Session {
-  return cls === 'weekend' ? 'day' : 'single';
+  return cls === 'weekend' ? 'morning' : 'single';
 }
 
 export function CheckInPage() {
@@ -108,11 +110,14 @@ export function CheckInPage() {
   const [classType] = useState<ClassType>(
     params.c === 'weekend' || params.c === 'weekday' ? params.c : defaultClass(),
   );
+  // The QR carries the session; otherwise work it out from the clock so a
+  // weekend student who scans after lunch lands in the afternoon session.
   const [session] = useState<Session>(
-    params.s === 'single' || params.s === 'day'
+    params.s === 'single' || params.s === 'morning' || params.s === 'afternoon'
       ? params.s
       : defaultSession(params.c === 'weekend' ? 'weekend' : defaultClass()),
   );
+
   const [students, setStudents] = useState<Student[]>([]);
   const [done, setDone] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -416,7 +421,9 @@ export function CheckInPage() {
             </p>
             <p style={s.bigName}>{confirming.name}</p>
             <p style={{ color: '#3F4C63', fontSize: '0.95rem', fontWeight: 500, margin: 0 }}>
-              {info.title}{classType === 'weekday' ? ` · Section ${confirming.section}` : ''} · {hm24To12(clock)}
+              {info.title}
+              {classType === 'weekday' ? ` · Section ${confirming.section}` : ''}
+              {' · '}{hm24To12(clock)}
             </p>
             <button style={s.confirmBtn} onClick={confirmCheckIn} disabled={saving}>
               {saving ? 'Checking you in…' : 'Yes, check me in'}

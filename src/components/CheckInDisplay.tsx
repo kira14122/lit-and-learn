@@ -11,7 +11,7 @@ import { getSupabaseClient } from '../supabaseClient';
 // Teacher-only: mount it behind the same admin gate as the portal.
 
 type ClassType = 'weekday' | 'weekend';
-type Session = 'single' | 'day';
+type Session = 'single' | 'morning' | 'afternoon';
 
 interface Arrival { name: string; at: string; level?: string; }
 
@@ -41,8 +41,10 @@ function defaultClass(): ClassType {
   const d = new Date().getDay(); // 5 = Fri, 6 = Sat
   return d === 5 || d === 6 ? 'weekend' : 'weekday';
 }
+// Students scan once a day; the weekend QR always carries the morning
+// session and the teacher marks the afternoon in the portal.
 function defaultSession(c: ClassType): Session {
-  return c === 'weekend' ? 'day' : 'single';
+  return c === 'weekend' ? 'morning' : 'single';
 }
 const toHM = (iso: string) => {
   const d = new Date(iso);

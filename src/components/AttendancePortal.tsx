@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import {
-  scoreSession, meetingDays, type Mark,
+  scoreSession, meetingDays, sessionsOf, rulesFor, type Mark,
   type ScheduleConfig, DEFAULT_SCHEDULE, normaliseSchedule,
 } from './attendanceScoring';
 
@@ -20,7 +20,7 @@ const CLASSES: ClassDef[] = [
   { id: 'wk', title: 'Level 4 · Weekend', classType: 'weekend', hasSections: false, tag: 'WKD' },
 ];
 
-interface Student { id: string; name: string; section: number; joined?: string; }
+interface Student { id: string; name: string; section: number; joined?: string; enrolledFrom?: string; }
 interface Log { id: string; student_id: string; session: string; check_in: string | null; check_out: string | null; na?: boolean; }
 
 const C = {
@@ -36,9 +36,9 @@ const DEFAULTS = { instructor: 'Dr. Chouit Abderraouf', term: 'Summer Term 2026'
 const remembered = (k: string, f: string) => { try { return localStorage.getItem(`ll_att_${k}`) || f; } catch { return f; } };
 const remember = (k: string, v: string) => { try { localStorage.setItem(`ll_att_${k}`, v); } catch { /* ignore */ } };
 
-const sessionEndOf = (sc: ScheduleConfig, se: string): string =>
-  se === 'day' ? sc.weekend.dayEnd : sc.weekday.dayEnd;
+const sessionEndOf = (sc: ScheduleConfig, se: string): string => rulesFor(se, sc).sessionEnd;
 const todayLocal = () => new Date().toLocaleDateString('en-CA');
+const nowHM = () => new Date().toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit' });
 const toHM = (iso: string | null): string => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -154,20 +154,25 @@ export function AttendancePortal() {
   const [codeOn, setCodeOn] = useState(false);
   const [visitorMode, setVisitorMode] = useState(false);
   const [visitors, setVisitors] = useState<any[]>([]);
-  const [noClassDays, setNoClassDays] = useState<string[]>([]);
+  // The school calendar: when the term runs, and every day the class is closed.
+  interface Closure { from: string; to: string; label: string; }
+  const [termStart, setTermStart] = useState('');
+  const [termEnd, setTermEnd] = useState('');
+  const [closures, setClosures] = useState<Closure[]>([]);
+  const [newClosure, setNewClosure] = useState<Closure>({ from: '', to: '', label: '' });
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedDraft, setSchedDraft] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
   const [schedMsg, setSchedMsg] = useState('');
 
   const authed = useCallback(async () => getSupabaseClient((await getToken({ template: 'supabase' })) ?? undefined), [getToken]);
-  const sessionsFor = (c: ClassDef): string[] => c.classType === 'weekday' ? ['single'] : ['day'];
+  const sessionsFor = (c: ClassDef): string[] => sessionsOf(c.classType);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     const sb = await authed();
     const { data: roster } = await sb
       .from('attendance_students')
-      .select('id, name, section, class_type, created_at')
+      .select('id, name, section, class_type, created_at, enrolled_from')
       .eq('active', true)
       .order('name', { ascending: true });
     const byClass: Record<string, Student[]> = {};
@@ -177,6 +182,7 @@ export function AttendancePortal() {
         .map((r: any) => ({
           id: r.id, name: r.name, section: r.section ?? 1,
           joined: r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA') : undefined,
+          enrolledFrom: r.enrolled_from || undefined,
         }));
     });
     const { data: logRows } = await sb
@@ -193,8 +199,18 @@ export function AttendancePortal() {
     setSchedule(sc);
     setSchedDraft(sc);
 
+    const { data: calRow } = await sb.from('attendance_settings').select('value').eq('key', 'calendar').maybeSingle();
+    const cal = (calRow?.value as any) || {};
+    setTermStart(cal.termStart || '');
+    setTermEnd(cal.termEnd || '');
+
+    // Absorb the older single-date list, if this project still has one.
     const { data: ncRow } = await sb.from('attendance_settings').select('value').eq('key', 'no_class_days').maybeSingle();
-    setNoClassDays(((ncRow?.value as any)?.dates as string[]) || []);
+    const legacy = (((ncRow?.value as any)?.dates as string[]) || []).map(d => ({ from: d, to: d, label: 'No class' }));
+    const saved: Closure[] = Array.isArray(cal.closures) ? cal.closures : [];
+    const merged = [...saved];
+    legacy.forEach(l => { if (!merged.some(c => c.from === l.from && c.to === l.to)) merged.push(l); });
+    setClosures(merged.sort((a, b) => a.from.localeCompare(b.from)));
 
     const { data: vmRow } = await sb.from('attendance_settings').select('value').eq('key', 'visitor_mode').maybeSingle();
     setVisitorMode(Boolean((vmRow?.value as any)?.enabled));
@@ -223,8 +239,13 @@ export function AttendancePortal() {
     ? allForClass.filter(s0 => s0.name.toLowerCase().includes(query.trim().toLowerCase()))
     : allForClass;
   const sess = sessionsFor(cls);
-  const primarySession = cls.classType === 'weekday' ? 'single' : 'day';
-  const inCount = allForClass.filter(s => logs[`${s.id}:${primarySession}`]?.check_in).length;
+  const primarySession = cls.classType === 'weekday'
+    ? 'single'
+    : (nowHM() < schedule.weekend.morning.sessionEnd ? 'morning' : 'afternoon');
+  // "Checked in" means present today: for the weekend that is either
+  // session, so the count does not drop to zero after midday.
+  const inCount = allForClass.filter(s =>
+    sess.some(se => logs[`${s.id}:${se}`]?.check_in)).length;
 
   // ---- actions ----
   const addStudent = async () => {
@@ -256,6 +277,13 @@ export function AttendancePortal() {
     setEditingId(null);
     load(true);
   };
+  // The first day a student is accountable. Blank = counted from the start.
+  const setEnrolledFrom = async (id: string, d: string) => {
+    const sb = await authed();
+    await sb.from('attendance_students').update({ enrolled_from: d || null }).eq('id', id);
+    load(true);
+  };
+
   const moveToSection = async (id: string, section: number) => {
     const sb = await authed();
     await sb.from('attendance_students').update({ section }).eq('id', id);
@@ -280,10 +308,33 @@ export function AttendancePortal() {
   };
   // One tap writes the class-end time on every checked-in student who has
   // no departure yet. Individual rows can still be edited afterwards.
+  // Weekend: students scan once in the morning. After lunch this marks the
+  // afternoon present for everyone who was here, timed at the afternoon
+  // start. Anyone who left is then corrected on their own row.
+  const carryToAfternoon = async () => {
+    const sb = await authed();
+    const start = schedule.weekend.afternoon.checkinOpen;
+    // The whole class, never just the search results.
+    const targets = [...allForClass, ...visitors].filter(stu => {
+      const am = logs[`${stu.id}:morning`];
+      const pm = logs[`${stu.id}:afternoon`];
+      return am?.check_in && !am.na && !pm;      // was here, no afternoon record yet
+    });
+    if (!targets.length) return;
+    await sb.from('attendance_logs').insert(
+      targets.map(stu => ({
+        student_id: stu.id, session: 'afternoon', log_date: date,
+        check_in: hmToIso(date, start),
+      })),
+    );
+    load(true);
+  };
+
   const checkEveryoneOut = async () => {
     const sb = await authed();
     // Everyone present today — roster students and visiting students alike.
-    const everyone = [...students, ...visitors];
+    // The whole class, never just the search results.
+    const everyone = [...allForClass, ...visitors];
     const targets = everyone.flatMap(stu => sess
       .map(se => ({ se, l: logs[`${stu.id}:${se}`] }))
       .filter(x => x.l && x.l.check_in && !x.l.check_out && !x.l.na));
@@ -302,27 +353,53 @@ export function AttendancePortal() {
     load(true);
   };
 
-  // Mark a day as not applicable to this student — they had not joined
-  // yet, or the office excused it. It leaves their totals untouched.
-  const markNotApplicable = async (studentId: string, session: string) => {
+  const saveCalendar = async (next: { termStart?: string; termEnd?: string; closures?: Closure[] }) => {
     const sb = await authed();
-    await sb.from('attendance_logs').insert({
-      student_id: studentId, session, log_date: date, check_in: null, na: true,
-    });
-    load(true);
+    const value = {
+      termStart: next.termStart ?? termStart,
+      termEnd: next.termEnd ?? termEnd,
+      closures: next.closures ?? closures,
+    };
+    const { error } = await sb.from('attendance_settings')
+      .upsert({ key: 'calendar', value, updated_at: new Date().toISOString() });
+    if (error) return;
+    if (next.termStart !== undefined) setTermStart(next.termStart);
+    if (next.termEnd !== undefined) setTermEnd(next.termEnd);
+    if (next.closures !== undefined) setClosures(next.closures);
   };
 
-  // Mark the day being viewed as "no class" (holiday, cancelled). It then
-  // counts for nobody, instead of everyone being absent.
+  /** Is this date inside any closure? */
+  const isClosed = (d: string) => closures.some(c => d >= c.from && d <= (c.to || c.from));
+  const closureFor = (d: string) => closures.find(c => d >= c.from && d <= (c.to || c.from));
+
+  // The "No class" button on the day being viewed.
   const toggleNoClass = async () => {
-    const sb = await authed();
-    const next = noClassDays.includes(date)
-      ? noClassDays.filter(d => d !== date)
-      : [...noClassDays, date].sort();
-    const { error } = await sb.from('attendance_settings')
-      .upsert({ key: 'no_class_days', value: { dates: next }, updated_at: new Date().toISOString() });
-    if (!error) setNoClassDays(next);
+    const existing = closureFor(date);
+    if (existing && existing.from === existing.to) {
+      await saveCalendar({ closures: closures.filter(c => c !== existing) });
+    } else if (!existing) {
+      await saveCalendar({
+        closures: [...closures, { from: date, to: date, label: 'No class' }]
+          .sort((a, b) => a.from.localeCompare(b.from)),
+      });
+    }
+    // A date inside a multi-day holiday is left alone — remove it in Settings.
   };
+
+  const addClosure = async () => {
+    const from = newClosure.from;
+    if (!from) return;
+    const to = newClosure.to || from;
+    if (to < from) return;
+    await saveCalendar({
+      closures: [...closures, { from, to, label: newClosure.label.trim() || 'No class' }]
+        .sort((a, b) => a.from.localeCompare(b.from)),
+    });
+    setNewClosure({ from: '', to: '', label: '' });
+  };
+
+  const removeClosure = async (c: Closure) =>
+    saveCalendar({ closures: closures.filter(x => x !== c) });
 
   const setTime = async (log: Log, field: 'check_in' | 'check_out', hm: string) => {
     const sb = await authed();
@@ -449,11 +526,16 @@ export function AttendancePortal() {
     // the first record is invented.
     const recorded = classLogs.map((l: any) => l.log_date as string).sort();
     const floor = recorded.length ? recorded[0] : rStart;
-    const from = floor > rStart ? floor : rStart;
+    // Start at the later of: range start, term start, first record.
+    let from = floor > rStart ? floor : rStart;
+    if (termStart && termStart > from) from = termStart;
+    // End at the earlier of: range end, term end, today.
     const today = todayLocal();
-    const to = rEnd < today ? rEnd : today;
-    const rules = cls.classType === 'weekday' ? schedule.weekday : schedule.weekend;
-    const heldDays = meetingDays(from, to, rules).filter(d => !noClassDays.includes(d));
+    let to = rEnd < today ? rEnd : today;
+    if (termEnd && termEnd < to) to = termEnd;
+
+    const meetDays = cls.classType === 'weekday' ? schedule.weekday.days : schedule.weekend.days;
+    const heldDays = meetingDays(from, to, meetDays).filter(d => !isClosed(d));
     const byKey = new Map<string, any>();
     classLogs.forEach((l: any) => byKey.set(`${l.student_id}:${l.log_date}:${l.session}`, l));
 
@@ -466,18 +548,23 @@ export function AttendancePortal() {
     // real absences at the start of term.
     const rows = students.map(stu => {
       let P = 0, L = 0, A = 0;
-      const myDays = heldDays;
+      // Days before a student enrolled are not theirs to answer for.
+      const myDays = stu.enrolledFrom
+        ? heldDays.filter(d => d >= stu.enrolledFrom!)
+        : heldDays;
       const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean }[] = [];
       myDays.forEach(day => {
         // A day marked N/A does not apply to this student: no mark, and it
         // is left out of both the totals and the attendance rate.
-        const naDay = sess.every(se => byKey.get(`${stu.id}:${day}:${se}`)?.na);
-        if (naDay) return;
-
-        const marks = sess.map(se => {
+        // N/A applies per session: an excused afternoon is left out of the
+        // totals on its own, without excusing the morning too.
+        const marks: Mark[] = [];
+        sess.forEach(se => {
           const l = byKey.get(`${stu.id}:${day}:${se}`);
-          return scoreOf(se, l?.check_in ? toHM24(l.check_in) : null, l?.check_out ? toHM24(l.check_out) : null);
+          if (l?.na) return;                       // this session does not count
+          marks.push(scoreOf(se, l?.check_in ? toHM24(l.check_in) : null, l?.check_out ? toHM24(l.check_out) : null));
         });
+        if (!marks.length) return;                 // every session excused
         marks.forEach(m => { if (m === 'P') P++; else if (m === 'L') L++; else A++; });
         const first = byKey.get(`${stu.id}:${day}:${sess[0]}`);
         // No recorded departure means "stayed to the end" — the same
@@ -518,7 +605,7 @@ export function AttendancePortal() {
     } else if (kind === 'month') {
       setRStart(monthStart());
     } else {
-      setRStart('2026-01-01');
+      setRStart(termStart || '2026-01-01');
     }
     setREnd(todayLocal());
   };
@@ -527,6 +614,23 @@ export function AttendancePortal() {
   const printSheet = () => {
     const pretty = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
     const cols = ['Time in', 'Time out'];
+
+    // The sheet shows ONE arrival and ONE departure, even for the weekend's
+    // two sessions: first time in, last time out. The two marks are kept
+    // in Records — the paper only needs the day's span.
+    const dayTimes = (id: string): [string, string] => {
+      const ins: string[] = [], outs: string[] = [];
+      sess.forEach(se => {
+        const l = logs[`${id}:${se}`];
+        if (!l || l.na || !l.check_in) return;
+        ins.push(toHM24(l.check_in));
+        outs.push(l.check_out ? toHM24(l.check_out) : sessionEndOf(schedule, se));
+      });
+      if (!ins.length) return ['', ''];
+      const firstIn = ins.sort()[0];
+      const lastOut = blankTimeOut ? '' : outs.sort()[outs.length - 1];
+      return [hm24To12(firstIn), lastOut ? hm24To12(lastOut) : ''];
+    };
     // Only students who actually attended appear on the signed sheet —
     // an absent student must never have a signable row.
     const attended = students.filter(stu =>
@@ -542,13 +646,7 @@ export function AttendancePortal() {
     };
     const ordered = [...attended].sort((a, b) => firstIn(a).localeCompare(firstIn(b)));
     const bodyHtml = ordered.map((stu, i) => {
-      const times: string[] = [];
-      sess.forEach(se => {
-        const l = logs[`${stu.id}:${se}`];
-        const cin = toHM(l?.check_in || null);
-        const cout = blankTimeOut ? '' : (!cin ? '' : (toHM(l?.check_out || null) || hm24To12(sessionEndOf(schedule, se))));
-        times.push(cin, cout);
-      });
+      const times = dayTimes(stu.id);
       return '<tr>'
         + `<td class="n">${i + 1}</td><td class="nm">${stu.name.toUpperCase()}</td><td class="sec">S${stu.section}</td>`
         + times.map(t => `<td class="t">${t}</td>`).join('')
@@ -562,13 +660,7 @@ export function AttendancePortal() {
         return t(a).localeCompare(t(b));
       });
     const vBody = vAttended.map((v, i) => {
-      const times: string[] = [];
-      sess.forEach(se => {
-        const l = logs[`${v.id}:${se}`];
-        const cin = toHM(l?.check_in || null);
-        const cout = blankTimeOut ? '' : (!cin ? '' : (toHM(l?.check_out || null) || hm24To12(sessionEndOf(schedule, se))));
-        times.push(cin, cout);
-      });
+      const times = dayTimes(v.id);
       return '<tr>'
         + `<td class="n">${i + 1}</td><td class="nm">${v.name.toUpperCase()}</td><td class="sec">${(/Section\s*(\d)/.exec(v.visitor_level || '') || [, '—'])[1]}</td>`
         + times.map(t => `<td class="t">${t}</td>`).join('')
@@ -664,13 +756,8 @@ export function AttendancePortal() {
           </>
         ) : (
           <>
-            <span style={{ gridColumn: 'span 2', display: 'inline-flex', gap: 8 }}>
+            <span style={{ gridColumn: 'span 2' }}>
               <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in now</button>
-              <button
-                style={{ ...ui.tBtn, color: C.faint }}
-                title="Not applicable — this day should not count for this student (joined later, excused…)"
-                onClick={() => markNotApplicable(stu.id, se)}
-              >N/A</button>
             </span>
             <span />
           </>
@@ -680,7 +767,7 @@ export function AttendancePortal() {
   };
 
   const cols = 'minmax(0,1fr) 56px 118px 118px 88px';
-  const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 168px' : 'minmax(0,1fr) 168px';
+  const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 150px 168px' : 'minmax(0,1fr) 150px 168px';
   const sectionCounts = cls.hasSections
     ? `${allForClass.filter(s => s.section === 1).length} in section 1, ${allForClass.filter(s => s.section === 2).length} in section 2`
     : '';
@@ -741,30 +828,43 @@ export function AttendancePortal() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {cls.classType === 'weekend' && (
+                <button
+                  style={{ ...ui.secondary, height: 36 }}
+                  onClick={carryToAfternoon}
+                  title="Marks the afternoon present for everyone who checked in this morning. Correct anyone who left on their own row."
+                >Carry morning → afternoon</button>
+              )}
               <button
-                style={noClassDays.includes(date)
+                style={isClosed(date)
                   ? { ...ui.secondary, height: 36, background: C.amberSoft, color: C.amber, borderColor: C.amber }
                   : { ...ui.secondary, height: 36 }}
                 onClick={toggleNoClass}
                 title="Holiday or cancelled class — this day counts for nobody"
-              >{noClassDays.includes(date) ? 'No class ✓' : 'No class'}</button>
+              >{isClosed(date) ? 'No class ✓' : 'No class'}</button>
               <button style={{ ...ui.secondary, height: 36 }} onClick={checkEveryoneOut}
                 title="Writes the class-end time on everyone still checked in.">
-                All out at {hm24To12(cls.classType === 'weekday' ? schedule.weekday.dayEnd : schedule.weekend.dayEnd)}
+                All out at {hm24To12(cls.classType === 'weekday' ? schedule.weekday.sessionEnd : schedule.weekend.afternoon.sessionEnd)}
               </button>
               <button style={{ ...ui.primary, height: 36 }} onClick={printSheet}>Export sheet</button>
             </div>
           </div>
 
-          {noClassDays.includes(date) && (
+          {isClosed(date) && (
             <div style={{ background: C.amberSoft, border: `1px solid #FDE68A`, color: C.amber, borderRadius: 12, padding: '10px 14px', marginBottom: 12, fontSize: '0.9rem' }}>
-              This day is marked <strong>no class</strong> — it is excluded from everyone's attendance.
+              <strong>{closureFor(date)?.label || 'No class'}</strong> — this day is excluded from everyone's attendance.
+              {closureFor(date) && closureFor(date)!.from !== closureFor(date)!.to && (
+                <> Part of {closureFor(date)!.from} → {closureFor(date)!.to}; remove it in Settings.</>
+              )}
             </div>
           )}
 
           <div style={ui.table}>
             <div style={{ ...ui.thead, gridTemplateColumns: cols, gap: 10 }}>
-              <span>Student</span><span>Mark</span><span>In</span><span>Out</span><span />
+              <span>Student</span>
+              {cls.classType === 'weekday'
+                ? <><span>Mark</span><span>In</span><span>Out</span><span /></>
+                : <><span style={{ gridColumn: 'span 4' }}>Morning &amp; afternoon</span></>}
             </div>
 
             {loading ? (
@@ -776,13 +876,28 @@ export function AttendancePortal() {
                   : <>No students in this class yet. Open <strong style={{ color: C.sub }}>Manage</strong> to add them.</>}
               </div>
             ) : students.map(stu => (
-              <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10 }}>
-                <span style={{ fontWeight: 600 }}>
-                  {stu.name}
-                  {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{stu.section}</span>}
-                </span>
-                {sess.map(se => <Session key={se} stu={stu} se={se} />)}
-              </div>
+              cls.classType === 'weekday' ? (
+                <div key={stu.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10 }}>
+                  <span style={{ fontWeight: 600 }}>
+                    {stu.name}
+                    {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{stu.section}</span>}
+                  </span>
+                  {sess.map(se => <Session key={se} stu={stu} se={se} />)}
+                </div>
+              ) : (
+                // Weekend: two sessions, stacked so the row never runs off screen.
+                <div key={stu.id} style={{ padding: '10px 14px', borderBottom: `1px solid ${C.lineSoft}` }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{stu.name}</div>
+                  {sess.map(se => (
+                    <div key={se} style={{ display: 'grid', gridTemplateColumns: '54px 56px 118px 118px 88px', gap: 10, alignItems: 'center', padding: '4px 0' }}>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        {se === 'morning' ? 'AM' : 'PM'}
+                      </span>
+                      <Session stu={stu} se={se} />
+                    </div>
+                  ))}
+                </div>
+              )
             ))}
 
             {visitors.length > 0 && (
@@ -791,6 +906,40 @@ export function AttendancePortal() {
                   Visiting students today
                 </div>
                 {visitors.map(v => (
+                  cls.classType === 'weekend' ? (
+                    <div key={v.id} style={{ padding: '10px 14px', borderBottom: `1px solid ${C.lineSoft}`, background: '#FFFEF9' }}>
+                      <div style={{ fontWeight: 600, marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {v.name}
+                        <span style={{ ...ui.sTag, background: '#FEF3C7', borderColor: '#FDE68A', color: '#92400E' }}>{v.visitor_level || 'visitor'}</span>
+                        <button style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem', color: C.green, borderColor: C.green }}
+                          onClick={() => { const m = /Section\s*(\d)/.exec(v.visitor_level || ''); setPromoteVisitor({ id: v.id, name: v.name, section: m ? m[1] : '1' }); }}
+                        >Add to class</button>
+                        <button style={{ ...ui.tBtn, height: 24, padding: '0 8px', fontSize: '0.75rem' }}
+                          onClick={() => { const m = /^(.*?)\s*·\s*Section\s*(\d)/.exec(v.visitor_level || ''); setEditVisitor({ id: v.id, name: v.name, level: m ? m[1].trim() : 'Level 1', section: m ? m[2] : '1' }); }}
+                        >Edit</button>
+                        <button style={{ ...ui.tDanger, height: 24, padding: '0 8px', fontSize: '0.75rem' }}
+                          onClick={() => setPendingRemoveVisitor({ id: v.id, name: v.name })}
+                        >Remove</button>
+                      </div>
+                      {sess.map(se => {
+                        const l = logs[`${v.id}:${se}`];
+                        return (
+                          <div key={se} style={{ display: 'grid', gridTemplateColumns: '54px 56px 118px 118px 88px', gap: 10, alignItems: 'center', padding: '4px 0' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              {se === 'morning' ? 'AM' : 'PM'}
+                            </span>
+                            {l
+                              ? <Session stu={{ id: v.id, name: v.name, section: 1 }} se={se} />
+                              : <>
+                                  <span style={{ color: C.faint }}>—</span>
+                                  <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not this session</span>
+                                  <span />
+                                </>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
                   <div key={v.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10, background: '#FFFEF9' }}>
                     <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {v.name}
@@ -834,6 +983,7 @@ export function AttendancePortal() {
                       return <Session key={se} stu={{ id: v.id, name: v.name, section: 1 }} se={se} />;
                     })}
                   </div>
+                  )
                 ))}
                 <div style={{ padding: '10px 18px', background: '#FFFEF9' }}>
                   <button style={ui.tDanger} onClick={() => setPendingClearVisitors(true)}>Remove all visitors</button>
@@ -891,7 +1041,13 @@ export function AttendancePortal() {
             )}
           </div>
 
-          <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: C.sub }}>
+          <div style={{ ...ui.thead, gridTemplateColumns: manageCols, gap: 10, borderRadius: '12px 12px 0 0', border: `1px solid ${C.lineSoft}`, borderBottom: 'none', marginTop: 4 }}>
+            <span>Student</span>
+            {cls.hasSections && <span>Section</span>}
+            <span>Enrolled from</span>
+            <span style={{ textAlign: 'right' }}>Actions</span>
+          </div>
+          <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: C.sub, display: 'none' }}>
             {query.trim()
               ? `${students.length} of ${allForClass.length} students match "${query.trim()}"`
               : `${students.length} student${students.length === 1 ? '' : 's'}${sectionCounts ? ` · ${sectionCounts}` : ''}`}
@@ -927,6 +1083,14 @@ export function AttendancePortal() {
                       ))}
                     </div>
                   )}
+
+                  <input
+                    type="date"
+                    style={{ ...ui.tInput, width: 140 }}
+                    value={stu.enrolledFrom || ''}
+                    onChange={e => setEnrolledFrom(stu.id, e.target.value)}
+                    title="Class days before this date are not counted for this student. Leave blank to count from the start."
+                  />
 
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     {editing ? (
@@ -1238,8 +1402,8 @@ export function AttendancePortal() {
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.graceEnd}
                   onChange={e => editSched(['weekday', 'graceEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.dayEnd}
-                  onChange={e => editSched(['weekday', 'dayEnd'], e.target.value)} /></label>
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.sessionEnd}
+                  onChange={e => editSched(['weekday', 'sessionEnd'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.checkinOpen}
                   onChange={e => editSched(['weekday', 'checkinOpen'], e.target.value)} /></label>
@@ -1249,23 +1413,25 @@ export function AttendancePortal() {
             </div>
           </div>
 
-          <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 12, boxSizing: 'border-box', maxWidth: '100%' }}>
-            <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Weekend</div>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.graceEnd}
-                  onChange={e => editSched(['weekend', 'graceEnd'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>Class ends<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.dayEnd}
-                  onChange={e => editSched(['weekend', 'dayEnd'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.checkinOpen}
-                  onChange={e => editSched(['weekend', 'checkinOpen'], e.target.value)} /></label>
-              <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
-                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend.checkinClose}
-                  onChange={e => editSched(['weekend', 'checkinClose'], e.target.value)} /></label>
+          {([['morning', 'Level 4 · Weekend — morning'], ['afternoon', 'Level 4 · Weekend — afternoon']] as const).map(([key, title]) => (
+            <div key={key} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
+              <div style={{ fontWeight: 600, marginBottom: 10 }}>{title}</div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
+                  <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].graceEnd}
+                    onChange={e => editSched(['weekend', key, 'graceEnd'], e.target.value)} /></label>
+                <label style={{ fontSize: '0.82rem', color: C.sub }}>Session ends<br />
+                  <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].sessionEnd}
+                    onChange={e => editSched(['weekend', key, 'sessionEnd'], e.target.value)} /></label>
+                <label style={{ fontSize: '0.82rem', color: C.sub }}>QR opens<br />
+                  <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].checkinOpen}
+                    onChange={e => editSched(['weekend', key, 'checkinOpen'], e.target.value)} /></label>
+                <label style={{ fontSize: '0.82rem', color: C.sub }}>QR closes<br />
+                  <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].checkinClose}
+                    onChange={e => editSched(['weekend', key, 'checkinClose'], e.target.value)} /></label>
+              </div>
             </div>
-          </div>
+          ))}
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button style={{ ...ui.primary, opacity: schedDirty ? 1 : 0.45, cursor: schedDirty ? 'pointer' : 'default' }}
@@ -1274,6 +1440,61 @@ export function AttendancePortal() {
             <button style={ui.secondary} onClick={() => setSchedDraft(normaliseSchedule(null))}>Reset to defaults</button>
             {schedMsg && <span style={{ fontSize: '0.85rem', color: C.sub }}>{schedMsg}</span>}
           </div>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Term</div>
+          <p style={{ margin: '0 0 10px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
+            Attendance is only counted between these dates. Leave blank to count from your first record.
+          </p>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 6 }}>
+            <label style={{ fontSize: '0.82rem', color: C.sub }}>Term starts<br />
+              <input type="date" style={{ ...ui.input, marginTop: 4 }} value={termStart}
+                onChange={e => saveCalendar({ termStart: e.target.value })} /></label>
+            <label style={{ fontSize: '0.82rem', color: C.sub }}>Term ends<br />
+              <input type="date" style={{ ...ui.input, marginTop: 4 }} value={termEnd}
+                onChange={e => saveCalendar({ termEnd: e.target.value })} /></label>
+            {(termStart || termEnd) && (
+              <button style={ui.secondary} onClick={() => saveCalendar({ termStart: '', termEnd: '' })}>Clear</button>
+            )}
+          </div>
+
+          <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Holidays &amp; closures</div>
+          <p style={{ margin: '0 0 10px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
+            Days here count for nobody. Use a range for a whole holiday week.
+          </p>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+            <label style={{ fontSize: '0.82rem', color: C.sub }}>From<br />
+              <input type="date" style={{ ...ui.input, marginTop: 4 }} value={newClosure.from}
+                onChange={e => setNewClosure({ ...newClosure, from: e.target.value })} /></label>
+            <label style={{ fontSize: '0.82rem', color: C.sub }}>To (optional)<br />
+              <input type="date" style={{ ...ui.input, marginTop: 4 }} value={newClosure.to}
+                onChange={e => setNewClosure({ ...newClosure, to: e.target.value })} /></label>
+            <label style={{ fontSize: '0.82rem', color: C.sub, flex: 1, minWidth: 160 }}>Name<br />
+              <input style={{ ...ui.input, marginTop: 4, width: '100%' }} placeholder="e.g. National holiday"
+                value={newClosure.label}
+                onChange={e => setNewClosure({ ...newClosure, label: e.target.value })} /></label>
+            <button style={ui.primary} onClick={addClosure} disabled={!newClosure.from}>Add</button>
+          </div>
+
+          {closures.length === 0 ? (
+            <p style={{ color: C.faint, fontSize: '0.88rem', margin: 0 }}>No holidays added yet.</p>
+          ) : (
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 12, overflow: 'hidden' }}>
+              {closures.map((c, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderBottom: i < closures.length - 1 ? `1px solid ${C.lineSoft}` : 'none', background: '#fff' }}>
+                  <span>
+                    <strong style={{ fontWeight: 600 }}>{c.label}</strong>
+                    <span style={{ color: C.sub, fontSize: '0.88rem', marginLeft: 10 }}>
+                      {c.from === c.to
+                        ? new Date(`${c.from}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        : `${new Date(`${c.from}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → ${new Date(`${c.to}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                    </span>
+                  </span>
+                  <button style={ui.tDanger} onClick={() => removeClosure(c)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Days the class meets</div>
           <p style={{ margin: '0 0 10px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
