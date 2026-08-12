@@ -816,7 +816,7 @@ export const ActivityGenerator = () => {
     // is always <= PRINT_GRID_H, and likewise for width — so it always fits.
     // PRINT_GRID_H leaves room for the name/date line, title and instructions
     // that share page 1 above the grid.
-    const PRINT_GRID_W = 740;
+    const PRINT_GRID_W = 640;   // = 170mm printable width (A4 - 2x20mm margins); must not exceed it or wide grids clip off the right edge
     const PRINT_GRID_H = 660;
     const cellPx   = Math.max(20, Math.min(60, Math.floor(PRINT_GRID_W / maxC), Math.floor(PRINT_GRID_H / maxR)));
     const cellSize = `${cellPx}px`;
