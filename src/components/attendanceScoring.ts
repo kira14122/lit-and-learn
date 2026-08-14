@@ -33,9 +33,17 @@ export interface WeekendRules {
   afternoon: SessionRules;
 }
 
+/** Make-up classes: no grace period — attending earns a P. */
+export interface MakeupRules {
+  days: number[];        // 0=Sun … 6=Sat
+  checkinOpen: string;
+  checkinClose: string;
+}
+
 export interface ScheduleConfig {
   weekday: WeekdayRules;
   weekend: WeekendRules;
+  makeup: MakeupRules;
   /** Testing switch: when true the QR is accepted at any hour. */
   testingMode?: boolean;
 }
@@ -51,6 +59,7 @@ export const DEFAULT_SCHEDULE: ScheduleConfig = {
     morning:   { graceEnd: "09:30", sessionEnd: "12:00", checkinOpen: "08:45", checkinClose: "12:00" },
     afternoon: { graceEnd: "13:30", sessionEnd: "16:30", checkinOpen: "12:45", checkinClose: "16:30" },
   },
+  makeup: { days: [3, 4], checkinOpen: "14:45", checkinClose: "16:45" },   // Wed & Thu, 2:45–4:45
   testingMode: false,
 };
 
@@ -59,11 +68,16 @@ export function sessionsOf(classType: "weekday" | "weekend"): string[] {
   return classType === "weekday" ? ["single"] : ["morning", "afternoon"];
 }
 
-/** Rules for one session key. */
+/** Rules for one *graded* session key (not make-up, which has none). */
 export function rulesFor(session: string, sc: ScheduleConfig = DEFAULT_SCHEDULE): SessionRules {
   if (session === "morning") return sc.weekend.morning;
   if (session === "afternoon") return sc.weekend.afternoon;
   return sc.weekday;
+}
+
+/** A make-up is pass/fail: they came, or they did not. Never late. */
+export function scoreMakeup(checkIn: Time): Mark {
+  return checkIn ? "P" : "A";
 }
 
 /**
@@ -110,7 +124,14 @@ export function normaliseSchedule(raw: any): ScheduleConfig {
     morning, afternoon,
   };
 
-  return { weekday, weekend, testingMode: Boolean(raw.testingMode) };
+  const rm = raw.makeup || {};
+  const makeup: MakeupRules = {
+    days: Array.isArray(rm.days) && rm.days.length ? rm.days : d.makeup.days,
+    checkinOpen:  rm.checkinOpen  ?? d.makeup.checkinOpen,
+    checkinClose: rm.checkinClose ?? d.makeup.checkinClose,
+  };
+
+  return { weekday, weekend, makeup, testingMode: Boolean(raw.testingMode) };
 }
 
 // Convert "HH:MM" to minutes since midnight. null -> null.
@@ -139,6 +160,7 @@ export function scoreDay(checkIn: Time, checkOut: Time, r: SessionRules): Mark {
 export function scoreSession(
   session: string, checkIn: Time, checkOut: Time, sc: ScheduleConfig = DEFAULT_SCHEDULE,
 ): Mark {
+  if (session === "makeup") return scoreMakeup(checkIn);
   return scoreDay(checkIn, checkOut, rulesFor(session, sc));
 }
 
@@ -149,8 +171,15 @@ export function scoreWeekday(checkIn: Time, checkOut: Time, sc: ScheduleConfig =
 // ---- Check-in windows (the QR's opening hours) ----
 
 export function windowFor(session: string, sc: ScheduleConfig = DEFAULT_SCHEDULE): { open: string; close: string } | null {
+  if (session === "makeup") return { open: sc.makeup.checkinOpen, close: sc.makeup.checkinClose };
   const r = rulesFor(session, sc);
   return r ? { open: r.checkinOpen, close: r.checkinClose } : null;
+}
+
+/** Does a make-up class run on this date? */
+export function isMakeupDay(iso: string, sc: ScheduleConfig = DEFAULT_SCHEDULE): boolean {
+  if (!iso) return false;
+  return sc.makeup.days.includes(new Date(`${iso}T12:00:00`).getDay());
 }
 
 /** Current wall-clock time in New York ("HH:MM"), whatever the device is set to. */

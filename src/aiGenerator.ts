@@ -1281,6 +1281,242 @@ Output ONLY the feedback: the "Hi ${studentName}," line followed by the three pa
   }
 }
 // ═════════════════════════════════════════════════════════════════════════════
+// generateProgressReport — end-of-term paper report, written per student
+// ─────────────────────────────────────────────────────────────────────────────
+// One call produces BOTH the four per-test remarks AND the back-page report so
+// the model keeps all five pieces distinct and non-repetitive. It is fed THIS
+// student's exact numbers, skill trends, and the teacher's chosen traits, so
+// there is nothing generic to fall back on. Routes through callAI (Gemini →
+// Groq) via requestJSON, with a deterministic fallback for a full provider
+// outage that is STILL built from the student's own data.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── PUBLIC TYPES (consumed by ProgressReport.tsx) ────────────────────────────
+
+export interface ProgressTestInput {
+  /** 'First Test' | 'Midterm' | 'Third Test' | 'Final Test' */
+  name: string;
+  /** 10 / 30 / 10 / 50 */
+  weight: number;
+  status: 'graded' | 'absent' | 'na' | 'pending';
+  /** 0–100 whole-test mastery. Omit unless status === 'graded'. */
+  mastery?: number;
+  /** Per-skill % for THIS test, in display order. Omit unless graded. */
+  skills?: { label: string; pct: number }[];
+}
+
+export interface ProgressSkillProfile {
+  label: string;                    // 'Listening', 'Grammar & Vocab', …
+  avg: number;                      // term-average % across graded tests
+  trend: 'up' | 'down' | 'flat';    // first graded test → last graded test
+}
+
+export interface ProgressReportInput {
+  studentName: string;
+  level: string;
+  /** All four canonical tests, in order. */
+  tests: ProgressTestInput[];
+  /** Term skill profile (used for strengths + the focus area). */
+  profile: ProgressSkillProfile[];
+  /** Teacher-selected, OBSERVED traits. Must be used; never invented or dropped. */
+  traits: string[];
+  /** Skill labels identified as strong from the results (may be empty). */
+  strengths: string[];
+  /** The single area to build on next, with its term trend. */
+  focusSkill: { label: string; trend: 'up' | 'down' | 'flat' } | null;
+  /** When false, no progression sentence is produced at all. */
+  includeProgression: boolean;
+  /** Only read when includeProgression is true. */
+  meetsRequirements?: boolean;
+}
+
+export interface ProgressReportOutput {
+  /** One remark per test, aligned by name to the input tests. */
+  testNotes: { name: string; note: string }[];
+  /** 2 paragraphs, or 3 when a progression line is requested. */
+  reportParagraphs: string[];
+}
+
+// ── helpers (local; do not clash with existing names) ─────────────────────────
+
+function prCap(s: string): string { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+function prList(items: string[]): string {
+  const a = items.filter(Boolean);
+  if (a.length === 0) return '';
+  if (a.length === 1) return a[0];
+  return a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+}
+
+/** Human-readable line for one test, fed to the model as ground truth. */
+function prTestLine(t: ProgressTestInput): string {
+  if (t.status === 'na')      return `- ${t.name} (${t.weight}%): NOT APPLICABLE — exclude from the report.`;
+  if (t.status === 'pending') return `- ${t.name} (${t.weight}%): NOT YET TAKEN.`;
+  if (t.status === 'absent')  return `- ${t.name} (${t.weight}%): ABSENT — no marks recorded.`;
+  const skills = (t.skills || []).map(s => `${s.label} ${s.pct}%`).join(', ');
+  return `- ${t.name} (${t.weight}%): ${Math.round(t.mastery ?? 0)}% overall | ${skills}`;
+}
+
+const PR_TREND_WORD: Record<string, string> = {
+  up:   'improving across the term',
+  down: 'slipping and in need of attention',
+  flat: 'holding steady',
+};
+
+// Deterministic safety net — only used if BOTH providers fail. Still specific to
+// the student's data so an outage never prints a blank or a generic template.
+function prFallback(input: ProgressReportInput): ProgressReportOutput {
+  const name = input.studentName.split(' ')[0];
+
+  const testNotes = input.tests.map(t => {
+    if (t.status === 'na')      return { name: t.name, note: '' };
+    if (t.status === 'pending') return { name: t.name, note: 'Not yet taken.' };
+    if (t.status === 'absent')  return { name: t.name, note: 'Absent — no marks recorded.' };
+    const m = Math.round(t.mastery ?? 0);
+    const sorted = [...(t.skills || [])].sort((a, b) => b.pct - a.pct);
+    const top = sorted[0]?.label.toLowerCase();
+    const low = sorted[sorted.length - 1]?.label.toLowerCase();
+    const band = m >= 85 ? 'An excellent' : m >= 80 ? 'A strong' : m >= 70 ? 'A solid' : m >= 60 ? 'A fair' : 'A difficult';
+    const tail = top && low && top !== low ? ` — strongest in ${top}, with ${low} to build on.` : '.';
+    return { name: t.name, note: `${band} result (${m}%)${tail}` };
+  });
+
+  const traitClause = input.traits.length ? `a ${prList(input.traits)} student` : 'a committed student';
+  const strengthClause = input.strengths.length
+    ? ` Their strongest work has been in ${prList(input.strengths.map(s => s.toLowerCase()))}.`
+    : '';
+  const p1 = `${name} is ${traitClause} who has approached the term with real care.${strengthClause}`;
+
+  const focus = input.focusSkill;
+  const p2 = focus
+    ? `The main area to keep building is ${focus.label.toLowerCase()}, currently ${PR_TREND_WORD[focus.trend]}. Steady, focused practice here will feed directly into ${name}'s overall comprehension and confidence.`
+    : `${name} has no single weak area to flag; the goal now is to consolidate and keep the momentum going.`;
+
+  const paras = [p1, p2];
+  if (input.includeProgression) {
+    paras.push(
+      input.meetsRequirements
+        ? `Based on these results, ${name} is performing well within the expectations for this level.`
+        : `These results show ${name} still working toward the expectations for this level; continued effort will close the gap.`
+    );
+  }
+  return { testNotes, reportParagraphs: paras };
+}
+
+// ── main ──────────────────────────────────────────────────────────────────────
+
+export async function generateProgressReport(
+  input: ProgressReportInput,
+): Promise<ProgressReportOutput> {
+  const name = sanitize(input.studentName);
+  const first = name.split(' ')[0];
+
+  const gradedTests = input.tests.filter(t => t.status === 'graded' || t.status === 'absent');
+  const notesWanted = input.tests.filter(t => t.status !== 'na').length;
+
+  const testBlock   = input.tests.map(prTestLine).join('\n');
+  const profileBlock = input.profile
+    .map(s => `- ${s.label}: term average ${s.avg}% (${PR_TREND_WORD[s.trend]})`)
+    .join('\n');
+
+  const traitsLine = input.traits.length
+    ? input.traits.map(sanitize).join(', ')
+    : '(none supplied — describe them only from what the results show, do not invent personality traits)';
+
+  const strengthsLine = input.strengths.length ? prList(input.strengths) : '(identify from the profile above)';
+  const focusLine = input.focusSkill
+    ? `${input.focusSkill.label} (${PR_TREND_WORD[input.focusSkill.trend]})`
+    : '(identify the lowest skill from the profile above)';
+
+  const progressionInstruction = input.includeProgression
+    ? `PARAGRAPH 3 — Progression. One measured sentence. ${input.meetsRequirements
+        ? `State that, based on these results, ${first} is performing within the expectations for this level.`
+        : `State that these results show ${first} still working toward the expectations for this level, framed encouragingly.`} Do NOT promise or deny a move to the next level — movement is decided separately.`
+    : `Do NOT write a third paragraph or any sentence about levels, promotion, or "meeting requirements".`;
+
+  const prompt = `You are Dr. Chouit Abderraouf, ESL instructor and founder of Lit & Learn (PhD in English Linguistics, 15+ years' experience). You are writing the end-of-term PROGRESS REPORT that goes on a student's official paper report card, read by the student and their parents. Warm, professional, and specific — never gushing, never a form letter.
+
+Write the report for ${name} (${sanitize(input.level)}), in the THIRD PERSON. Use the student's first name ("${first}") and the pronoun "they/their".
+
+TEST RESULTS (ground truth — never contradict these numbers):
+${testBlock}
+
+TERM SKILL PROFILE (averages and direction of travel):
+${profileBlock}
+
+OBSERVED TRAITS the teacher has selected — you MUST weave these in as genuine qualities and must NOT invent others: ${traitsLine}
+STRENGTHS to highlight (from the results): ${strengthsLine}
+SINGLE FOCUS AREA to build on next: ${focusLine}
+
+Produce TWO things.
+
+1) TEST NOTES — exactly ${notesWanted} very short margin notes, one per test taken or missed (skip any marked NOT APPLICABLE).
+   VOICE: a teacher jotting a quick note in the margin next to the mark — natural, specific, human. NOT a formal report sentence.
+   HARD RULES:
+   - NEVER state the percentage or use the words "total", "score", or "performance". The mark is ALREADY printed right beside the note, so restating it reads like a robot. Comment on what happened instead.
+   - Each of the ${notesWanted} notes MUST use a DIFFERENT sentence shape. Do NOT write them all to one skeleton. Deliberately mix shapes across the set, e.g.: one bare fragment; one that opens with a skill name; one about the direction of travel or effort; one short forward-looking nudge. Never repeat the pattern "[adjective] [noun], [participle] [strength] [connector] [weakness]".
+   - BANNED phrasings (they create the robotic rhythm): "led by", "reflecting", "maintaining", "demonstrating", "despite", "while … requires", "alongside", "notable gains".
+   - MAX 12 words. Name a REAL skill from the data (e.g. "listening", "writing"), never vague words like "areas".
+   - For an ABSENT test write exactly: "Absent — no marks recorded." For a NOT-YET-TAKEN test write exactly: "Not yet taken."
+   GOOD — notice the varied shapes and NO numbers:
+     • "Listening is flawless — writing just needs tidying."
+     • "Grammar is finally clicking; the practice shows."
+     • "Reading carried this one, speaking close behind."
+     • "A small dip, but nothing the next test won't fix."
+   BAD — do NOT write notes like these (same skeleton, restates the mark):
+     • "Excellent 83% total, led by perfect listening despite minor writing difficulties"
+     • "Solid 79% performance, maintaining strong speaking while grammar requires more focus"
+     • "Impressive 84% score, reflecting consistent reading alongside notable gains in writing"
+
+2) REPORT — the back-page paragraphs.
+PARAGRAPH 1 — Who they are + strengths. Open with a genuine picture of ${first} as a learner, working in the selected traits naturally (not as a list), then name their strongest skill area(s) with a specific nod to what the results show.
+PARAGRAPH 2 — The one area to grow. Name the single focus area, acknowledge its direction of travel honestly (if it is improving, say so and encourage; if slipping, be gentle but clear), and give ONE concrete, skill-appropriate suggestion for the term ahead. Never imply a strong skill needs work.
+${progressionInstruction}
+
+UNIQUENESS MANDATE: This report sits beside 40 others. It must read as written specifically for ${first}. Do NOT use a formulaic opening such as "${first} is a hardworking student who". Vary sentence structure and openings; do not begin consecutive sentences with the same word.
+
+FORBIDDEN WORDS & PHRASES (fatal if used): testament, delve, utilize, leverage, enhance, foster, embark, undoubtedly, tapestry, underscore, showcase, "room for growth", "solid foundation", "make significant progress", "shows great potential", "keep up the good work". Use plain, warm, specific language instead.
+
+SCALE the tone to the results: strong terms get genuine praise; weaker terms lead with effort and name the gap honestly without deflating the student.
+
+Output ONLY valid JSON, no markdown, no backticks, in exactly this shape:
+{"testNotes":[{"name":"First Test","note":"..."}],"reportParagraphs":["...","..."]}`;
+
+  const wantParas = input.includeProgression ? 3 : 2;
+
+  const result = await requestJSON<ProgressReportOutput>(prompt, (p) => {
+    const notes = Array.isArray(p?.testNotes) ? p.testNotes : null;
+    const paras = Array.isArray(p?.reportParagraphs) ? p.reportParagraphs : null;
+    if (!notes || !paras) return null;
+
+    const cleanNotes = notes
+      .map((n: any) => ({ name: String(n?.name ?? '').trim(), note: String(n?.note ?? '').trim() }))
+      .filter((n: any) => n.name);
+    if (cleanNotes.length < notesWanted) return null;
+
+    const cleanParas = paras.map((s: any) => String(s ?? '').trim()).filter(Boolean);
+    if (cleanParas.length < wantParas) return null;
+
+    return { testNotes: cleanNotes, reportParagraphs: cleanParas.slice(0, wantParas) };
+  }, 1);
+
+  if (result) {
+    // Ensure a note exists for every non-NA test, in input order, even if the
+    // model dropped one — backfill from the deterministic writer so the front
+    // page never shows a blank row.
+    const fb = prFallback(input);
+    const byName = new Map(result.testNotes.map(n => [n.name, n.note]));
+    const testNotes = input.tests
+      .filter(t => t.status !== 'na')
+      .map(t => ({ name: t.name, note: byName.get(t.name) || fb.testNotes.find(f => f.name === t.name)?.note || '' }));
+    return { testNotes, reportParagraphs: result.reportParagraphs };
+  }
+
+  console.warn('⚠️ generateProgressReport: providers unavailable — using deterministic fallback.');
+  return prFallback(input);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // RAW DATA ENGINES (Quick Activity v2)
 // ═════════════════════════════════════════════════════════════════════════════
 // Quality strategy — the model is asked ONLY for raw linguistic facts (target,

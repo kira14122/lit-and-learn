@@ -9,6 +9,7 @@ import { generateStudentFeedback } from '../aiGenerator';
 import { client } from '../sanityClient'; 
 import { ActivityGenerator } from './ActivityGenerator';
 import { ExamMode } from './ExamMode';
+import { ProgressReport } from './ProgressReport';
 
 const IconMail      = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash     = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
@@ -84,6 +85,7 @@ export const GradingPortal: React.FC<{
   const [showPrevRecords, setShowPrevRecords] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [showProgressReport, setShowProgressReport] = useState(false);
   const [builderOpen, setBuilderOpen]       = useState(false);
   const [builderEditing, setBuilderEditing] = useState(false);
   const [builderUseOpening, setBuilderUseOpening] = useState(true);
@@ -881,11 +883,13 @@ export const GradingPortal: React.FC<{
                       <span style={{fontSize:'0.75rem',color:'#94A3B8',fontWeight:'500'}}>{gradingIdx+1} / {gradingFilteredStudents.length}</span>
                       <button onClick={goPrevStudent} disabled={gradingIdx<=0} style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid #E3E7EF',background:'#fff',color:'#475569',cursor:gradingIdx<=0?'not-allowed':'pointer',opacity:gradingIdx<=0?0.4:1,fontSize:'1rem'}}>‹</button>
                       <button onClick={goNextStudent} disabled={gradingIdx>=gradingFilteredStudents.length-1} style={{width:'32px',height:'32px',borderRadius:'8px',border:'1px solid #E3E7EF',background:'#fff',color:'#475569',cursor:gradingIdx>=gradingFilteredStudents.length-1?'not-allowed':'pointer',opacity:gradingIdx>=gradingFilteredStudents.length-1?0.4:1,fontSize:'1rem'}}>›</button>
+                      <button onClick={()=>setShowProgressReport(true)} style={{background:'#F5F3FF',color:'#7C3AED',border:'1px solid #DDD6FE',fontSize:'0.82rem',fontWeight:'600',padding:'7px 12px',borderRadius:'9px',cursor:'pointer'}}>📄 Progress Report</button>
                       <button onClick={()=>setFocusMode(false)} style={{background:'#4F46E5',color:'#fff',border:'none',fontSize:'0.82rem',fontWeight:'600',padding:'7px 13px',borderRadius:'9px',cursor:'pointer'}}>⤢ Exit focus</button>
                     </div>
                   </div>
                 ) : (
-                  <div style={{display:'flex',justifyContent:'flex-end',flexShrink:0}}>
+                  <div style={{display:'flex',justifyContent:'flex-end',gap:'8px',flexShrink:0}}>
+                    <button onClick={()=>setShowProgressReport(true)} style={{background:'#F5F3FF',color:'#7C3AED',border:'1px solid #DDD6FE',fontSize:'0.82rem',fontWeight:'600',padding:'8px 14px',borderRadius:'10px',cursor:'pointer'}}>📄 Progress Report</button>
                     <button onClick={()=>setFocusMode(true)} style={{background:'#EEF2FF',color:'#4F46E5',border:'none',fontSize:'0.82rem',fontWeight:'600',padding:'8px 14px',borderRadius:'10px',cursor:'pointer'}}>⤢ Focus on this student</button>
                   </div>
                 )}
@@ -1257,6 +1261,16 @@ export const GradingPortal: React.FC<{
             )}
           </div>
         </div>
+
+      {showProgressReport && selectedStudent && (
+        <ProgressReport
+          student={selectedStudent}
+          grades={studentHistory}
+          onClose={()=>setShowProgressReport(false)}
+          showToast={showToast}
+          getToken={getToken}
+        />
+      )}
 
     </div>
   );

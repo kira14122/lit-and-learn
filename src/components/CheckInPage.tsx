@@ -118,6 +118,7 @@ export function CheckInPage() {
       : defaultSession(params.c === 'weekend' ? 'weekend' : defaultClass()),
   );
 
+
   const [students, setStudents] = useState<Student[]>([]);
   const [done, setDone] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -127,6 +128,8 @@ export function CheckInPage() {
   const [section, setSection] = useState<1 | 2>(1);   // morning class only
   const [query, setQuery] = useState('');
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
+
+
   const [visitorMode, setVisitorMode] = useState(false);
   const [showVisitor, setShowVisitor] = useState(false);
   const [vName, setVName] = useState('');

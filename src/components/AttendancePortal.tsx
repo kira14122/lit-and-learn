@@ -142,6 +142,12 @@ export function AttendancePortal() {
   const [editVisitor, setEditVisitor] = useState<{ id: string; name: string; level: string; section: string } | null>(null);
   const [pendingRemoveVisitor, setPendingRemoveVisitor] = useState<{ id: string; name: string } | null>(null);
   const [promoteVisitor, setPromoteVisitor] = useState<{ id: string; name: string; section: string } | null>(null);
+  // Make-ups are taught by another teacher; here we only record that a
+  // student attended one, so their percentage is right.
+  const [makeupFor, setMakeupFor] = useState<{ id: string; name: string } | null>(null);
+  const [makeupDate, setMakeupDate] = useState(todayLocal());
+  const [makeupRows, setMakeupRows] = useState<any[]>([]);
+  const [makeupMsg, setMakeupMsg] = useState('');
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
   const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
@@ -199,6 +205,12 @@ export function AttendancePortal() {
     setSchedule(sc);
     setSchedDraft(sc);
 
+    const { data: muRows } = await sb.from('attendance_logs')
+      .select('id, student_id, log_date')
+      .eq('session', 'makeup')
+      .order('log_date', { ascending: true });
+    setMakeupRows(muRows || []);
+
     const { data: calRow } = await sb.from('attendance_settings').select('value').eq('key', 'calendar').maybeSingle();
     const cal = (calRow?.value as any) || {};
     setTermStart(cal.termStart || '');
@@ -228,6 +240,7 @@ export function AttendancePortal() {
   }, [authed, date, classId]);
 
   useEffect(() => { load(); }, [load]);
+
   useEffect(() => {
     if (date !== todayLocal()) return;
     const t = setInterval(() => load(true), 12000);
@@ -278,6 +291,30 @@ export function AttendancePortal() {
     load(true);
   };
   // The first day a student is accountable. Blank = counted from the start.
+  const addMakeup = async () => {
+    if (!makeupFor || !makeupDate) return;
+    const sb = await authed();
+    const { error } = await sb.from('attendance_logs').insert({
+      student_id: makeupFor.id, session: 'makeup',
+      log_date: makeupDate, check_in: hmToIso(makeupDate, '14:45'),
+    });
+    if (error) {
+      // One make-up per student per date: the database enforces it.
+      setMakeupMsg(error.code === '23505'
+        ? 'A make-up is already recorded for that date.'
+        : `Could not save: ${error.message}`);
+      return;
+    }
+    setMakeupMsg('');
+    load(true);
+  };
+  const removeMakeup = async (logId: string) => {
+    const sb = await authed();
+    await sb.from('attendance_logs').delete().eq('id', logId);
+    load(true);
+  };
+  const makeupsOf = (studentId: string) => makeupRows.filter(m => m.student_id === studentId);
+
   const setEnrolledFrom = async (id: string, d: string) => {
     const sb = await authed();
     await sb.from('attendance_students').update({ enrolled_from: d || null }).eq('id', id);
@@ -552,7 +589,7 @@ export function AttendancePortal() {
       const myDays = stu.enrolledFrom
         ? heldDays.filter(d => d >= stu.enrolledFrom!)
         : heldDays;
-      const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean }[] = [];
+      const daily: { day: string; marks: Mark[]; in1: string; out1: string; outAssumed: boolean; makeup?: boolean }[] = [];
       myDays.forEach(day => {
         // A day marked N/A does not apply to this student: no mark, and it
         // is left out of both the totals and the attendance rate.
@@ -579,17 +616,38 @@ export function AttendancePortal() {
           outAssumed: assumed,
         });
       });
-      const total = P + L + A;
-      const rate = total ? Math.round(((P + 0.5 * L) / total) * 100) : 0;
-      return { stu, P, L, A, total, rate, daily };
+      // Make-up classes are extra credit: each one adds a P without
+      // cancelling the absence it makes up for.
+      // Each make-up is worth one mark: a full day for the weekday class,
+      // half a weekend day (because a weekend day is two sessions).
+      // Make-up classes recover missed time. They do NOT add class days:
+      // every student is measured over the same days the class was held.
+      // A make-up is worth one mark — a full weekday, or half a weekend day
+      // (a weekend day being two sessions) — and nobody can recover more
+      // than they missed, so a rate can never exceed 100%. The absences and
+      // the make-ups both stay visible in their own columns.
+      const makeupLogs = classLogs.filter((l: any) =>
+        l.student_id === stu.id && l.session === 'makeup' && !l.na);
+      makeupLogs.forEach((l: any) => {
+        daily.push({
+          day: l.log_date, marks: ['P'], in1: toHM(l.check_in), out1: '', outAssumed: false, makeup: true,
+        });
+      });
+      daily.sort((a, b) => a.day.localeCompare(b.day));
+
+      const makeups = makeupLogs.length;
+      const recovered = Math.min(makeups, A);      // cannot recover more than missed
+      const total = P + L + A;                      // the class days, unchanged
+      const rate = total ? Math.round((((P + recovered) + 0.5 * L) / total) * 100) : 0;
+      return { stu, P, L, A, total, rate, makeups, recovered, daily };
     });
     return { rows, heldDays };
   };
 
   const downloadRecordsCsv = () => {
     const { rows } = buildRecords();
-    const head = ['Student', 'Section', 'Sessions held', 'Present', 'Late', 'Absent', 'Attendance %'];
-    const csv = [head, ...rows.map(r => [r.stu.name, `S${r.stu.section}`, r.total, r.P, r.L, r.A, r.rate])]
+    const head = ['Student', 'Section', 'Class days', 'Present', 'Late', 'Absent', 'Make-ups', 'Recovered', 'Attendance %'];
+    const csv = [head, ...rows.map(r => [r.stu.name, `S${r.stu.section}`, r.total, r.P, r.L, r.A, r.makeups, r.recovered, r.rate])]
       .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
@@ -767,7 +825,7 @@ export function AttendancePortal() {
   };
 
   const cols = 'minmax(0,1fr) 56px 118px 118px 88px';
-  const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 150px 168px' : 'minmax(0,1fr) 150px 168px';
+  const manageCols = cls.hasSections ? 'minmax(0,1fr) 96px 140px 130px 168px' : 'minmax(0,1fr) 140px 130px 168px';
   const sectionCounts = cls.hasSections
     ? `${allForClass.filter(s => s.section === 1).length} in section 1, ${allForClass.filter(s => s.section === 2).length} in section 2`
     : '';
@@ -1045,6 +1103,7 @@ export function AttendancePortal() {
             <span>Student</span>
             {cls.hasSections && <span>Section</span>}
             <span>Enrolled from</span>
+            <span>Make-ups</span>
             <span style={{ textAlign: 'right' }}>Actions</span>
           </div>
           <p style={{ margin: '0 0 8px', fontSize: '0.9rem', color: C.sub, display: 'none' }}>
@@ -1092,6 +1151,17 @@ export function AttendancePortal() {
                     title="Class days before this date are not counted for this student. Leave blank to count from the start."
                   />
 
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: makeupsOf(stu.id).length ? 700 : 400, color: makeupsOf(stu.id).length ? C.indigo : C.faint, minWidth: 14 }}>
+                      {makeupsOf(stu.id).length || '—'}
+                    </span>
+                    <button
+                      style={{ ...ui.tBtn, padding: '0 10px' }}
+                      onClick={() => { setMakeupFor({ id: stu.id, name: stu.name }); setMakeupDate(todayLocal()); setMakeupMsg(''); }}
+                      title="Record a make-up class this student attended"
+                    >Add</button>
+                  </span>
+
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     {editing ? (
                       <>
@@ -1129,7 +1199,8 @@ export function AttendancePortal() {
           </div>
 
           <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: C.sub }}>
-            P counts as a full day and L as half. Click a student for their day-by-day record.
+            P counts as a full day and L as half. A make-up recovers one missed mark — a full weekday,
+            or half a weekend day. Click a student for their day-by-day record.
           </p>
 
           <div style={ui.table}>
@@ -1137,11 +1208,11 @@ export function AttendancePortal() {
               if (rLoading || loading) return <div style={{ padding: 20, color: C.faint }}>Loading…</div>;
               const { rows, heldDays } = buildRecords();
               if (heldDays.length === 0) return <div style={{ padding: '26px 20px', color: C.faint }}>No class days with check-ins in this range yet.</div>;
-              const recCols = 'minmax(0,1fr) 80px 52px 52px 52px 130px';
+              const recCols = 'minmax(0,1fr) 80px 52px 52px 52px 74px 130px';
               return (
                 <>
                   <div style={{ ...ui.thead, gridTemplateColumns: recCols, gap: 10 }}>
-                    <span>Student</span><span>Days</span><span>P</span><span>L</span><span>A</span><span>Rate</span>
+                    <span>Student</span><span>Days</span><span>P</span><span>L</span><span>A</span><span>Make-up</span><span>Rate</span>
                   </div>
                   {rows.map(r => (
                     <React.Fragment key={r.stu.id}>
@@ -1157,6 +1228,13 @@ export function AttendancePortal() {
                         <span style={{ color: C.green, fontWeight: 700 }}>{r.P}</span>
                         <span style={{ color: C.amber, fontWeight: 700 }}>{r.L}</span>
                         <span style={{ color: C.red, fontWeight: 700 }}>{r.A}</span>
+                        <span style={{ color: r.makeups ? C.indigo : C.faint, fontWeight: r.makeups ? 700 : 400 }}
+                          title={r.makeups && r.recovered < r.makeups
+                            ? `${r.makeups} attended, ${r.recovered} counted — no absence left to recover`
+                            : undefined}>
+                          {r.makeups || '—'}
+                          {r.makeups > r.recovered && <span style={{ color: C.faint, fontWeight: 400 }}> ({r.recovered})</span>}
+                        </span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontWeight: 700, minWidth: 42 }}>{r.rate}%</span>
                           <span style={{ width: 52, height: 6, background: C.lineSoft, borderRadius: 9999, overflow: 'hidden' }}>
@@ -1166,14 +1244,19 @@ export function AttendancePortal() {
                       </div>
                       {expanded === r.stu.id && (
                         <div style={{ background: C.bgSoft, borderBottom: `1px solid ${C.lineSoft}`, padding: '10px 18px 14px' }}>
-                          {r.daily.map(d => (
-                            <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', fontSize: '0.88rem' }}>
+                          {r.daily.map((d, di) => (
+                            <div key={`${d.day}-${di}`} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', fontSize: '0.88rem' }}>
                               <span style={{ ...ui.mono, minWidth: 150 }}>{new Date(`${d.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                               {d.marks.map((m, i) => <span key={i} style={ui.chip(m)}>{m}</span>)}
                               {d.in1 && (
                                 <span style={ui.mono}>
                                   in {d.in1}
                                   {d.out1 && <>{' · out '}{d.out1}</>}
+                                </span>
+                              )}
+                              {d.makeup && (
+                                <span style={{ background: C.indigoSoft, color: C.indigo, borderRadius: 6, padding: '2px 8px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                  MAKE-UP
                                 </span>
                               )}
                             </div>
@@ -1231,6 +1314,52 @@ export function AttendancePortal() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button style={ui.secondary} onClick={() => setEditVisitor(null)}>Cancel</button>
               <button style={ui.primary} onClick={saveVisitor} disabled={!editVisitor.name.trim()}>Save changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {makeupFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+          onClick={() => { setMakeupFor(null); setMakeupMsg(''); }}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '28px 30px', width: 'min(460px, 92vw)', boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3)', fontFamily: 'inherit' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem', fontWeight: 600 }}>Make-up classes — {makeupFor.name}</h3>
+            <p style={{ margin: '0 0 18px', color: C.sub, lineHeight: 1.6, fontSize: '0.92rem' }}>
+              {cls.classType === 'weekday'
+                ? 'Each make-up counts as one full present day.'
+                : 'Each make-up counts as half a weekend day — two make-ups make a full day.'}
+              {' '}The absence it makes up for stays on the record.
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 6 }}>Date attended</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+              <input type="date" style={{ ...ui.input, flex: 1 }} value={makeupDate} onChange={e => setMakeupDate(e.target.value)} />
+              <button style={ui.primary} onClick={addMakeup} disabled={!makeupDate}>Add</button>
+            </div>
+            {makeupMsg && (
+              <p style={{ margin: '-8px 0 16px', color: C.amber, fontSize: '0.88rem' }}>{makeupMsg}</p>
+            )}
+
+            {makeupsOf(makeupFor.id).length > 0 && (
+              <>
+                <div style={{ fontSize: '0.8rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 8 }}>
+                  Recorded ({makeupsOf(makeupFor.id).length})
+                </div>
+                <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 12, overflow: 'hidden', marginBottom: 18 }}>
+                  {makeupsOf(makeupFor.id).map((m, i, arr) => (
+                    <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 14px', borderBottom: i < arr.length - 1 ? `1px solid ${C.lineSoft}` : 'none' }}>
+                      <span style={{ fontSize: '0.92rem' }}>
+                        {new Date(`${m.log_date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <button style={ui.tDanger} onClick={() => removeMakeup(m.id)}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button style={ui.secondary} onClick={() => { setMakeupFor(null); setMakeupMsg(''); }}>Done</button>
             </div>
           </div>
         </div>
