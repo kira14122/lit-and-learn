@@ -94,7 +94,21 @@ export const computeInsights = (history: any[]) => {
     : direction === 'down' ? (overallPrev <= overallFirst ? 'Trending down' : 'Dipped last test')
     : 'Holding steady';
 
-  return { count: points.length, points, skills: withStatus, weakest, strongest, overallFirst, overallLast, overallPrev, overallTrend, overallDelta, direction, directionWord };
+  // Absent tests are dropped from `points` above, but an absence is a weighted
+  // ZERO that still counts toward the grade — so the review must acknowledge it
+  // instead of quietly leaving it out (which made a strong arc contradict a lower
+  // grade). N/A is excluded from grading entirely, so it does NOT count as missed.
+  const absent = (history || []).reduce((acc: { count: number; names: string[] }, h: any) => {
+    let s: any = null;
+    try { s = typeof h.score === 'string' ? JSON.parse(h.score) : h.score; } catch { return acc; }
+    if (s && typeof s === 'object' && s.isAbsent && !s.notApplicable) {
+      acc.count += 1;
+      if (h.assessment_name) acc.names.push(h.assessment_name);
+    }
+    return acc;
+  }, { count: 0, names: [] });
+
+  return { count: points.length, points, skills: withStatus, weakest, strongest, overallFirst, overallLast, overallPrev, overallTrend, overallDelta, direction, directionWord, absentCount: absent.count, absentNames: absent.names };
 };
 
 // One-line summary, reused for the on-screen banner and the AI feedback prompt.
@@ -182,6 +196,21 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
   const tipFor = (key:string) => (bank[key] && bank[key][0]) || '';
   const gradeLine = (termGrade != null && !Number.isNaN(termGrade)) ? ` Your final term grade is **${Math.round(termGrade)}%**.` : '';
 
+  // An absent test is a weighted zero that dragged the grade down; name it so the
+  // student isn't left staring at good scores next to an unexplained lower grade.
+  const absentCount = ins.absentCount || 0;
+  const absentNames = ins.absentNames || [];
+  const missedNote = absentCount === 0 ? '' : (() => {
+    const which = absentCount === 1
+      ? (absentNames[0] ? `One test — the ${absentNames[0]} — was missed` : 'One test was missed')
+      : `${absentCount} tests were missed`;
+    const verb = absentCount === 1 ? 'counts as a zero' : 'count as zeros';
+    const tail = gradeLine
+      ? ' in your weighted grade, which is why your final grade is lower than your test scores'
+      : ' in your weighted grade';
+    return ` ${which} and ${verb}${tail}.`;
+  })();
+
   // The carry-forward skill: teacher override wins; otherwise the weakest by
   // term average whose latest score is < 90 — never "keep working on" a skill
   // the student just aced. undefined = omit; null = balanced closing line.
@@ -194,7 +223,7 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
     const growLine = carrySkill === undefined ? ''
       : carrySkill ? ` The area with the most room to grow is **${carrySkill.label}** (${carrySkill.latest}%).` + (tipFor(carrySkill.key) ? ` A habit worth keeping: ${tipFor(carrySkill.key)}.` : '')
       : ` Your skills are strong across the board — keep up the regular practice that got you here.`;
-    return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%).${growLine}`;
+    return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine}${missedNote} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%).${growLine}`;
   }
 
   // Two or more tests — a real arc exists.
@@ -206,7 +235,7 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
     : ins.overallLast > ins.overallPrev
     ? ', ending with an improvement on your previous test'
     : '';
-  const opener = `You've completed the term — here is the full picture. Across ${testsPhrase}, your scores went ${arc}${flourish}.${gradeLine}`;
+  const opener = `You've completed the term — here is the full picture. Across ${testsPhrase}, your scores went ${arc}${flourish}.${gradeLine}${missedNote}`;
 
   const strength = `Your most consistent strength this term was **${ins.strongest.label}** (average ${ins.strongest.avg}%).`;
 
