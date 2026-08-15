@@ -430,9 +430,20 @@ export const GradingPortal: React.FC<{
   const handleGenerateFeedback = async () => {
     if (!selectedStudent) return;
     setIsGenerating(true);
-    const pm = "Please vary vocabulary and structure. Do not use 'I was particularly impressed'. Be specific about scores.";
-    const draft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, getFormattedScores(), teacherNotes+'\n\n'+pm+insightsForAI(insights, assessmentName === 'Final Test'));
-    setFeedback(draft); setIsGenerating(false);
+    try {
+      const pm = "Please vary vocabulary and structure. Do not use 'I was particularly impressed'. Be specific about scores.";
+      const draft = await generateStudentFeedback(selectedStudent.full_name, assessmentName, getFormattedScores(), teacherNotes+'\n\n'+pm+insightsForAI(insights, assessmentName === 'Final Test'));
+      if (draft && String(draft).trim()) {
+        setFeedback(draft);
+      } else {
+        showToast('AI could not generate feedback right now. Please try again.', 'error');
+      }
+    } catch (err) {
+      console.error('handleGenerateFeedback error:', err);
+      showToast('AI feedback failed. Please try again.', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   // ── Quick feedback builder ──
