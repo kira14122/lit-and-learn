@@ -214,7 +214,7 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
   // not the same skill we just named the strength.
   const grown = ins.skills.reduce((m:any, s:any) => (s.trend > m.trend ? s : m), ins.skills[0]);
   const growth = (grown.trend >= 8 && grown.key !== ins.strongest.key)
-    ? ` Your biggest growth was in **${grown.label}**, which climbed from ${grown.first}% to ${grown.latest}% — that improvement came from your work, and it shows.`
+    ? ` Your biggest growth was in **${grown.label}**, which climbed from ${grown.first}% to ${grown.latest}% — the kind of jump that comes from consistent work.`
     : '';
 
   const carry = carrySkill === undefined ? ''
