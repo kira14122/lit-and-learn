@@ -34,6 +34,14 @@ export default {
       validation: (Rule) => Rule.required(),
     },
     {
+      name: 'targetWords',
+      title: 'Target Vocabulary Words',
+      description: 'Pick the specific words to highlight in this review (around 10 is ideal). Only these will be highlighted, regardless of their CEFR level. Leave empty to fall back to automatic level-based highlighting.',
+      type: 'array',
+      of: [{ type: 'reference', to: [{ type: 'dictionaryWord' }] }],
+      validation: (Rule) => Rule.unique(),
+    },
+    {
       name: 'category',
       type: 'string',
       title: 'Main Category',

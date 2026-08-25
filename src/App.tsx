@@ -24,6 +24,59 @@ import LitLearnLogo, { SerifAmp } from './components/LitLearnLogo';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'; 
 import { getSupabaseClient } from './supabaseClient'; 
 
+// --- BOOK REVIEW VOCABULARY GATING ---
+// The global `dictionary` holds every word in Sanity, so a review left to match
+// against all of it fills up with off-level words as the bank grows.
+//
+// Priority 1: the review's hand-picked `targetWords` -> highlight exactly those.
+// Priority 2 (no targetWords set): words matching the review's CEFR level.
+const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+const cefrRank = (level: any) => CEFR_ORDER.indexOf(String(level ?? '').trim().toUpperCase());
+
+// Fallback behaviour for reviews with no targetWords yet.
+// true  = only the review's exact level (B2 review -> B2 words only)
+// false = the review's level and above (B2 review -> B2, C1, C2)
+const FALLBACK_EXACT_LEVEL_ONLY = true;
+
+// Words in Sanity with no `level` set. `true` keeps highlighting them so nothing
+// silently disappears. Flip to false once every word has a level assigned.
+const HIGHLIGHT_UNLEVELED_WORDS = true;
+
+// Builds the lookup map from a review's hand-picked target words.
+// Only root words are keyed here — TextHighlighter expands `variations` itself,
+// which keeps "oppressive" correctly attributed to the root "oppression".
+const buildTargetDictionary = (targetWords: any[]) => {
+  const out: Record<string, any> = {};
+  targetWords.forEach((item: any) => {
+    if (!item || !item.word) return;
+    out[item.word.toLowerCase().trim()] = {
+      pos: item.pos,
+      def: item.definition,
+      level: item.level,
+      example: item.example || null,
+      variations: item.variations || [],
+    };
+  });
+  return out;
+};
+
+// Fallback: slice the global dictionary down by CEFR level.
+const filterDictionaryByLevel = (dict: Record<string, any>, reviewLevel: any) => {
+  const min = cefrRank(reviewLevel);
+  if (min < 0) return dict; // review has no/unknown level -> leave as-is
+  const out: Record<string, any> = {};
+  Object.keys(dict).forEach((key) => {
+    const entry = dict[key];
+    const wordRank = cefrRank(entry?.level);
+    if (wordRank < 0) {
+      if (HIGHLIGHT_UNLEVELED_WORDS) out[key] = entry;
+      return;
+    }
+    if (FALLBACK_EXACT_LEVEL_ONLY ? wordRank === min : wordRank >= min) out[key] = entry;
+  });
+  return out;
+};
+
 // --- 1. SLEEK SVG ICONS ---
 const IconBeginner = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" strokeOpacity="0.2"/><rect x="16" y="6" width="4" height="14" rx="2" strokeOpacity="0.2"/></svg>);
 const IconIntermediate = ({ size = 28 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="14" width="4" height="6" rx="2" fill="currentColor"/><rect x="10" y="10" width="4" height="10" rx="2" fill="currentColor"/><rect x="16" y="6" width="4" height="14" rx="2" strokeOpacity="0.2"/></svg>);
@@ -144,6 +197,17 @@ function LitAndLearnMain() {
     const saved = localStorage.getItem('ll_book');
     return saved ? JSON.parse(saved) : null;
   });
+  // Vocabulary map for the currently open book review only.
+  // Hand-picked targetWords win; otherwise fall back to CEFR level matching.
+  // The global `dictionary` is left untouched, so quizzes, interactive lessons
+  // and the Vocab Vault keep seeing every word.
+  const bookDictionary = useMemo(() => {
+    if (!selectedBook) return dictionary;
+    const picked = Array.isArray(selectedBook.targetWords) ? selectedBook.targetWords : [];
+    if (picked.length > 0) return buildTargetDictionary(picked);
+    return filterDictionaryByLevel(dictionary, selectedBook.level);
+  }, [dictionary, selectedBook]);
+
   const [isInteractiveLesson, setIsInteractiveLesson] = useState(() => localStorage.getItem('ll_isLesson') === 'true');
   const [activeLessonData, setActiveLessonData] = useState<any | null>(() => {
     const saved = localStorage.getItem('ll_lessonData');
@@ -168,7 +232,10 @@ function LitAndLearnMain() {
   }, [bookCategory, activeSubCategory, activeLevel, activeSubLevel, activeUnit, selectedBook, isInteractiveLesson, activeLessonData]);
 
   useEffect(() => {
-    client.fetch('*[_type == "review"] | order(title asc)').then(setReviews).catch(console.error);
+    client.fetch(`*[_type == "review"] | order(title asc){
+      ...,
+      targetWords[]->{ _id, word, pos, definition, level, example, variations }
+    }`).then(setReviews).catch(console.error);
     client.fetch('*[_type == "resource"] | order(unit asc) {..., "fileUrl": file.asset->url, "audioUrl": audio.asset->url}').then(setResources);
     client.fetch('*[_type == "unitMetadata"]').then(setUnitMetadataList);
     client.fetch('*[_type == "unitAssessment"]{_id, level, subLevel, unit}').then(setPublishedAssessments).catch(console.error);
@@ -1061,7 +1128,7 @@ function LitAndLearnMain() {
                 <div className="modal-text-content" style={{ fontSize: '1.2rem', color: '#334155', lineHeight: '2', whiteSpace: 'pre-wrap', padding: '0 20px' }}>
                   <TextHighlighter 
                     text={typeof selectedBook.content === 'string' ? selectedBook.content : Array.isArray(selectedBook.content) ? selectedBook.content.map((block: any) => block.children?.map((child: any) => child.text).join('') || '').join('\n\n') : "Review content is currently being updated."} 
-                    dictionary={dictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
+                    dictionary={bookDictionary} onSaveWord={toggleSaveWord} savedWords={savedWords} 
                   />
                 </div>
               </div>
