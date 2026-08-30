@@ -55,7 +55,19 @@ const PASS_THRESHOLD = 70;
 // Colour marks the exception. At or above the pass line a mark is simply ink —
 // a report where every figure is coloured teaches the reader to ignore colour.
 // The percentage is always printed, so the signal survives a black-and-white printer.
-const pctColor = (p: number) => (p >= PASS_THRESHOLD ? '#0F172A' : p >= 55 ? '#B45309' : '#DC2626');
+// Three bands, said in colour: at or above the pass line, near it, below it.
+// Deliberately saturated — this page is printed and read at arm's length, and
+// a near-black bar for a good mark reads as "no information" rather than "good".
+// Bars are large areas, so they can carry the saturated colour. The small
+// percentage figures beside them cannot: bright orange on white is 2.6:1, well
+// under the readable threshold, so the text uses a darker shade of the same
+// hue. Same three bands, two weights of the same colour.
+const BAR = { good: '#16A34A', mid: '#EA8C00', low: '#DC2626' };
+const TXT = { good: '#15803D', mid: '#A85B00', low: '#C81E1E' };
+const band = (p: number): 'good' | 'mid' | 'low' =>
+  p >= PASS_THRESHOLD ? 'good' : p >= 55 ? 'mid' : 'low';
+const pctColor  = (p: number) => TXT[band(p)];
+const barColor  = (p: number) => BAR[band(p)];
 const listWords = (a: string[]) => {
   const x = a.filter(Boolean);
   if (x.length <= 1) return x[0] || '';
@@ -602,11 +614,11 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
                               {t.skills!.map((s) => (
                                 <div key={s.key} style={{ flex: 1, minWidth: 0 }} title={`${s.label}: ${s.pct}%`}>
                                   <div style={PR.barTrack}>
-                                    <div style={{ ...PR.barFill, width: `${s.pct}%`, background: pctColor(s.pct) }} />
+                                    <div style={{ ...PR.barFill, width: `${s.pct}%`, background: barColor(s.pct) }} />
                                   </div>
                                   <div style={PR.barLabel}>
                                     <span>{s.label.split(' ')[0]}</span>
-                                    <span style={{ ...NUM, color: C.ink2 }}>{s.pct}%</span>
+                                    <span style={{ ...NUM, color: pctColor(s.pct), fontWeight: 600 }}>{s.pct}%</span>
                                   </div>
                                 </div>
                               ))}
@@ -697,7 +709,7 @@ const PR: Record<string, React.CSSProperties> = {
   // Rows separated by rules rather than boxed in cards — four rounded rectangles
   // stacked on a page read as a web layout printed out.
   testRow:   { padding: `${SP.lg} 0`, borderTop: `1px solid ${C.lineSoft}` },
-  barTrack:  { height: 6, borderRadius: R.pill, background: C.lineSoft, overflow: 'hidden' },
+  barTrack:  { height: 8, borderRadius: R.pill, background: '#E8ECF4', overflow: 'hidden' },
   barFill:   { height: '100%', borderRadius: R.pill },
   barLabel:  { display: 'flex', justifyContent: 'space-between', gap: SP.xs, fontSize: 11, color: C.ink3, marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden' },
 
