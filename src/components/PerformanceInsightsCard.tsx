@@ -1,51 +1,150 @@
 import React from 'react';
+import { C, S, R, T, NUM, card, cardBody, pill, disclosure } from './portalTokens';
+import { IconChevronDown, IconChevronRight, IconTrendUp, IconTrendDown, IconTrendFlat } from './portalIcons';
 
 // Presentational card for the per-student performance insights (collapsible).
 // Props: the computed `insights` object (or null), the collapse state, and a toggle.
-export function PerformanceInsightsCard({ insights, show, onToggle }: { insights: any; show: boolean; onToggle: () => void }) {
+//
+// Restyled onto portalTokens. No logic changed.
+//
+// Notable substitutions: the ↗ ↘ → arrows and the ▲ ▼ delta markers were text
+// glyphs that render at a different weight on every platform; they are now
+// stroke icons at the shared weight. The Hide ▾ / Show ▸ affordance is now the
+// same chevron used by every other collapsible section in the portal.
+export function PerformanceInsightsCard({
+  insights, show, onToggle,
+}: { insights: any; show: boolean; onToggle: () => void }) {
   if (!insights) return null;
+
+  const dir = insights.direction as 'up' | 'down' | string;
+  const dirColor = dir === 'down' ? C.bad : dir === 'up' ? C.good : C.ink2;
+  const DirIcon = dir === 'up' ? IconTrendUp : dir === 'down' ? IconTrendDown : IconTrendFlat;
+
   return (
-    <div style={{flexShrink:0}}>
-      <button onClick={onToggle} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#fff',border:'1px solid rgba(15,23,42,0.06)',borderRadius:'16px',padding:'14px 18px',cursor:'pointer',boxShadow:'0 1px 2px rgba(16,24,40,0.04)',gap:'12px'}}>
-        <span style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}>
-          <span style={{color:'#0F172A',fontSize:'1.02rem',fontWeight:'600'}}>Performance insights</span>
-          <span style={{background:'#EEF1F6',color:'#475569',fontSize:'0.72rem',fontWeight:'500',padding:'2px 9px',borderRadius:'999px'}}>Across {insights.count} test{insights.count!==1?'s':''}</span>
-          <span style={{display:'flex',alignItems:'center',gap:'5px',color:insights.direction==='down'?'#DC2626':(insights.direction==='up'?'#047857':'#64748B'),fontWeight:'700',fontSize:'0.85rem'}}>{insights.direction==='up'?'↗':insights.direction==='down'?'↘':'→'} {insights.count>1?`${insights.overallPrev}% → ${insights.overallLast}%`:`${insights.overallLast}%`}</span>
+    <div style={{ flexShrink: 0 }}>
+      <button onClick={onToggle} style={disclosure}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: S.md, flexWrap: 'wrap', minWidth: 0 }}>
+          <span style={T.title}>Performance insights</span>
+          <span style={pill}>
+            Across <span style={NUM}>{insights.count}</span> test{insights.count !== 1 ? 's' : ''}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: dirColor, fontSize: '13px', fontWeight: 500 }}>
+            <DirIcon />
+            <span style={NUM}>
+              {insights.count > 1
+                ? `${insights.overallPrev}% → ${insights.overallLast}%`
+                : `${insights.overallLast}%`}
+            </span>
+          </span>
         </span>
-        <span style={{color:'#94A3B8',fontSize:'0.85rem',fontWeight:'500',whiteSpace:'nowrap'}}>{show?'Hide ▾':'Show ▸'}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: C.ink3, fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+          {show ? 'Hide' : 'Show'}
+          {show ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+        </span>
       </button>
+
       {show && (
-      <div style={{background:'#fff',border:'1px solid rgba(15,23,42,0.06)',borderRadius:'22px',padding:'26px',boxShadow:'0 1px 2px rgba(16,24,40,0.04), 0 14px 30px -12px rgba(16,24,40,0.16)',marginTop:'14px'}}>
-      <div style={{background:'#F5F5FF',border:'1px solid #E5E4FB',borderRadius:'14px',padding:'14px 16px',marginBottom:'14px',fontSize:'0.9rem',lineHeight:'1.6',color:'#334155'}}>
-        {insights.count>1 ? (
-          <span><strong style={{color:'#0F172A'}}>{insights.directionWord}</strong> — overall {insights.overallPrev}% → {insights.overallLast}% since the last test <span style={{color:'#64748B'}}>(first test: {insights.overallFirst}%)</span>. Recurring soft spot: <strong style={{color:'#B45309'}}>{insights.weakest.label}</strong> (avg {insights.weakest.avg}%). Consistent strength: <strong style={{color:'#047857'}}>{insights.strongest.label}</strong> (avg {insights.strongest.avg}%).</span>
-        ) : (
-          <span><strong style={{color:'#0F172A'}}>One test so far</strong> — overall {insights.overallLast}%. Strongest: <strong style={{color:'#047857'}}>{insights.strongest.label}</strong> ({insights.strongest.avg}%). Weakest: <strong style={{color:'#B45309'}}>{insights.weakest.label}</strong> ({insights.weakest.avg}%).</span>
-        )}
-      </div>
+        <div style={{ ...card, marginTop: S.md }}>
+          <div style={cardBody}>
 
-      {insights.count>1 && <div style={{fontSize:'0.72rem',color:'#94A3B8',marginBottom:'2px',paddingLeft:'2px'}}>Bars: {insights.points.map((p:any)=>p.name).join(' · ')} — latest highlighted</div>}
-
-      {insights.skills.map((s:any)=>{
-        const pillBg = s.tone==='green'?'#ECFDF5':s.tone==='amber'?'#FFF7ED':'#F1F5F9';
-        const pillFg = s.tone==='green'?'#047857':s.tone==='amber'?'#C2410C':'#475569';
-        return (
-          <div key={s.key} style={{display:'grid',gridTemplateColumns:'118px 1fr 74px 112px',alignItems:'center',gap:'12px',padding:'12px 0',borderTop:'1px solid #F1F3F8'}}>
-            <span style={{fontWeight:'500',fontSize:'0.9rem',color:'#0F172A'}}>{s.label}</span>
-            <div style={{display:'flex',alignItems:'flex-end',gap:'5px',height:'32px'}}>
-              {s.series.map((p:number,i:number)=>{
-                const isLast = i===s.series.length-1;
-                const amber = s.tone==='amber';
-                const col = isLast?(amber?'#EA9A3E':'#4F46E5'):(amber?'#FBD4A6':'#C7D2FE');
-                return <div key={i} style={{width:'7px',borderRadius:'3px',background:col,height:`${Math.max(6,Math.round(p/100*32))}px`}}/>;
-              })}
+            <div
+              style={{
+                background: C.sunken,
+                border: `1px solid ${C.lineSoft}`,
+                borderRadius: R.control,
+                padding: `${S.md} ${S.lg}`,
+                marginBottom: S.lg,
+                ...T.body, color: C.ink2,
+              }}
+            >
+              {insights.count > 1 ? (
+                <span>
+                  <span style={{ color: C.ink, fontWeight: 500 }}>{insights.directionWord}</span> — overall{' '}
+                  <span style={NUM}>{insights.overallPrev}%</span> → <span style={NUM}>{insights.overallLast}%</span> since the last test{' '}
+                  <span style={{ color: C.ink3 }}>(first test: <span style={NUM}>{insights.overallFirst}%</span>)</span>. Recurring soft spot:{' '}
+                  <span style={{ color: C.warn, fontWeight: 500 }}>{insights.weakest.label}</span>{' '}
+                  <span style={{ ...NUM, color: C.ink3 }}>(avg {insights.weakest.avg}%)</span>. Consistent strength:{' '}
+                  <span style={{ color: C.ink, fontWeight: 500 }}>{insights.strongest.label}</span>{' '}
+                  <span style={{ ...NUM, color: C.ink3 }}>(avg {insights.strongest.avg}%)</span>.
+                </span>
+              ) : (
+                <span>
+                  <span style={{ color: C.ink, fontWeight: 500 }}>One test so far</span> — overall{' '}
+                  <span style={NUM}>{insights.overallLast}%</span>. Strongest:{' '}
+                  <span style={{ color: C.ink, fontWeight: 500 }}>{insights.strongest.label}</span>{' '}
+                  <span style={{ ...NUM, color: C.ink3 }}>({insights.strongest.avg}%)</span>. Weakest:{' '}
+                  <span style={{ color: C.warn, fontWeight: 500 }}>{insights.weakest.label}</span>{' '}
+                  <span style={{ ...NUM, color: C.ink3 }}>({insights.weakest.avg}%)</span>.
+                </span>
+              )}
             </div>
-            <span style={{fontSize:'0.9rem',fontWeight:'700',color:'#0F172A',whiteSpace:'nowrap'}}>{s.latest}%{insights.count>1 && <span style={{marginLeft:'5px',fontSize:'0.74rem',fontWeight:'600',color:s.delta>0?'#047857':s.delta<0?'#DC2626':'#94A3B8'}}>{s.delta>0?'▲':s.delta<0?'▼':'—'}{s.delta!==0?Math.abs(s.delta):''}</span>}</span>
-            <span style={{fontSize:'0.72rem',fontWeight:'600',padding:'3px 10px',borderRadius:'999px',textAlign:'center',background:pillBg,color:pillFg}}>{s.status}</span>
+
+            {insights.count > 1 && (
+              <div style={{ ...T.micro, textTransform: 'none', letterSpacing: 0, marginBottom: S.sm }}>
+                Bars: {insights.points.map((p: any) => p.name).join(' · ')} — latest highlighted
+              </div>
+            )}
+
+            {insights.skills.map((s: any) => {
+              const needsWork = s.tone === 'amber';
+              const deltaColor = s.delta > 0 ? C.good : s.delta < 0 ? C.bad : C.ink3;
+              const DeltaIcon = s.delta > 0 ? IconTrendUp : s.delta < 0 ? IconTrendDown : IconTrendFlat;
+
+              return (
+                <div
+                  key={s.key}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0,118px) 1fr 82px 104px',
+                    alignItems: 'center', gap: S.md,
+                    padding: `${S.md} 0`,
+                    borderTop: `1px solid ${C.lineSoft}`,
+                  }}
+                >
+                  <span style={{ ...T.meta, color: C.ink }}>{s.label}</span>
+
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: S.xs, height: '32px' }}>
+                    {s.series.map((p: number, i: number) => {
+                      const isLast = i === s.series.length - 1;
+                      const col = isLast ? (needsWork ? C.warn : C.accent) : C.line;
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            width: '6px', borderRadius: R.pill, background: col,
+                            height: `${Math.max(6, Math.round((p / 100) * 32))}px`,
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <span style={{ ...NUM, fontSize: '15px', fontWeight: 600, color: C.ink, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {s.latest}%
+                    {insights.count > 1 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: deltaColor, fontSize: '11px', fontWeight: 500 }}>
+                        <DeltaIcon size={12} />
+                        {s.delta !== 0 ? Math.abs(s.delta) : ''}
+                      </span>
+                    )}
+                  </span>
+
+                  <span
+                    style={{
+                      ...pill,
+                      textAlign: 'center',
+                      background: needsWork ? C.warnTint : C.lineSoft,
+                      color: needsWork ? C.warn : C.ink2,
+                      borderRadius: R.pill,
+                    }}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
-      </div>
+        </div>
       )}
     </div>
   );

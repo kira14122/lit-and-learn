@@ -23,6 +23,11 @@ import { useUser } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import { generateProgressReport } from '../aiGenerator';
 import type { ProgressReportInput } from '../aiGenerator';
+import { C, S as SP, R, T, NUM, btn } from './portalTokens';
+import { buildReport, PASS_MARK, STRUCTURE_COUNT } from './reportEngine';
+import { refineReport } from './reportRefine';
+import type { Pronoun } from './reportEngine';
+import { IconChevronLeft, IconSparkle, IconRefresh, IconFile, IconSave, IconTrendUp, IconTrendDown } from './portalIcons';
 
 type Trend = 'up' | 'down' | 'flat';
 type TestStatus = 'graded' | 'absent' | 'na' | 'pending';
@@ -47,7 +52,10 @@ const CANON = ['First Test', 'Midterm', 'Third Test', 'Final Test'] as const;
 const DEFAULT_WEIGHT: Record<string, number> = { 'First Test': 10, 'Midterm': 30, 'Third Test': 10, 'Final Test': 50 };
 const PASS_THRESHOLD = 70;
 
-const pctColor = (p: number) => (p >= 80 ? '#16a34a' : p >= 60 ? '#d97706' : '#dc2626');
+// Colour marks the exception. At or above the pass line a mark is simply ink —
+// a report where every figure is coloured teaches the reader to ignore colour.
+// The percentage is always printed, so the signal survives a black-and-white printer.
+const pctColor = (p: number) => (p >= PASS_THRESHOLD ? '#0F172A' : p >= 55 ? '#B45309' : '#DC2626');
 const listWords = (a: string[]) => {
   const x = a.filter(Boolean);
   if (x.length <= 1) return x[0] || '';
@@ -148,12 +156,13 @@ const currentAcademicTerm = (): string => {
   const now = new Date();
   const y = now.getFullYear();
   const start = now.getMonth() >= 7 ? y : y - 1; // academic year rolls in August
-  return `${start}\u2013${start + 1} \u00B7 Term 1`;
+  return `${start}–${start + 1} · Term 1`;
 };
 
 const ALL_TRAITS = [
   'hardworking', 'punctual', 'serious', 'brilliant', 'motivated',
   'participative', 'attentive', 'curious', 'disciplined', 'respectful',
+  'enthusiastic', 'exceptional',
 ];
 
 export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades, onClose, showToast, getToken }) => {
@@ -199,6 +208,91 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadedExisting, setLoadedExisting] = useState(false);
+
+  // ── Report inputs the marks cannot supply ────────────────────────────────
+  // Pronoun is stored on the profile so it is set once per student. Attendance
+  // is a tick for now: the attendance module keeps its own roster, and only 25
+  // of 68 students match by name, so reading it automatically would silently
+  // miss the rest.
+  const [pronoun, setPronoun] = useState<Pronoun | null>(
+    (student?.pronoun as Pronoun) || null
+  );
+  const [attendanceConcern, setAttendanceConcern] = useState(false);
+  // Each press of the button moves to the next sentence structure, so a report
+  // you do not like can simply be written again rather than edited by hand.
+  const [variant, setVariant] = useState(0);
+  const [refining, setRefining] = useState(false);
+  // Which version is on screen, so it is never ambiguous whether a model has
+  // touched the wording.
+  const [source, setSource] = useState<'none' | 'engine' | 'ai'>('none');
+
+  // Gathers exactly what the engine needs, in one place, so the plain and the
+  // refined paths can never be built from different facts.
+  const reportInput = () => {
+    const skillPct: any = {};
+    profile.forEach((sk: any) => { skillPct[sk.key] = sk.avg; });
+    return {
+      studentName: student.full_name,
+      pronoun: pronoun!,
+      traits,
+      skillPct,
+      standing: passStanding,
+      missedAllTests,
+      attendanceConcern,
+      effortClause,
+      variant,
+    };
+  };
+
+  const refine = async () => {
+    if (!pronoun) { showToast('Set the pronoun first.', 'error'); return; }
+    setRefining(true);
+    try {
+      const input = reportInput();
+      const plan = buildReport(input);
+      const out = await refineReport(input, plan);
+      setReportText(out.text);
+      setSource(out.usedAI ? 'ai' : 'engine');
+      showToast(
+        out.usedAI ? 'Reworded' : `Kept the plain version — ${out.reason}`,
+        out.usedAI ? 'success' : 'error'
+      );
+    } finally { setRefining(false); }
+  };
+  const [effortClause, setEffortClause] = useState(true);
+
+  const savePronoun = async (v: Pronoun) => {
+    setPronoun(v);
+    try {
+      const supabase = getSupabaseClient((await getToken({ template: 'supabase' })) || '');
+      await supabase.from('profiles').update({ pronoun: v }).eq('id', student.id);
+    } catch { showToast('Pronoun set for this report, but could not be saved.', 'error'); }
+  };
+
+  // The pass verdict runs over the WHOLE term: a test never sat scores zero and
+  // still occupies its weight. Deliberately different from `standing` above,
+  // which divides by the tests taken and answers "grade so far".
+  const passStanding = useMemo(() => {
+    const counted = tests.filter((t: any) => t.status !== 'na');
+    const denom = counted.reduce((sum: number, t: any) => sum + (t.weight || 0), 0);
+    const earned = counted.reduce((sum: number, t: any) => sum + (t.earnedWeight || 0), 0);
+    return denom > 0 ? (earned / denom) * 100 : 0;
+  }, [tests]);
+
+  const missedAllTests = useMemo(
+    () => tests.length > 0 && tests.every((t: any) => t.status === 'pending' || t.status === 'absent'),
+    [tests]
+  );
+
+  const writeReport = (nextShape = false) => {
+    if (!pronoun) { showToast('Set the pronoun first.', 'error'); return; }
+    const v = nextShape ? variant + 1 : variant;
+    if (nextShape) setVariant(v);
+    const out = buildReport({ ...reportInput(), variant: v });
+    setReportText(out.text);
+    setSource('engine');
+    showToast(nextShape ? `Rewritten — ${out.structure}` : (out.passes ? 'Report written — this student passes' : 'Report written'), 'success');
+  };
 
   // Load a previously saved report for this student (most recent), if any.
   useEffect(() => {
@@ -305,152 +399,227 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
   };
 
   const handlePrint = () => window.print();
-
   // ── render ───────────────────────────────────────────────────────────────────
-  const grad = 'linear-gradient(135deg,#4f46e5,#7c3aed)';
+  // Two surfaces, two rulebooks.
+  //
+  // The chrome (toolbar, controls column) is portal UI and uses portalTokens.
+  // The two pages inside .pr-print-area are a *document*: it goes home in a bag,
+  // gets read by a parent, and gets filed. So it is typeset rather than styled —
+  // rules and space instead of filled panels, and it has to survive a black-and-
+  // white printer, which is why every signal that used to be carried by colour
+  // is now also carried by a number or a rule.
 
   return (
-    <div style={S.overlay} className="pr-overlay">
+    <div style={PR.overlay} className="pr-overlay">
       <style>{PR_CSS}</style>
 
-      <div style={S.shell}>
+      <div style={PR.shell}>
         {/* toolbar (not printed) */}
-        <div style={S.toolbar} className="pr-no-print">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={onClose} style={S.ghostBtn}>← Back</button>
-            <span style={{ fontWeight: 800, fontSize: 16 }}>Progress Report</span>
-            {loadedExisting && <span style={S.savedTag}>editing saved report</span>}
+        <div style={PR.toolbar} className="pr-no-print">
+          <div style={{ display: 'flex', alignItems: 'center', gap: SP.md }}>
+            <button onClick={onClose} style={btn('default')}><IconChevronLeft /> Back</button>
+            <span style={T.title}>Progress report</span>
+            {loadedExisting && <span style={PR.savedTag}>Editing saved report</span>}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handlePrint} style={S.ghostBtn}>Export PDF</button>
-            <button onClick={handleSave} disabled={saving} style={{ ...S.primaryBtn, background: saving ? '#a5b4fc' : grad }}>
-              {saving ? 'Saving…' : 'Save to portal'}
+          <div style={{ display: 'flex', gap: SP.sm }}>
+            <button onClick={handlePrint} style={btn('default')}><IconFile /> Export PDF</button>
+            <button onClick={handleSave} disabled={saving} style={btn('primary', saving ? { opacity: 0.6, cursor: 'wait' } : undefined)}>
+              <IconSave /> {saving ? 'Saving…' : 'Save to portal'}
             </button>
           </div>
         </div>
 
-        <div style={S.body}>
+        <div style={PR.body}>
           {/* ── controls column ── */}
-          <div style={S.controls} className="pr-no-print">
-            <div style={{ ...S.card, background: grad, color: '#fff', border: 'none' }}>
-              <div style={S.eyebrowLight}>Writing report for</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{student.full_name}</div>
-              <div style={{ color: '#e0e7ff', fontSize: 13 }}>
-                {student.course_level}{student.class_time ? ` \u00B7 ${student.class_time}` : ''}
+          <div style={PR.controls} className="pr-no-print">
+
+            <div style={PR.card}>
+              <div style={{ ...T.micro, marginBottom: SP.xs }}>Writing report for</div>
+              <div style={T.display}>{student.full_name}</div>
+              <div style={{ ...T.meta, color: C.ink3, marginTop: SP.xs }}>
+                {student.course_level}{student.class_time ? ` · ${student.class_time}` : ''}
               </div>
-              <div style={S.standingRow}>
-                <span style={{ color: '#e0e7ff', fontSize: 13 }}>Grade so far</span>
-                <span style={{ fontSize: 22, fontWeight: 800 }}>{standing != null ? `${Math.round(standing)}%` : '—'}</span>
+              <div style={{ ...PR.standingRow, borderBottom: `1px solid ${C.lineSoft}`, paddingBottom: SP.md, marginBottom: SP.md }}>
+                <div>
+                  <span style={{ ...T.micro, marginBottom: 0 }}>Verdict</span>
+                  <div style={{ ...T.meta, ...NUM, color: C.ink3 }}>{Math.round(passStanding)}% of the whole term</div>
+                </div>
+                <span style={{ ...T.title, color: passStanding >= PASS_MARK ? C.good : C.bad }}>
+                  {passStanding >= PASS_MARK ? 'Passes' : 'Does not pass'}
+                </span>
+              </div>
+              <div style={PR.standingRow}>
+                <span style={{ ...T.micro, marginBottom: 0 }}>Grade so far</span>
+                <span style={{ ...T.displayLg, ...NUM, color: C.accent }}>
+                  {standing != null ? `${Math.round(standing)}%` : '—'}
+                </span>
               </div>
             </div>
 
-            <div style={S.card}>
-              <label style={S.lbl}>Term</label>
-              <input value={term} onChange={(e) => setTerm(e.target.value)} style={S.input} placeholder="e.g. 2025–2026 · Term 2" />
-              <p style={S.hint}>Saving the same term again updates this report.</p>
+            <div style={PR.card}>
+              <label style={PR.lbl}>Term</label>
+              <input value={term} onChange={(e) => setTerm(e.target.value)} style={PR.input} placeholder="2025–2026 · Term 2" />
+              <p style={PR.hint}>Saving the same term again updates this report.</p>
             </div>
 
-            <div style={S.card}>
-              <div style={S.lbl}>Describe the student</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div style={PR.card}>
+              <div style={PR.lbl}>Pronoun</div>
+              <div style={{ display: 'flex', gap: SP.sm, marginBottom: SP.md }}>
+                {(['she','he','they'] as Pronoun[]).map(v => (
+                  <button key={v} onClick={() => savePronoun(v)}
+                    style={{ ...PR.chip, ...(pronoun === v ? PR.chipOn : {}) }}>{v}</button>
+                ))}
+              </div>
+              {!pronoun && <p style={{ ...PR.hint, color: C.warn, marginTop: 0 }}>Set this before writing the report — it is saved to the student's profile.</p>}
+
+              <label className="pr-chip" style={{ display: 'flex', gap: SP.md, alignItems: 'flex-start', cursor: 'pointer', marginTop: SP.md, border: 'none', background: 'transparent', padding: 0 }}>
+                <input type="checkbox" checked={attendanceConcern} onChange={e => setAttendanceConcern(e.target.checked)} style={{ width: 17, height: 17, marginTop: 2, accentColor: C.accent }} />
+                <span style={{ ...T.meta, color: C.ink2 }}>Attendance needs improving</span>
+              </label>
+              <label className="pr-chip" style={{ display: 'flex', gap: SP.md, alignItems: 'flex-start', cursor: 'pointer', marginTop: SP.sm, border: 'none', background: 'transparent', padding: 0 }}>
+                <input type="checkbox" checked={effortClause} onChange={e => setEffortClause(e.target.checked)} style={{ width: 17, height: 17, marginTop: 2, accentColor: C.accent }} />
+                <span style={{ ...T.meta, color: C.ink2 }}>Include a line about effort and attitude</span>
+              </label>
+            </div>
+
+            <div style={PR.card}>
+              <div style={PR.lbl}>Describe the student</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: SP.sm }}>
                 {ALL_TRAITS.map((t) => {
                   const on = traits.includes(t);
                   return (
-                    <button key={t} onClick={() => toggleTrait(t)}
-                      style={{ ...S.chip, ...(on ? S.chipOn : {}) }}>{t}</button>
+                    <button key={t} onClick={() => toggleTrait(t)} className="pr-chip"
+                      style={{ ...PR.chip, ...(on ? PR.chipOn : {}) }}>{t}</button>
                   );
                 })}
               </div>
-              <p style={S.hint}>You pick the traits; strengths and the focus area come from the results.</p>
+              <p style={PR.hint}>You pick the traits; strengths and the focus area come from the results.</p>
             </div>
 
-            <div style={S.card}>
-              <div style={S.lblMuted}>Read from results</div>
-              <div style={S.readRow}><span style={{ color: '#64748b' }}>Strengths</span>
-                <span style={{ color: '#16a34a', fontWeight: 600 }}>{listWords(autoStrengths) || '—'}</span></div>
-              <div style={S.readRow}><span style={{ color: '#64748b' }}>Focus area</span>
-                <span style={{ color: '#d97706', fontWeight: 600 }}>
-                  {weakSkill ? `${weakSkill.label}${weakSkill.trend === 'up' ? ' \u2191 improving' : weakSkill.trend === 'down' ? ' \u2193 slipping' : ''}` : '—'}
-                </span></div>
-            </div>
-
-            <div style={S.card}>
-              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-                <span onClick={() => setIncludeProgression((v) => !v)}
-                  style={{ ...S.toggle, background: includeProgression ? '#4f46e5' : '#cbd5e1' }}>
-                  <span style={{ ...S.knob, left: includeProgression ? 18 : 2 }} />
+            <div style={PR.card}>
+              <div style={PR.lbl}>Read from results</div>
+              <div style={PR.readRow}>
+                <span style={{ color: C.ink3 }}>Strengths</span>
+                <span style={{ color: C.ink, fontWeight: 500 }}>{listWords(autoStrengths) || '—'}</span>
+              </div>
+              <div style={PR.readRow}>
+                <span style={{ color: C.ink3 }}>Focus area</span>
+                <span style={{ color: C.warn, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: SP.xs }}>
+                  {weakSkill ? weakSkill.label : '—'}
+                  {weakSkill?.trend === 'up' && <><IconTrendUp size={13} /> improving</>}
+                  {weakSkill?.trend === 'down' && <><IconTrendDown size={13} /> slipping</>}
                 </span>
-                <span style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+              </div>
+            </div>
+
+            <div style={PR.card}>
+              <label style={{ display: 'flex', gap: SP.md, alignItems: 'flex-start', cursor: 'pointer' }}>
+                <span onClick={() => setIncludeProgression((v) => !v)}
+                  style={{ ...PR.toggle, background: includeProgression ? C.accent : C.line }}>
+                  <span style={{ ...PR.knob, left: includeProgression ? 18 : 2 }} />
+                </span>
+                <span style={{ ...T.meta, color: C.ink3 }}>
                   Include a progression line. Off by default — movement is time-based (8 months), not results.
                 </span>
               </label>
             </div>
 
-            <button onClick={handleGenerate} disabled={generating}
-              style={{ ...S.primaryBtn, width: '100%', padding: '13px', background: generating ? '#a5b4fc' : grad }}>
-              {generating ? '✨ Writing…' : reportText ? '✨ Re-generate report' : '✨ Generate report'}
+            <button onClick={() => writeReport(false)} disabled={!pronoun}
+              style={btn('primary', { width: '100%', padding: '13px', fontSize: '15px', ...(!pronoun ? { opacity: 0.5, cursor: 'not-allowed' } : null) })}>
+              Write the report
             </button>
-            <p style={{ ...S.hint, textAlign: 'center' }}>Unique per student · you edit freely afterwards</p>
+            <button onClick={() => writeReport(true)} disabled={!pronoun || !reportText}
+              style={btn('default', { width: '100%', marginTop: SP.sm, ...(!pronoun || !reportText ? { opacity: 0.5, cursor: 'not-allowed' } : null) })}>
+              Try a different wording
+            </button>
+            <button onClick={refine} disabled={!pronoun || refining}
+              style={btn('default', { width: '100%', marginTop: SP.sm, ...(!pronoun || refining ? { opacity: 0.5, cursor: 'wait' } : null) })}>
+              {refining ? 'Rewording…' : 'Reword with AI'}
+            </button>
+            <p style={{ ...PR.hint, textAlign: 'center', marginTop: SP.sm }}>
+              {STRUCTURE_COUNT} sentence structures. The AI only rewords — the marks, the skills and the
+              verdict are checked afterwards, and a bad rewrite is discarded.
+              {source === 'ai' && <><br/><span style={{ color: C.accent }}>Showing the AI wording.</span></>}
+              {source === 'engine' && <><br/>Showing the plain wording.</>}
+            </p>
+
+            <button onClick={handleGenerate} disabled={generating}
+              style={btn('primary', { width: '100%', padding: '13px', fontSize: '15px', ...(generating ? { opacity: 0.6, cursor: 'wait' } : null) })}>
+              <IconSparkle /> {generating ? 'Writing…' : reportText ? 'Re-generate report' : 'Generate report'}
+            </button>
+            <p style={{ ...PR.hint, textAlign: 'center', marginTop: 0 }}>Unique per student · you edit freely afterwards</p>
           </div>
 
           {/* ── the paper (printed) ── */}
-          <div style={S.paperCol}>
+          <div style={PR.paperCol}>
             <div className="pr-print-area">
+
               {/* FRONT PAGE */}
-              <div style={S.page}>
-                <div style={{ ...S.pageHeader, background: grad }}>
+              <div style={PR.page}>
+                <div style={PR.masthead}>
                   <div>
-                    <div style={{ fontFamily: 'Fredoka, sans-serif', fontWeight: 600, fontSize: 17 }}>
-                      Lit <span style={{ fontFamily: 'Fraunces, serif', fontStyle: 'italic', color: '#c7d2fe' }}>&amp;</span> Learn
+                    <div style={{ fontFamily: 'Fredoka, sans-serif', fontWeight: 600, fontSize: 18, color: C.ink }}>
+                      Lit <span style={{ fontFamily: 'Fraunces, Georgia, serif', fontStyle: 'italic', color: C.accent }}>&amp;</span> Learn
                     </div>
-                    <div style={{ color: '#c7d2fe', fontSize: 10, letterSpacing: 1 }}>TERM PROGRESS REPORT</div>
+                    <div style={{ ...T.micro, marginTop: 2 }}>Term progress report</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{student.full_name}</div>
-                    <div style={{ color: '#c7d2fe', fontSize: 10 }}>
-                      {student.course_level}{student.class_time ? ` \u00B7 ${student.class_time}` : ''} \u00B7 {term}
+                    <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 18, color: C.ink }}>{student.full_name}</div>
+                    <div style={{ ...T.micro, textTransform: 'none', letterSpacing: 0, marginTop: 2 }}>
+                      {student.course_level}{student.class_time ? ` · ${student.class_time}` : ''} · {term}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ padding: 26 }}>
-                  <div style={S.sectionLabel}>Test results &amp; remarks</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={PR.pagePad}>
+                  <div style={PR.sectionLabel}>Test results and remarks</div>
+
+                  <div>
                     {tests.map((t, i) => {
                       const m = t.status === 'graded' ? Math.round(t.mastery || 0) : null;
                       const statusText = t.status === 'absent' ? 'Absent' : t.status === 'na' ? 'N/A' : t.status === 'pending' ? 'Not taken' : null;
                       return (
-                        <div key={t.name} style={S.testRow}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                              <span style={{ fontWeight: 700 }}>{t.name}</span>
-                              <span style={{ fontSize: 11, color: '#94a3b8' }}>{t.weight}%{t.maxPoints ? ` \u00B7 out of ${t.maxPoints}` : ''}</span>
+                        <div key={t.name} style={PR.testRow}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: SP.md, marginBottom: SP.sm }}>
+                            <div style={{ display: 'flex', gap: SP.sm, alignItems: 'baseline' }}>
+                              <span style={{ fontSize: 15, fontWeight: 500, color: C.ink }}>{t.name}</span>
+                              <span style={{ ...NUM, fontSize: 11, color: C.ink3 }}>
+                                {t.weight}%{t.maxPoints ? ` · out of ${t.maxPoints}` : ''}
+                              </span>
                             </div>
                             {m != null ? (
-                              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                                <span style={{ fontSize: 17, fontWeight: 800, color: pctColor(m) }}>{m}%</span>
-                                <span style={{ fontSize: 11, color: '#94a3b8' }}>earns {(t.earnedWeight || 0).toFixed(1)}/{t.weight}</span>
+                              <div style={{ display: 'flex', gap: SP.md, alignItems: 'baseline' }}>
+                                <span style={{ ...NUM, fontSize: 18, fontWeight: 600, color: pctColor(m) }}>{m}%</span>
+                                <span style={{ ...NUM, fontSize: 11, color: C.ink3 }}>earns {(t.earnedWeight || 0).toFixed(1)}/{t.weight}</span>
                               </div>
-                            ) : <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8' }}>{statusText}</span>}
+                            ) : (
+                              <span style={{ fontSize: 11, fontWeight: 500, color: C.ink3, textTransform: 'uppercase', letterSpacing: '0.09em' }}>{statusText}</span>
+                            )}
                           </div>
 
                           {t.status === 'graded' && (
-                            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                            <div style={{ display: 'flex', gap: SP.sm, marginBottom: SP.md }}>
                               {t.skills!.map((s) => (
-                                <div key={s.key} style={{ flex: 1 }} title={`${s.label}: ${s.pct}%`}>
-                                  <div style={S.barTrack}><div style={{ ...S.barFill, width: `${s.pct}%`, background: pctColor(s.pct) }} /></div>
-                                  <div style={S.barLabel}>{s.label.split(' ')[0]}</div>
+                                <div key={s.key} style={{ flex: 1, minWidth: 0 }} title={`${s.label}: ${s.pct}%`}>
+                                  <div style={PR.barTrack}>
+                                    <div style={{ ...PR.barFill, width: `${s.pct}%`, background: pctColor(s.pct) }} />
+                                  </div>
+                                  <div style={PR.barLabel}>
+                                    <span>{s.label.split(' ')[0]}</span>
+                                    <span style={{ ...NUM, color: C.ink2 }}>{s.pct}%</span>
+                                  </div>
                                 </div>
                               ))}
                             </div>
                           )}
 
                           {t.status !== 'na' && (
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: SP.xs, alignItems: 'center' }}>
                               <input value={notes[i]} onChange={(e) => setNoteAt(i, e.target.value)}
-                                placeholder="Brief note for this test…" style={S.noteInput} className="pr-note-input" />
+                                placeholder="Brief note for this test…" style={PR.noteInput} className="pr-note-input" />
                               <button onClick={() => regenNote(i)} title="Draft from this test's result"
-                                style={S.noteRegen} className="pr-no-print">↻</button>
+                                aria-label="Draft this note from the result"
+                                style={PR.noteRegen} className="pr-no-print"><IconRefresh size={14} /></button>
                             </div>
                           )}
                         </div>
@@ -461,21 +630,27 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
               </div>
 
               {/* BACK PAGE */}
-              <div style={{ ...S.page, marginTop: 20 }} className="pr-page-break">
-                <div style={{ padding: '22px 26px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <div style={S.sectionLabel}>Teacher's report</div>
-                  <div style={{ fontSize: 10, color: '#cbd5e1' }}>{student.full_name} \u00B7 {term}</div>
+              <div style={{ ...PR.page, marginTop: 20 }} className="pr-page-break">
+                <div style={{ ...PR.pagePad, paddingBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: SP.md }}>
+                  <div style={{ ...PR.sectionLabel, marginBottom: 0 }}>Teacher's report</div>
+                  <div style={{ ...T.micro, textTransform: 'none', letterSpacing: 0 }}>{student.full_name} · {term}</div>
                 </div>
-                <div style={{ padding: '0 26px 26px' }}>
+                <div style={{ ...PR.pagePad, paddingTop: SP.lg }}>
                   <textarea
                     value={reportText}
                     onChange={(e) => setReportText(e.target.value)}
                     placeholder="Pick the traits on the left and press Generate — the report appears here in three movements (who the student is and their strengths, the one area to focus on, and optionally a progression line). Edit freely."
-                    style={S.reportBox}
+                    style={PR.reportBox}
                     className="pr-report-box"
                   />
+                  <div style={PR.signature} className="pr-signature">
+                    <div style={{ ...T.micro, marginBottom: SP.sm }}>Instructor</div>
+                    <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 15, color: C.ink }}>Dr. Chouit Abderraouf</div>
+                    <div style={{ ...T.micro, textTransform: 'none', letterSpacing: 0, marginTop: 2 }}>Lit &amp; Learn · litnlearn.com</div>
+                  </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -484,45 +659,61 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
   );
 };
 
-// ── inline styles (matches the portal's inline-style idiom) ────────────────────
-const S: Record<string, React.CSSProperties> = {
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 60, overflowY: 'auto', padding: '24px 16px' },
-  shell: { maxWidth: 1180, margin: '0 auto', background: '#eef0f7', borderRadius: 18, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.35)' },
-  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '12px 18px' },
-  body: { display: 'flex', gap: 20, padding: 20, flexWrap: 'wrap', alignItems: 'flex-start' },
-  controls: { flex: '1 1 320px', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 14 },
-  paperCol: { flex: '2 1 520px', minWidth: 320 },
-  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,.05)' },
-  eyebrowLight: { fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase', color: '#c7d2fe', marginBottom: 4 },
-  standingRow: { marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,.12)', borderRadius: 12, padding: '8px 14px' },
-  lbl: { display: 'block', fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: '#4338ca', marginBottom: 8 },
-  lblMuted: { fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 10 },
-  hint: { fontSize: 11, color: '#94a3b8', marginTop: 8, marginBottom: 0 },
-  input: { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 9, padding: '9px 12px', fontSize: 14, outline: 'none', color: '#1e293b' },
-  chip: { fontSize: 13, lineHeight: 1, padding: '8px 12px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', cursor: 'pointer' },
-  chipOn: { background: '#4f46e5', borderColor: '#4f46e5', color: '#fff' },
-  readRow: { display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' },
-  toggle: { position: 'relative', width: 36, height: 20, borderRadius: 99, flexShrink: 0, marginTop: 2, transition: 'background .15s', display: 'inline-block' },
-  knob: { position: 'absolute', top: 2, width: 16, height: 16, borderRadius: 99, background: '#fff', transition: 'left .15s' },
-  primaryBtn: { border: 'none', color: '#fff', borderRadius: 11, padding: '9px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer' },
-  ghostBtn: { border: '1px solid #e2e8f0', background: '#fff', color: '#475569', borderRadius: 9, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-  savedTag: { fontSize: 11, color: '#4338ca', background: '#e0e7ff', borderRadius: 99, padding: '3px 10px' },
-  page: { background: '#fff', borderRadius: 14, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,.06)' },
-  pageHeader: { padding: '16px 26px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' },
-  sectionLabel: { fontSize: 11, fontWeight: 700, letterSpacing: 1.3, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 14 },
-  testRow: { border: '1px solid #e5e7eb', borderRadius: 12, padding: 14 },
-  barTrack: { height: 6, borderRadius: 99, background: '#f1f5f9', overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 99 },
-  barLabel: { fontSize: 9, color: '#94a3b8', textAlign: 'center', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  noteInput: { flex: 1, fontSize: 13, color: '#334155', background: '#f8fafc', border: '1px solid transparent', borderRadius: 8, padding: '8px 12px', outline: 'none' },
-  noteRegen: { flexShrink: 0, border: 'none', background: 'transparent', color: '#4f46e5', fontSize: 15, cursor: 'pointer', padding: '6px 8px' },
-  reportBox: { width: '100%', boxSizing: 'border-box', minHeight: 240, border: '1px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', fontSize: 15, lineHeight: 1.9, color: '#334155', resize: 'vertical', outline: 'none', fontFamily: 'inherit', background: 'repeating-linear-gradient(transparent,transparent 29px,#eef2f7 29px,#eef2f7 30px)' },
+// ── styles ────────────────────────────────────────────────────────────────────
+// Screen chrome resolves through portalTokens. The two `page` surfaces and
+// everything inside them are document typography and use point-friendly sizes,
+// because they are measured on paper rather than on a display.
+const PR: Record<string, React.CSSProperties> = {
+  overlay:   { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 60, overflowY: 'auto', padding: `${SP.xl} ${SP.lg}` },
+  shell:     { maxWidth: 1180, margin: '0 auto', background: C.canvas, borderRadius: R.card, overflow: 'hidden', boxShadow: '0 24px 64px -16px rgba(15,23,42,0.45)' },
+  toolbar:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: SP.md, flexWrap: 'wrap', background: C.paper, borderBottom: `1px solid ${C.line}`, padding: `${SP.md} ${SP.lg}` },
+  body:      { display: 'flex', gap: SP.xl, padding: SP.xl, flexWrap: 'wrap', alignItems: 'flex-start' },
+  controls:  { flex: '1 1 320px', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: SP.md },
+  paperCol:  { flex: '2 1 520px', minWidth: 320 },
+
+  card:      { background: C.paper, border: `1px solid ${C.line}`, borderRadius: R.card, padding: SP.lg, boxShadow: '0 1px 2px rgba(15,23,42,0.04)' },
+  standingRow: { marginTop: SP.lg, paddingTop: SP.md, borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' },
+
+  lbl:       { display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.09em', textTransform: 'uppercase', color: C.ink3, marginBottom: SP.md },
+  hint:      { fontSize: 11, color: C.ink3, marginTop: SP.sm, marginBottom: 0, lineHeight: 1.5 },
+  input:     { width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: R.control, padding: '9px 11px', fontSize: 15, outline: 'none', color: C.ink, background: C.paper, font: 'inherit' },
+
+  chip:      { fontSize: 13, lineHeight: 1, padding: '8px 12px', borderRadius: R.pill, border: `1px solid ${C.line}`, background: C.paper, color: C.ink2, cursor: 'pointer', font: 'inherit' },
+  chipOn:    { background: C.accent, borderColor: C.accent, color: C.paper },
+  readRow:   { display: 'flex', justifyContent: 'space-between', gap: SP.md, fontSize: 13, padding: '5px 0' },
+  toggle:    { position: 'relative', width: 36, height: 20, borderRadius: R.pill, flexShrink: 0, marginTop: 2, transition: 'background .15s', display: 'inline-block' },
+  knob:      { position: 'absolute', top: 2, width: 16, height: 16, borderRadius: R.pill, background: C.paper, transition: 'left .15s', boxShadow: '0 1px 2px rgba(15,23,42,0.2)' },
+  savedTag:  { fontSize: 11, fontWeight: 500, color: C.ink2, background: C.lineSoft, borderRadius: R.pill, padding: '3px 10px' },
+
+  // ── the document ──
+  page:      { background: C.paper, borderRadius: R.card, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' },
+  // A typeset masthead, not a filled banner. The old one was a full-bleed
+  // gradient: on paper that is a solid block of ink across the top of every
+  // report, and it is the first thing a parent sees.
+  masthead:  { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: SP.lg, padding: `${SP.xl} ${SP.xl} ${SP.lg}`, borderBottom: `2px solid ${C.ink}` },
+  pagePad:   { padding: SP.xl },
+  sectionLabel: { fontSize: 11, fontWeight: 500, letterSpacing: '0.09em', textTransform: 'uppercase', color: C.ink3, marginBottom: SP.lg },
+
+  // Rows separated by rules rather than boxed in cards — four rounded rectangles
+  // stacked on a page read as a web layout printed out.
+  testRow:   { padding: `${SP.lg} 0`, borderTop: `1px solid ${C.lineSoft}` },
+  barTrack:  { height: 6, borderRadius: R.pill, background: C.lineSoft, overflow: 'hidden' },
+  barFill:   { height: '100%', borderRadius: R.pill },
+  barLabel:  { display: 'flex', justifyContent: 'space-between', gap: SP.xs, fontSize: 11, color: C.ink3, marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden' },
+
+  noteInput: { flex: 1, fontSize: 13, color: C.ink2, background: C.sunken, border: '1px solid transparent', borderRadius: R.control, padding: '9px 12px', outline: 'none', font: 'inherit' },
+  noteRegen: { flexShrink: 0, border: 'none', background: 'transparent', color: C.ink3, cursor: 'pointer', padding: '6px 8px', display: 'inline-flex', alignItems: 'center' },
+
+  reportBox: { width: '100%', boxSizing: 'border-box', minHeight: 260, border: `1px solid ${C.line}`, borderRadius: R.control, padding: SP.lg, fontSize: 15, lineHeight: '30px', color: C.ink, resize: 'vertical', outline: 'none', fontFamily: 'Fraunces, Georgia, serif', background: `repeating-linear-gradient(transparent, transparent 29px, ${C.lineSoft} 29px, ${C.lineSoft} 30px)` },
+  signature: { marginTop: SP.xxl, paddingTop: SP.lg, borderTop: `1px solid ${C.line}` },
 };
 
 const PR_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Fraunces:ital@1&display=swap');
-.pr-note-input:focus{ background:#fff !important; border-color:#c7d2fe !important; }
-.pr-chip:hover{ border-color:#c7d2fe; }
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400&display=swap');
+.pr-note-input:focus{ background:${C.paper} !important; border-color:${C.line} !important; box-shadow:0 0 0 3px rgba(79,70,229,0.12); }
+.pr-chip:hover{ border-color:${C.ink3}; }
+.pr-report-box:focus{ border-color:${C.accent}; box-shadow:0 0 0 3px rgba(79,70,229,0.12); }
+
 @media print {
   body * { visibility: hidden !important; }
   .pr-print-area, .pr-print-area * { visibility: visible !important; }
@@ -530,10 +721,21 @@ const PR_CSS = `
   .pr-print-area * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   .pr-no-print { display: none !important; }
   .pr-page-break { page-break-before: always; }
-  .pr-note-input, .pr-report-box { border: none !important; background: #fff !important; }
-  .pr-report-box { resize: none !important; }
-  @page { size: A4; margin: 14mm; }
+
+  /* On paper the pages are the paper — no card border, radius or shadow. */
+  .pr-print-area > div { border: none !important; border-radius: 0 !important; box-shadow: none !important; margin-top: 0 !important; }
+  .pr-note-input, .pr-report-box { border: none !important; background: #fff !important; padding-left: 0 !important; padding-right: 0 !important; }
+  .pr-report-box { resize: none !important; min-height: 0 !important; }
+
+  /* Point sizes, because this is measured on paper. 11pt body with 1.75 leading
+     is the comfortable reading range for a parent holding an A4 sheet. */
+  .pr-print-area { font-size: 11pt; color: #000; }
+  .pr-report-box { font-size: 11pt !important; line-height: 1.85 !important; color: #000 !important; }
+  .pr-note-input { font-size: 10pt !important; color: #000 !important; }
+
+  /* Never split a test's marks from its remark, or strand a heading. */
+  .pr-print-area p, .pr-print-area div { orphans: 3; widows: 3; }
+
+  @page { size: A4; margin: 16mm 18mm; }
 }
 `;
-
-export default ProgressReport;
