@@ -267,7 +267,7 @@ export const DEFAULT_TIPS: Record<string,string[]> = {
   ],
   grammar: [
     'keep a personal error log and review it each week',
-    'practise the target structures on Perfect English Grammar',
+    'practice the target structures on Perfect English Grammar',
     'learn new words in chunks and collocations, not one by one',
     'review new vocabulary with spaced repetition on Anki',
   ],
