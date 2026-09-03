@@ -410,7 +410,37 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
     }
   };
 
-  const handlePrint = () => window.print();
+  // Printing a node that lives inside a fixed, scrolling overlay cannot be made
+  // to work with CSS alone. Two rules fight each other: leaving the report in
+  // normal flow makes the browser repeat the fixed overlay on every sheet, and
+  // taking it out of flow with position:absolute makes the browser IGNORE every
+  // page-break rule inside it, slicing the content wherever the page edge lands.
+  //
+  // So the report is copied into a plain container attached straight to <body>
+  // for the duration of the print. There it is ordinary flowing content with
+  // nothing around it, page-break rules work normally, and the copy is thrown
+  // away afterwards. Nothing on screen changes.
+  const handlePrint = () => {
+    const source = document.querySelector('.pr-print-area');
+    if (!source) { window.print(); return; }
+
+    const holder = document.createElement('div');
+    holder.id = 'pr-print-root';
+    holder.innerHTML = (source as HTMLElement).innerHTML;
+    document.body.appendChild(holder);
+    document.body.classList.add('pr-printing');
+
+    const cleanup = () => {
+      document.body.classList.remove('pr-printing');
+      holder.remove();
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    window.print();
+    // Safari does not always fire afterprint; this is the backstop.
+    setTimeout(() => { if (document.getElementById('pr-print-root')) cleanup(); }, 1500);
+  };
   // ── render ───────────────────────────────────────────────────────────────────
   // Two surfaces, two rulebooks.
   //
@@ -591,7 +621,7 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
                       const m = t.status === 'graded' ? Math.round(t.mastery || 0) : null;
                       const statusText = t.status === 'absent' ? 'Absent' : t.status === 'na' ? 'N/A' : t.status === 'pending' ? 'Not taken' : null;
                       return (
-                        <div key={t.name} style={PR.testRow}>
+                        <div key={t.name} style={PR.testRow} className="pr-test-row">
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: SP.md, marginBottom: SP.sm }}>
                             <div style={{ display: 'flex', gap: SP.sm, alignItems: 'baseline' }}>
                               <span style={{ fontSize: 15, fontWeight: 500, color: C.ink }}>{t.name}</span>
@@ -628,7 +658,10 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
                           {t.status !== 'na' && (
                             <div style={{ display: 'flex', gap: SP.xs, alignItems: 'center' }}>
                               <input value={notes[i]} onChange={(e) => setNoteAt(i, e.target.value)}
-                                placeholder="Brief note for this test…" style={PR.noteInput} className="pr-note-input" />
+                                placeholder="Brief note for this test…" style={PR.noteInput} className="pr-note-input pr-screen-only" />
+                              {/* An input prints only the sliver you can see, and brings its
+                                  scrollbar with it. On paper the same text is a plain block. */}
+                              <div className="pr-print-only" style={{ ...PR.noteInput, background: 'transparent', border: 'none', padding: '2px 0', whiteSpace: 'pre-wrap' }}>{notes[i]}</div>
                               <button onClick={() => regenNote(i)} title="Draft from this test's result"
                                 aria-label="Draft this note from the result"
                                 style={PR.noteRegen} className="pr-no-print"><IconRefresh size={14} /></button>
@@ -653,8 +686,9 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
                     onChange={(e) => setReportText(e.target.value)}
                     placeholder="Pick the traits on the left and press Generate — the report appears here in three movements (who the student is and their strengths, the one area to focus on, and optionally a progression line). Edit freely."
                     style={PR.reportBox}
-                    className="pr-report-box"
+                    className="pr-report-box pr-screen-only"
                   />
+                  <div className="pr-print-only" style={{ ...PR.reportBox, background: 'transparent', border: 'none', minHeight: 0, padding: 0, whiteSpace: 'pre-wrap' }}>{reportText}</div>
                   <div style={PR.signature} className="pr-signature">
                     <div style={{ ...T.micro, marginBottom: SP.sm }}>Instructor</div>
                     <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 15, color: C.ink }}>Dr. Chouit Abderraouf</div>
@@ -726,27 +760,54 @@ const PR_CSS = `
 .pr-chip:hover{ border-color:${C.ink3}; }
 .pr-report-box:focus{ border-color:${C.accent}; box-shadow:0 0 0 3px rgba(79,70,229,0.12); }
 
+.pr-print-only { display: none; }
+
 @media print {
-  body * { visibility: hidden !important; }
-  .pr-print-area, .pr-print-area * { visibility: visible !important; }
-  .pr-print-area { position: absolute; left: 0; top: 0; width: 100%; }
-  .pr-print-area * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  .pr-no-print { display: none !important; }
-  .pr-page-break { page-break-before: always; }
+  /* The report is copied to #pr-print-root, a direct child of body, so hiding
+     is simple and nothing is left occupying space. No visibility tricks, no
+     absolute positioning — the copy is ordinary flowing content, which is the
+     only way page-break rules are honoured. */
+  body.pr-printing > *:not(#pr-print-root) { display: none !important; }
 
-  /* On paper the pages are the paper — no card border, radius or shadow. */
-  .pr-print-area > div { border: none !important; border-radius: 0 !important; box-shadow: none !important; margin-top: 0 !important; }
-  .pr-note-input, .pr-report-box { border: none !important; background: #fff !important; padding-left: 0 !important; padding-right: 0 !important; }
-  .pr-report-box { resize: none !important; min-height: 0 !important; }
+  #pr-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 10.5pt;
+  }
+  #pr-print-root * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 
-  /* Point sizes, because this is measured on paper. 11pt body with 1.75 leading
-     is the comfortable reading range for a parent holding an A4 sheet. */
-  .pr-print-area { font-size: 11pt; color: #000; }
-  .pr-report-box { font-size: 11pt !important; line-height: 1.85 !important; color: #000 !important; }
-  .pr-note-input { font-size: 10pt !important; color: #000 !important; }
+  /* the two sheets are the paper itself */
+  #pr-print-root > div {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
 
-  /* Never split a test's marks from its remark, or strand a heading. */
-  .pr-print-area p, .pr-print-area div { orphans: 3; widows: 3; }
+  /* form fields print only what is visible; the mirrors print in full */
+  #pr-print-root .pr-screen-only { display: none !important; }
+  #pr-print-root .pr-print-only  { display: block !important; }
+  #pr-print-root .pr-no-print    { display: none !important; }
+
+  /* a test and its remark are one thing and must not be split */
+  #pr-print-root .pr-test-row { page-break-inside: avoid !important; break-inside: avoid !important; }
+  #pr-print-root .pr-page-break { page-break-before: always !important; margin-top: 0 !important; }
+
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+  }
 
   @page { size: A4; margin: 16mm 18mm; }
 }
