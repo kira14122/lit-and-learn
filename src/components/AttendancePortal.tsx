@@ -11,13 +11,13 @@ import {
 //  - segmented controls for switching (class, view)
 //  - 40px-high controls everywhere
 //  - indigo = primary action, grey = secondary, red = destructive
-// Two classes: Level 4 Morning (one group, S1/S2 as a label per student)
-// and Weekend (one group, no sections).
+// Two classes: Level 4 Morning and Level 4 Weekend. Both are one group
+// each, with S1/S2 carried as a label per student.
 
 interface ClassDef { id: string; title: string; classType: 'weekday' | 'weekend'; hasSections: boolean; tag: string; }
 const CLASSES: ClassDef[] = [
   { id: 'am', title: 'Level 4 · Morning', classType: 'weekday', hasSections: true, tag: 'AM' },
-  { id: 'wk', title: 'Level 4 · Weekend', classType: 'weekend', hasSections: false, tag: 'WKD' },
+  { id: 'wk', title: 'Level 4 · Weekend', classType: 'weekend', hasSections: true, tag: 'WKD' },
 ];
 
 interface Student { id: string; name: string; section: number; joined?: string; enrolledFrom?: string; }
