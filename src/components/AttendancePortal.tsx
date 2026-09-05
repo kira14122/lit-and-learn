@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { getSupabaseClient } from '../supabaseClient';
 import {
@@ -111,6 +111,109 @@ const ui: Record<string, any> = {
   }),
 };
 
+// ---------- one session's cell: the mark, the two times, the clear ----------
+// Session and TimeCell live out here on purpose. A component declared inside
+// another component gets a fresh identity on every render, so React throws the
+// old one away and builds it again — which is why a time box being typed into
+// used to lose what was in it.
+
+interface SessionCtx {
+  logs: Record<string, Log>;
+  markFor: (studentId: string, session: string) => Mark;
+  setTime: (log: Log, field: 'check_in' | 'check_out', hm: string) => void;
+  setPendingClear: (v: { log: Log; name: string; at: string } | null) => void;
+  setPendingIn: (v: { studentId: string; name: string; session: string } | null) => void;
+  beginEdit: () => void;
+  endEdit: () => void;
+}
+
+// A time box that belongs to whoever is typing in it. It holds its own draft
+// while focused and writes once, on the way out — so a background refresh can
+// never pull a half-typed time out from under you.
+function TimeCell({ value, allowBlank, title, onCommit, beginEdit, endEdit }: {
+  value: string;
+  allowBlank: boolean;
+  title: string;
+  onCommit: (hm: string) => void;
+  beginEdit: () => void;
+  endEdit: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  // Follow the saved value only while the box is idle.
+  useEffect(() => { if (!focused.current) setDraft(value); }, [value]);
+
+  return (
+    <input
+      type="time" style={ui.tInput} value={draft} title={title}
+      onFocus={() => { focused.current = true; beginEdit(); }}
+      onChange={e => setDraft(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      onBlur={() => {
+        focused.current = false;
+        endEdit();
+        // An arrival cannot be blanked — use Clear for that.
+        if (!draft && !allowBlank) { setDraft(value); return; }
+        if (draft !== value) onCommit(draft);
+      }}
+    />
+  );
+}
+
+function Session({ stu, se, ctx }: { stu: Student; se: string; ctx: SessionCtx }) {
+  const l = ctx.logs[`${stu.id}:${se}`];
+
+  // Not applicable: shown plainly, counted nowhere.
+  if (l?.na) {
+    return (
+      <>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          minWidth: 30, height: 30, borderRadius: 9, background: C.bgSoft,
+          border: `1px solid ${C.line}`, color: C.faint, fontWeight: 700, fontSize: '0.72rem',
+        }}>N/A</span>
+        <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not counted</span>
+        <button style={ui.tBtn} onClick={() => ctx.setPendingClear({ log: l, name: stu.name, at: 'N/A' })}>Undo</button>
+      </>
+    );
+  }
+
+  const mark = ctx.markFor(stu.id, se);
+  return (
+    <>
+      <span style={ui.chip(mark)}>{mark}</span>
+      {l ? (
+        <>
+          <TimeCell
+            value={toHM24(l.check_in)} allowBlank={false}
+            title="Arrival time — edit if a student forgot to scan and you know when they arrived"
+            beginEdit={ctx.beginEdit} endEdit={ctx.endEdit}
+            onCommit={hm => ctx.setTime(l, 'check_in', hm)}
+          />
+          <TimeCell
+            value={toHM24(l.check_out)} allowBlank
+            title="Blank = stayed to the end"
+            beginEdit={ctx.beginEdit} endEdit={ctx.endEdit}
+            onCommit={hm => ctx.setTime(l, 'check_out', hm)}
+          />
+          <button
+            style={ui.tDanger}
+            onClick={() => ctx.setPendingClear({ log: l, name: stu.name, at: toHM(l.check_in) })}
+            title="Remove today's check-in — the student goes back to A and drops off the sheet"
+          >Clear</button>
+        </>
+      ) : (
+        <>
+          <span style={{ gridColumn: 'span 2' }}>
+            <button style={ui.tBtn} onClick={() => ctx.setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in now</button>
+          </span>
+          <span />
+        </>
+      )}
+    </>
+  );
+}
+
 export function AttendancePortal() {
   const { getToken } = useAuth();
   const [classId, setClassId] = useState('am');
@@ -172,6 +275,12 @@ export function AttendancePortal() {
 
   const authed = useCallback(async () => getSupabaseClient((await getToken({ template: 'supabase' })) ?? undefined), [getToken]);
   const sessionsFor = (c: ClassDef): string[] => sessionsOf(c.classType);
+
+  // How many time boxes are open right now. Above zero, the background
+  // refresh stands down.
+  const editCount = useRef(0);
+  const beginEdit = useCallback(() => { editCount.current += 1; }, []);
+  const endEdit = useCallback(() => { editCount.current = Math.max(0, editCount.current - 1); }, []);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -243,7 +352,9 @@ export function AttendancePortal() {
 
   useEffect(() => {
     if (date !== todayLocal()) return;
-    const t = setInterval(() => load(true), 12000);
+    // Hold the refresh while a time box is open — refreshing mid-edit is what
+    // used to make a typed time snap back to its old value.
+    const t = setInterval(() => { if (editCount.current === 0) load(true); }, 12000);
     return () => clearInterval(t);
   }, [date, load]);
 
@@ -772,56 +883,9 @@ export function AttendancePortal() {
     setTimeout(() => w.print(), 300);
   };
 
-  const Session = ({ stu, se }: { stu: Student; se: string }) => {
-    const l = logs[`${stu.id}:${se}`];
-
-    // Not applicable: shown plainly, counted nowhere.
-    if (l?.na) {
-      return (
-        <>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            minWidth: 30, height: 30, borderRadius: 9, background: C.bgSoft,
-            border: `1px solid ${C.line}`, color: C.faint, fontWeight: 700, fontSize: '0.72rem',
-          }}>N/A</span>
-          <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not counted</span>
-          <button style={ui.tBtn} onClick={() => setPendingClear({ log: l, name: stu.name, at: 'N/A' })}>Undo</button>
-        </>
-      );
-    }
-
-    const mark = markFor(stu.id, se);
-    return (
-      <>
-        <span style={ui.chip(mark)}>{mark}</span>
-        {l ? (
-          <>
-            <input
-              type="time" style={ui.tInput} defaultValue={toHM24(l.check_in)}
-              onChange={e => e.target.value && setTime(l, 'check_in', e.target.value)}
-              title="Arrival time — edit if a student forgot to scan and you know when they arrived"
-            />
-            <input
-              type="time" style={ui.tInput} defaultValue={toHM24(l.check_out)}
-              onChange={e => setTime(l, 'check_out', e.target.value)}
-              title="Blank = stayed to the end"
-            />
-            <button
-              style={ui.tDanger}
-              onClick={() => setPendingClear({ log: l, name: stu.name, at: toHM(l.check_in) })}
-              title="Remove today's check-in — the student goes back to A and drops off the sheet"
-            >Clear</button>
-          </>
-        ) : (
-          <>
-            <span style={{ gridColumn: 'span 2' }}>
-              <button style={ui.tBtn} onClick={() => setPendingIn({ studentId: stu.id, name: stu.name, session: se })}>Check in now</button>
-            </span>
-            <span />
-          </>
-        )}
-      </>
-    );
+  // Everything a Session cell needs, handed down as one object.
+  const sessionCtx: SessionCtx = {
+    logs, markFor, setTime, setPendingClear, setPendingIn, beginEdit, endEdit,
   };
 
   const cols = 'minmax(0,1fr) 56px 118px 118px 88px';
@@ -940,7 +1004,7 @@ export function AttendancePortal() {
                     {stu.name}
                     {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{stu.section}</span>}
                   </span>
-                  {sess.map(se => <Session key={se} stu={stu} se={se} />)}
+                  {sess.map(se => <Session key={se} stu={stu} se={se} ctx={sessionCtx} />)}
                 </div>
               ) : (
                 // Weekend: two sessions, stacked so the row never runs off screen.
@@ -951,7 +1015,7 @@ export function AttendancePortal() {
                       <span style={{ fontSize: '0.78rem', fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         {se === 'morning' ? 'AM' : 'PM'}
                       </span>
-                      <Session stu={stu} se={se} />
+                      <Session stu={stu} se={se} ctx={sessionCtx} />
                     </div>
                   ))}
                 </div>
@@ -987,7 +1051,7 @@ export function AttendancePortal() {
                               {se === 'morning' ? 'AM' : 'PM'}
                             </span>
                             {l
-                              ? <Session stu={{ id: v.id, name: v.name, section: 1 }} se={se} />
+                              ? <Session stu={{ id: v.id, name: v.name, section: 1 }} se={se} ctx={sessionCtx} />
                               : <>
                                   <span style={{ color: C.faint }}>—</span>
                                   <span style={{ gridColumn: 'span 2', color: C.faint, fontSize: '0.85rem' }}>not this session</span>
@@ -1038,7 +1102,7 @@ export function AttendancePortal() {
                           </React.Fragment>
                         );
                       }
-                      return <Session key={se} stu={{ id: v.id, name: v.name, section: 1 }} se={se} />;
+                      return <Session key={se} stu={{ id: v.id, name: v.name, section: 1 }} se={se} ctx={sessionCtx} />;
                     })}
                   </div>
                   )
