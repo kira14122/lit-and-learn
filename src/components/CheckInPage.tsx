@@ -19,12 +19,18 @@ const CLASS_TITLE: Record<ClassType, string> = {
   weekday: 'Level 4 · Morning',
   weekend: 'Level 4 · Weekend',
 };
+// Which classes are split into two sections. Both are, now that the weekend
+// has grown. Keep this in step with hasSections in AttendancePortal.
+const HAS_SECTIONS: Record<ClassType, boolean> = {
+  weekday: true,
+  weekend: true,
+};
 // The hours shown here follow the saved schedule, so students never see
 // stale times after the teacher edits them in Settings.
 const classSub = (c: ClassType, sc: ScheduleConfig): string =>
   c === 'weekday'
     ? `Sections 1 & 2 · ${hm24To12(sc.weekday.checkinOpen)} – ${hm24To12(sc.weekday.sessionEnd)}`
-    : `Section 1 · ${hm24To12(sc.weekend.morning.checkinOpen)} – ${hm24To12(sc.weekend.afternoon.sessionEnd)}`;
+    : `Sections 1 & 2 · ${hm24To12(sc.weekend.morning.checkinOpen)} – ${hm24To12(sc.weekend.afternoon.sessionEnd)}`;
 
 const s: Record<string, any> = {
   page: { fontFamily: '"Fredoka", sans-serif', background: 'linear-gradient(180deg, #EEF2FF 0%, #F3F6F8 220px)', minHeight: '100vh', color: '#0F172A', padding: '28px 16px 64px', boxSizing: 'border-box' },
@@ -125,7 +131,7 @@ export function CheckInPage() {
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState<Student | null>(null);
   const [notice, setNotice] = useState('');
-  const [section, setSection] = useState<1 | 2>(1);   // morning class only
+  const [section, setSection] = useState<1 | 2>(1);   // split classes only
   const [query, setQuery] = useState('');
   const [schedule, setSchedule] = useState<ScheduleConfig>(DEFAULT_SCHEDULE);
 
@@ -245,7 +251,7 @@ export function CheckInPage() {
   const q = query.trim().toLowerCase();
   const visible = students.filter(st => {
     if (q) return st.name.toLowerCase().includes(q);
-    return classType === 'weekday' ? st.section === section : true;
+    return HAS_SECTIONS[classType] ? st.section === section : true;
   });
 
   return (
@@ -276,7 +282,7 @@ export function CheckInPage() {
           <div style={s.card}>No students on this list yet. Your teacher will add you.</div>
         ) : (
           <>
-            {classType === 'weekday' && (
+            {HAS_SECTIONS[classType] && (
               <div style={s.filterRow}>
                 <button style={s.chip(section === 1)} onClick={() => { setSection(1); setQuery(''); }}>Section 1</button>
                 <button style={s.chip(section === 2)} onClick={() => { setSection(2); setQuery(''); }}>Section 2</button>
@@ -323,7 +329,7 @@ export function CheckInPage() {
                     {isDone && <span style={s.avatar(true)}>✓</span>}
                     <span>
                       <span style={s.rowName}>{st.name}</span>
-                      {classType === 'weekday' && <span style={s.sTag}>S{st.section}</span>}
+                      {HAS_SECTIONS[classType] && <span style={s.sTag}>S{st.section}</span>}
                     </span>
                     {isDone
                       ? <span style={s.stamp}>in {toHM(done[st.id])}</span>
@@ -425,7 +431,7 @@ export function CheckInPage() {
             <p style={s.bigName}>{confirming.name}</p>
             <p style={{ color: '#3F4C63', fontSize: '0.95rem', fontWeight: 500, margin: 0 }}>
               {info.title}
-              {classType === 'weekday' ? ` · Section ${confirming.section}` : ''}
+              {HAS_SECTIONS[classType] ? ` · Section ${confirming.section}` : ''}
               {' · '}{hm24To12(clock)}
             </p>
             <button style={s.confirmBtn} onClick={confirmCheckIn} disabled={saving}>
