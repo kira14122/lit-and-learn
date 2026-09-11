@@ -470,7 +470,9 @@ export function AttendancePortal() {
   const fillWeekendDay = async () => {
     const sb = await authed();
     const amEnd = schedule.weekend.morning.sessionEnd;        // 12:00
-    const pmStart = schedule.weekend.afternoon.checkinOpen;   // 1:00
+    const pmStart = schedule.weekend.afternoon.sessionStart;  // 1:00 — when class
+                                                              // begins, not when
+                                                              // the QR opens
     const pmEnd = schedule.weekend.afternoon.sessionEnd;      // 4:30
     // The whole class, never just the search results.
     const everyone = [...allForClass, ...visitors];
@@ -984,7 +986,7 @@ export function AttendancePortal() {
                   onClick={fillWeekendDay}
                   title="Writes the normal weekend day for everyone who checked in this morning: out at 12:00, back at 1:00, out at 4:30. Only fills what is blank — press it as often as you like. Correct anyone who left early on their own row."
                 >
-                  Fill the day · out {hm24To12(schedule.weekend.morning.sessionEnd)} → back {hm24To12(schedule.weekend.afternoon.checkinOpen)} → out {hm24To12(schedule.weekend.afternoon.sessionEnd)}
+                  Fill the day · out {hm24To12(schedule.weekend.morning.sessionEnd)} → back {hm24To12(schedule.weekend.afternoon.sessionStart)} → out {hm24To12(schedule.weekend.afternoon.sessionEnd)}
                 </button>
               )}
               <button
@@ -1623,6 +1625,9 @@ export function AttendancePortal() {
           <div style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
             <div style={{ fontWeight: 600, marginBottom: 10 }}>Level 4 · Morning</div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.82rem', color: C.sub }}>Class starts<br />
+                <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.sessionStart}
+                  onChange={e => editSched(['weekday', 'sessionStart'], e.target.value)} /></label>
               <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
                 <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekday.graceEnd}
                   onChange={e => editSched(['weekday', 'graceEnd'], e.target.value)} /></label>
@@ -1642,6 +1647,9 @@ export function AttendancePortal() {
             <div key={key} style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 14, padding: '14px 16px', marginBottom: 10, boxSizing: 'border-box', maxWidth: '100%' }}>
               <div style={{ fontWeight: 600, marginBottom: 10 }}>{title}</div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.82rem', color: C.sub }}>Session starts<br />
+                  <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].sessionStart}
+                    onChange={e => editSched(['weekend', key, 'sessionStart'], e.target.value)} /></label>
                 <label style={{ fontSize: '0.82rem', color: C.sub }}>On time until<br />
                   <input type="time" style={{ ...ui.input, marginTop: 4, width: 128 }} value={schedDraft.weekend[key].graceEnd}
                     onChange={e => editSched(['weekend', key, 'graceEnd'], e.target.value)} /></label>

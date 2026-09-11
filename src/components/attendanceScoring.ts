@@ -16,6 +16,7 @@ export type Mark = "P" | "L" | "A";
 export type Time = string | null;
 
 export interface SessionRules {
+  sessionStart: string;  // when class actually begins (NOT when the QR opens)
   graceEnd: string;      // in by this -> on-time side; after -> L
   sessionEnd: string;    // must stay to this for P
   checkinOpen: string;   // QR accepted from
@@ -50,14 +51,14 @@ export interface ScheduleConfig {
 
 export const DEFAULT_SCHEDULE: ScheduleConfig = {
   weekday: {
-    graceEnd: "10:30", sessionEnd: "14:00",
+    sessionStart: "10:00", graceEnd: "10:30", sessionEnd: "14:00",
     checkinOpen: "09:45", checkinClose: "12:00",
     days: [1, 2, 3, 4],                     // Mon–Thu
   },
   weekend: {
     days: [5, 6],                            // Fri–Sat
-    morning:   { graceEnd: "09:30", sessionEnd: "12:00", checkinOpen: "08:45", checkinClose: "12:00" },
-    afternoon: { graceEnd: "13:30", sessionEnd: "16:30", checkinOpen: "12:45", checkinClose: "16:30" },
+    morning:   { sessionStart: "09:00", graceEnd: "09:30", sessionEnd: "12:00", checkinOpen: "08:45", checkinClose: "12:00" },
+    afternoon: { sessionStart: "13:00", graceEnd: "13:30", sessionEnd: "16:30", checkinOpen: "12:45", checkinClose: "16:30" },
   },
   makeup: { days: [3, 4], checkinOpen: "14:45", checkinClose: "16:45" },   // Wed & Thu, 2:45–4:45
   testingMode: false,
@@ -92,6 +93,7 @@ export function normaliseSchedule(raw: any): ScheduleConfig {
   // ---- weekday ----
   const rw = raw.weekday || {};
   const weekday: WeekdayRules = {
+    sessionStart: rw.sessionStart ?? d.weekday.sessionStart,
     graceEnd:     rw.graceEnd     ?? d.weekday.graceEnd,
     // older files called this dayEnd
     sessionEnd:   rw.sessionEnd   ?? rw.dayEnd ?? d.weekday.sessionEnd,
@@ -107,12 +109,14 @@ export function normaliseSchedule(raw: any): ScheduleConfig {
   const flat = rk.graceEnd || rk.dayEnd;      // the one-session weekend shape
 
   const morning: SessionRules = {
+    sessionStart: rk.morning?.sessionStart ?? oldAM.sessionStart ?? d.weekend.morning.sessionStart,
     graceEnd:     rk.morning?.graceEnd     ?? oldAM.graceEnd     ?? (flat ? rk.graceEnd : undefined) ?? d.weekend.morning.graceEnd,
     sessionEnd:   rk.morning?.sessionEnd   ?? oldAM.sessionEnd   ?? d.weekend.morning.sessionEnd,
     checkinOpen:  rk.morning?.checkinOpen  ?? oldAM.checkinOpen  ?? (flat ? rk.checkinOpen : undefined) ?? d.weekend.morning.checkinOpen,
     checkinClose: rk.morning?.checkinClose ?? oldAM.checkinClose ?? d.weekend.morning.checkinClose,
   };
   const afternoon: SessionRules = {
+    sessionStart: rk.afternoon?.sessionStart ?? oldPM.sessionStart ?? d.weekend.afternoon.sessionStart,
     graceEnd:     rk.afternoon?.graceEnd     ?? oldPM.graceEnd     ?? d.weekend.afternoon.graceEnd,
     sessionEnd:   rk.afternoon?.sessionEnd   ?? oldPM.sessionEnd   ?? (flat ? (rk.dayEnd ?? rk.sessionEnd) : undefined) ?? d.weekend.afternoon.sessionEnd,
     checkinOpen:  rk.afternoon?.checkinOpen  ?? oldPM.checkinOpen  ?? d.weekend.afternoon.checkinOpen,
