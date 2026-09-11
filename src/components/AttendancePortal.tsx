@@ -778,17 +778,22 @@ export function AttendancePortal() {
 
       const makeups = makeupLogs.length;
       const recovered = Math.min(makeups, A);      // cannot recover more than missed
-      const total = P + L + A;                      // the class days, unchanged
+      // P / L / A count SLOTS, not days: a weekend day is two of them.
+      // The rate divides slots by slots, so it is a true percentage either
+      // way — but the column beside it has to be days, or three Saturdays
+      // read as six.
+      const total = P + L + A;                      // slots that counted
+      const days = daily.filter(d => !d.makeup).length;
       const rate = total ? Math.round((((P + recovered) + 0.5 * L) / total) * 100) : 0;
-      return { stu, P, L, A, total, rate, makeups, recovered, daily };
+      return { stu, P, L, A, total, days, rate, makeups, recovered, daily };
     });
     return { rows, heldDays };
   };
 
   const downloadRecordsCsv = () => {
     const { rows } = buildRecords();
-    const head = ['Student', 'Section', 'Class days', 'Present', 'Late', 'Absent', 'Make-ups', 'Recovered', 'Attendance %'];
-    const csv = [head, ...rows.map(r => [r.stu.name, `S${r.stu.section}`, r.total, r.P, r.L, r.A, r.makeups, r.recovered, r.rate])]
+    const head = ['Student', 'Section', 'Class days', 'Slots', 'Present', 'Late', 'Absent', 'Make-ups', 'Recovered', 'Attendance %'];
+    const csv = [head, ...rows.map(r => [r.stu.name, `S${r.stu.section}`, r.days, r.total, r.P, r.L, r.A, r.makeups, r.recovered, r.rate])]
       .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
@@ -1297,8 +1302,10 @@ export function AttendancePortal() {
           </div>
 
           <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: C.sub }}>
-            P counts as a full day and L as half. A make-up recovers one missed mark — a full weekday,
-            or half a weekend day. Click a student for their day-by-day record.
+            Every slot is scored on its own: P is full credit, L is half, A is none. A weekend day has two
+            slots, morning and afternoon, so a student who comes all morning and skips the afternoon has 100%
+            and 0% — half the day. Days counts days; P, L and A count slots. A make-up recovers one missed
+            slot. Click a student for their day-by-day record.
           </p>
 
           <div style={ui.table}>
@@ -1310,7 +1317,11 @@ export function AttendancePortal() {
               return (
                 <>
                   <div style={{ ...ui.thead, gridTemplateColumns: recCols, gap: 10 }}>
-                    <span>Student</span><span>Days</span><span>P</span><span>L</span><span>A</span><span>Make-up</span><span>Rate</span>
+                    <span>Student</span><span>Days</span>
+                    <span title={sess.length > 1 ? 'Counted per slot — a weekend day has two' : undefined}>P</span>
+                    <span title={sess.length > 1 ? 'Counted per slot — a weekend day has two' : undefined}>L</span>
+                    <span title={sess.length > 1 ? 'Counted per slot — a weekend day has two' : undefined}>A</span>
+                    <span>Make-up</span><span>Rate</span>
                   </div>
                   {rows.map(r => (
                     <React.Fragment key={r.stu.id}>
@@ -1322,7 +1333,7 @@ export function AttendancePortal() {
                           {r.stu.name}
                           {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{r.stu.section}</span>}
                         </span>
-                        <span style={ui.mono}>{r.total}</span>
+                        <span style={ui.mono} title={sess.length > 1 ? `${r.days} days · ${r.total} slots` : undefined}>{r.days}</span>
                         <span style={{ color: C.green, fontWeight: 700 }}>{r.P}</span>
                         <span style={{ color: C.amber, fontWeight: 700 }}>{r.L}</span>
                         <span style={{ color: C.red, fontWeight: 700 }}>{r.A}</span>
