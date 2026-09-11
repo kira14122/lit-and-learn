@@ -456,25 +456,53 @@ export function AttendancePortal() {
   };
   // One tap writes the class-end time on every checked-in student who has
   // no departure yet. Individual rows can still be edited afterwards.
-  // Weekend: students scan once in the morning. After lunch this marks the
-  // afternoon present for everyone who was here, timed at the afternoon
-  // start. Anyone who left is then corrected on their own row.
-  const carryToAfternoon = async () => {
+  // Weekend, the whole day in one tap. Students scan once in the morning;
+  // the normal day is stay to 12:00, come back at 1:00, stay to 4:30. So
+  // that is what this writes, and you correct only the people who did
+  // something else.
+  //
+  // The afternoon rows go in already closed. Creating them open was the old
+  // trap: "All out" had already run over the rows that existed at the time,
+  // so the new afternoons stayed blank and had to be typed by hand.
+  //
+  // Safe to press again at any point in the day — it only ever fills what is
+  // still blank, and never touches a time you have already set.
+  const fillWeekendDay = async () => {
     const sb = await authed();
-    const start = schedule.weekend.afternoon.checkinOpen;
+    const amEnd = schedule.weekend.morning.sessionEnd;        // 12:00
+    const pmStart = schedule.weekend.afternoon.checkinOpen;   // 1:00
+    const pmEnd = schedule.weekend.afternoon.sessionEnd;      // 4:30
     // The whole class, never just the search results.
-    const targets = [...allForClass, ...visitors].filter(stu => {
+    const everyone = [...allForClass, ...visitors];
+
+    // 1. Anyone here this morning is assumed back after lunch — arrival and
+    //    departure both written, so nothing is left half-filled.
+    const needPm = everyone.filter(stu => {
       const am = logs[`${stu.id}:morning`];
-      const pm = logs[`${stu.id}:afternoon`];
-      return am?.check_in && !am.na && !pm;      // was here, no afternoon record yet
+      return am?.check_in && !am.na && !logs[`${stu.id}:afternoon`];
     });
-    if (!targets.length) return;
-    await sb.from('attendance_logs').insert(
-      targets.map(stu => ({
-        student_id: stu.id, session: 'afternoon', log_date: date,
-        check_in: hmToIso(date, start),
-      })),
-    );
+    if (needPm.length) {
+      await sb.from('attendance_logs').insert(
+        needPm.map(stu => ({
+          student_id: stu.id, session: 'afternoon', log_date: date,
+          check_in: hmToIso(date, pmStart),
+          check_out: hmToIso(date, pmEnd),
+        })),
+      );
+    }
+
+    // 2. Close every session still hanging open at its own end time.
+    const open = everyone.flatMap(stu => sess
+      .map(se => ({ se, l: logs[`${stu.id}:${se}`] }))
+      .filter(x => x.l && x.l.check_in && !x.l.check_out && !x.l.na));
+    if (open.length) {
+      await Promise.all(open.map(({ se, l }) =>
+        sb.from('attendance_logs')
+          .update({ check_out: hmToIso(date, se === 'morning' ? amEnd : pmEnd) })
+          .eq('id', l!.id)));
+    }
+
+    if (!needPm.length && !open.length) return;
     load(true);
   };
 
@@ -953,9 +981,11 @@ export function AttendancePortal() {
               {cls.classType === 'weekend' && (
                 <button
                   style={{ ...ui.secondary, height: 36 }}
-                  onClick={carryToAfternoon}
-                  title="Marks the afternoon present for everyone who checked in this morning. Correct anyone who left on their own row."
-                >Carry morning → afternoon</button>
+                  onClick={fillWeekendDay}
+                  title="Writes the normal weekend day for everyone who checked in this morning: out at 12:00, back at 1:00, out at 4:30. Only fills what is blank — press it as often as you like. Correct anyone who left early on their own row."
+                >
+                  Fill the day · out {hm24To12(schedule.weekend.morning.sessionEnd)} → back {hm24To12(schedule.weekend.afternoon.checkinOpen)} → out {hm24To12(schedule.weekend.afternoon.sessionEnd)}
+                </button>
               )}
               <button
                 style={isClosed(date)
@@ -964,10 +994,12 @@ export function AttendancePortal() {
                 onClick={toggleNoClass}
                 title="Holiday or cancelled class — this day counts for nobody"
               >{isClosed(date) ? 'No class ✓' : 'No class'}</button>
-              <button style={{ ...ui.secondary, height: 36 }} onClick={checkEveryoneOut}
-                title="Writes the class-end time on everyone still checked in.">
-                All out at {hm24To12(cls.classType === 'weekday' ? schedule.weekday.sessionEnd : schedule.weekend.afternoon.sessionEnd)}
-              </button>
+              {cls.classType === 'weekday' && (
+                <button style={{ ...ui.secondary, height: 36 }} onClick={checkEveryoneOut}
+                  title="Writes the class-end time on everyone still checked in.">
+                  All out at {hm24To12(schedule.weekday.sessionEnd)}
+                </button>
+              )}
               <button style={{ ...ui.primary, height: 36 }} onClick={printSheet}>Export sheet</button>
             </div>
           </div>
