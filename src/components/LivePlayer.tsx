@@ -6,6 +6,62 @@ const IconClock = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="n
 const IconCrown = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="2 16 5 4 12 9 19 4 22 16 2 16"></polygon><line x1="2" y1="20" x2="22" y2="20"></line></svg>);
 const IconUsers = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>);
 
+// ─── FIX 4: Deterministic question order ──────────────────────────────────────
+// The old code shuffled with `.sort(() => 0.5 - Math.random())`, which is both an
+// unseeded shuffle (a player rejoining in a new browser got a DIFFERENT order, so
+// resuming their position would have been meaningless) and a statistically biased
+// one (an inconsistent comparator does not produce a uniform permutation).
+//
+// hashSeed + mulberry32 + Fisher-Yates give a uniform shuffle fully determined by
+// (session id + nickname). The same player always gets the same order, on any
+// device, for the life of the session.
+const hashSeed = (str: string): number => {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return (h ^ (h >>> 16)) >>> 0;
+};
+
+const mulberry32 = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const seededShuffle = (arr: any[], seed: number): any[] => {
+  const rand = mulberry32(seed);
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+  }
+  return out;
+};
+
+// ─── FIX 5: Writes are no longer fire-and-forget ──────────────────────────────
+// Every write in the old code discarded its error. That is survivable for the
+// per-answer update (it sends absolute values, so the next answer self-heals) but
+// fatal for finished_at, which is written exactly once — a single dropped request
+// permanently loses the DONE state. Three attempts with backoff.
+const runWrite = async (fn: () => any, attempts = 3): Promise<boolean> => {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fn();
+      if (!res || !res.error) return true;
+    } catch { /* network throw — fall through and retry */ }
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+  }
+  return false;
+};
+
 export const LivePlayer: React.FC = () => {
   const [pin, setPin] = useState('');
   const [nickname, setNickname] = useState('');
@@ -32,17 +88,22 @@ export const LivePlayer: React.FC = () => {
   const [broadcastEvent, setBroadcastEvent] = useState<any>(null);
   const channelRef = useRef<any>(null);
   const processingRef = useRef(false);
+  // Nickname used to seed the shuffle, frozen at join time so later edits to the
+  // input field can never change a player's question order mid-game.
+  const seedNameRef = useRef<string>('');
 
   let isCaptain = true;
   let captainName = '';
   let showCaptainBanner = false;
   
   if (session?.game_mode === 'tug-of-war-captain' && teammates.length > 0) {
-    showCaptainBanner = true;
     const captainIndex = currentQuestionIndex % teammates.length;
     const currentCaptain = teammates[captainIndex];
-    isCaptain = currentCaptain.id === participantId;
-    captainName = currentCaptain.nickname;
+    if (currentCaptain) {
+      showCaptainBanner = true;
+      isCaptain = currentCaptain.id === participantId;
+      captainName = currentCaptain.nickname;
+    }
   }
 
   useEffect(() => {
@@ -98,7 +159,7 @@ export const LivePlayer: React.FC = () => {
               return null;
             }).filter(Boolean); 
 
-            const uniqueQuestions = [];
+            const uniqueQuestions: any[] = [];
             const seen = new Set();
             for (const q of rawQuestions) {
               const cleanQ = q.question.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -107,7 +168,10 @@ export const LivePlayer: React.FC = () => {
 
             if (uniqueQuestions.length > 0) {
               if (session.game_mode === 'standard') {
-                setQuestions(uniqueQuestions.sort(() => 0.5 - Math.random()));
+                // FIX 4 applied: seeded, uniform shuffle — the same order on every
+                // device for this player, so a rejoin resumes the right question.
+                const seedName = seedNameRef.current || nickname.trim().toLowerCase();
+                setQuestions(seededShuffle(uniqueQuestions, hashSeed(`${session.id}:${seedName}`)));
               } else {
                 setQuestions(uniqueQuestions);
               }
@@ -138,12 +202,80 @@ export const LivePlayer: React.FC = () => {
     if (timeLeft === 0 && session?.status === 'active' && !isFinished && !feedbackState?.show) handleAnswer(null); 
   }, [timeLeft, session?.status, isFinished, feedbackState?.show]);
 
+  // FIX 6: A player who rejoins having already answered every question lands past
+  // the end of the deck. Send them to the finished screen rather than rendering
+  // questions[undefined].
+  useEffect(() => {
+    if (questions.length > 0 && !isFinished && currentQuestionIndex >= questions.length) {
+      setIsFinished(true);
+    }
+  }, [questions.length, currentQuestionIndex, isFinished]);
+
+  // FIX 5 applied: finished_at is stamped by an effect rather than inline. It is
+  // idempotent (.is('finished_at', null), so it never overwrites an earlier
+  // stamp), it retries, and it tries again when the browser comes back online —
+  // the exact case that lost the DONE badge.
+  useEffect(() => {
+    if (!isFinished || !participantId) return;
+    let cancelled = false;
+
+    const stamp = async () => {
+      if (cancelled) return;
+      const supabase = getSupabaseClient('');
+      await runWrite(() => supabase
+        .from('live_participants')
+        .update({ finished_at: new Date().toISOString() })
+        .eq('id', participantId)
+        .is('finished_at', null));
+    };
+
+    stamp();
+    window.addEventListener('online', stamp);
+    return () => { cancelled = true; window.removeEventListener('online', stamp); };
+  }, [isFinished, participantId]);
+
+  // FIX 7: Restoring a player's counters without restoring their position caused
+  // the 40/30 leaderboard. Score, correct count and elapsed time resumed from the
+  // old row while the question index restarted at zero, so a replayed quiz added
+  // a second full run on top of the first.
+  const resumePlayer = async (supabase: any, sessionData: any, player: any) => {
+    setParticipantId(player.id);
+    setTeam(player.team);
+    setScore(player.score || 0);
+    setCorrectCount(Number(player.correct_answers) || 0);
+    setTotalTimeMs(player.total_time ? Number(player.total_time) * 1000 : 0);
+
+    let resumeIndex = Number(player.answered_count) || 0;
+
+    // In both tug-of-war modes the team advances together by broadcast, and the
+    // captain rotation is derived from currentQuestionIndex — so a rejoiner takes
+    // the TEAM's position, not their own, or they answer a different question
+    // from their teammates and compute a different captain. Their score and
+    // correct count stay personal; only the position syncs.
+    if (sessionData.game_mode !== 'standard' && player.team) {
+      const { data: teamRows } = await supabase
+        .from('live_participants')
+        .select('answered_count')
+        .eq('session_id', sessionData.id)
+        .eq('team', player.team);
+      if (teamRows && teamRows.length > 0) {
+        resumeIndex = teamRows.reduce(
+          (max: number, r: any) => Math.max(max, Number(r.answered_count) || 0), 0);
+      }
+    }
+
+    setCurrentQuestionIndex(resumeIndex);
+  };
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsJoining(true);
     try {
       const supabase = getSupabaseClient('');
+      const cleanNickname = nickname.trim();
+      if (!cleanNickname) throw new Error('Please enter a nickname.');
+      seedNameRef.current = cleanNickname.toLowerCase();
 
       // FIX 2: Always fetch the most recent session with this PIN,
       // created within the last 24 hours, to prevent joining stale old sessions
@@ -162,22 +294,26 @@ export const LivePlayer: React.FC = () => {
 
       // FIX 3: Resume identity check is now scoped strictly to the current
       // session only — can never accidentally restore a player from an old session
-      const { data: existingPlayer } = await supabase
+      //
+      // FIX 8: this was .maybeSingle(), which ERRORS when more than one row
+      // matches. The error was discarded, existingPlayer came back null, and the
+      // code fell through to the insert branch — so once a nickname had two rows,
+      // every rejoin manufactured another. That is how one session ended up with
+      // three rows for the same student. An ordered .limit(1) cannot fail this way.
+      const { data: existingRows, error: lookupError } = await supabase
         .from('live_participants')
         .select('*')
         .eq('session_id', sessionData.id)
-        .ilike('nickname', nickname)
-        .maybeSingle();
+        .ilike('nickname', cleanNickname)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (lookupError) throw lookupError;
+      const existingPlayer = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
       if (existingPlayer) {
-        // Welcome back — restore score and team for this session only
-        setParticipantId(existingPlayer.id);
-        setTeam(existingPlayer.team);
-        setScore(existingPlayer.score || 0);
-        setCorrectCount(existingPlayer.correct_answers || 0);
-        setTotalTimeMs(existingPlayer.total_time ? existingPlayer.total_time * 1000 : 0);
+        await resumePlayer(supabase, sessionData, existingPlayer);
       } else {
-        // Brand new player — assign team and insert
         const { count } = await supabase
           .from('live_participants')
           .select('*', { count: 'exact', head: true })
@@ -186,17 +322,40 @@ export const LivePlayer: React.FC = () => {
 
         const { data: participantData, error: participantError } = await supabase
           .from('live_participants')
-          .insert([{ session_id: sessionData.id, nickname: nickname, team: assignedTeam }])
+          .insert([{ session_id: sessionData.id, nickname: cleanNickname, team: assignedTeam, answered_count: 0 }])
           .select()
           .single();
-        if (participantError) throw participantError;
 
-        setParticipantId(participantData.id);
-        setTeam(assignedTeam); 
+        if (participantError) {
+          // FIX 9: Two taps on Join over a slow connection used to produce two
+          // SELECTs that both found nothing and two INSERTs that both succeeded.
+          // With the unique index in place the loser now gets 23505 — recover by
+          // adopting the row that won instead of surfacing an error.
+          if (participantError.code === '23505') {
+            const { data: raceRows } = await supabase
+              .from('live_participants')
+              .select('*')
+              .eq('session_id', sessionData.id)
+              .ilike('nickname', cleanNickname)
+              .order('created_at', { ascending: true })
+              .limit(1);
+            if (raceRows && raceRows.length > 0) {
+              await resumePlayer(supabase, sessionData, raceRows[0]);
+            } else {
+              throw participantError;
+            }
+          } else {
+            throw participantError;
+          }
+        } else {
+          setParticipantId(participantData.id);
+          setTeam(assignedTeam);
+          setCurrentQuestionIndex(0);
+        }
       }
       
       setSession(sessionData);
-    } catch (err: any) { setError(err.message); } finally { setIsJoining(false); }
+    } catch (err: any) { setError(err.message || 'Could not join the game.'); } finally { setIsJoining(false); }
   };
 
   const handleAnswer = async (selectedKey: string | null, isFromBroadcast = false) => {
@@ -205,43 +364,55 @@ export const LivePlayer: React.FC = () => {
 
     processingRef.current = true;
 
-    const currentQ = questions[currentQuestionIndex];
-    const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
+    // FIX 10: the body is now inside try/finally. Previously an exception anywhere
+    // (or a hung request) left processingRef stuck at true and locked the player
+    // out of answering for the rest of the game.
+    try {
+      const currentQ = questions[currentQuestionIndex];
+      if (!currentQ) return;
 
-    setFeedbackState({ show: true, isCorrect, selectedKey });
+      const isCorrect = selectedKey !== null && selectedKey === currentQ.correctAnswer;
 
-    if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
-      channelRef.current?.send({ type: 'broadcast', event: 'captain_action', payload: { action: 'ANSWER', key: selectedKey, team: team }});
-    }
+      setFeedbackState({ show: true, isCorrect, selectedKey });
 
-    const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
-    if (isCorrect) setCorrectCount(newCorrectCount);
-
-    const maxTimeMs = session?.time_limit ? session.time_limit * 1000 : null;
-    const timeTakenMs = selectedKey === null ? (maxTimeMs || 20000) : (Date.now() - questionStartTime);
-    const newTotalTimeMs = totalTimeMs + timeTakenMs;
-    setTotalTimeMs(newTotalTimeMs);
-
-    let newScore = score;
-    if (isCorrect) {
-      if (maxTimeMs) {
-        const timeRatio = Math.min(timeTakenMs / maxTimeMs, 1); 
-        newScore = score + 100 + Math.floor(100 * (1 - timeRatio)); 
-      } else {
-        newScore = score + 100;
+      if (session?.game_mode === 'tug-of-war-captain' && isCaptain && !isFromBroadcast) {
+        channelRef.current?.send({ type: 'broadcast', event: 'captain_action', payload: { action: 'ANSWER', key: selectedKey, team: team }});
       }
-      setScore(newScore);
-    }
 
-    const supabase = getSupabaseClient('');
-    await supabase.from('live_participants').update({
-      score: newScore,
-      total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)),
-      correct_answers: newCorrectCount,
-      total_questions: questions.length
-    }).eq('id', participantId);
-    
-    processingRef.current = false; 
+      // answered_count derives from the position in the deck, so it is monotonic
+      // and can never exceed the number of questions. correct_answers is clamped
+      // to the same ceiling as a second line of defence.
+      const newAnsweredCount = Math.min(currentQuestionIndex + 1, questions.length);
+      const newCorrectCount = Math.min(isCorrect ? correctCount + 1 : correctCount, questions.length);
+      if (isCorrect) setCorrectCount(newCorrectCount);
+
+      const maxTimeMs = session?.time_limit ? session.time_limit * 1000 : null;
+      const timeTakenMs = selectedKey === null ? (maxTimeMs || 20000) : (Date.now() - questionStartTime);
+      const newTotalTimeMs = totalTimeMs + timeTakenMs;
+      setTotalTimeMs(newTotalTimeMs);
+
+      let newScore = score;
+      if (isCorrect) {
+        if (maxTimeMs) {
+          const timeRatio = Math.min(timeTakenMs / maxTimeMs, 1); 
+          newScore = score + 100 + Math.floor(100 * (1 - timeRatio)); 
+        } else {
+          newScore = score + 100;
+        }
+        setScore(newScore);
+      }
+
+      const supabase = getSupabaseClient('');
+      await runWrite(() => supabase.from('live_participants').update({
+        score: newScore,
+        total_time: parseFloat((newTotalTimeMs / 1000).toFixed(1)),
+        correct_answers: newCorrectCount,
+        answered_count: newAnsweredCount,
+        total_questions: questions.length
+      }).eq('id', participantId));
+    } finally {
+      processingRef.current = false;
+    }
   };
 
   const handleNextQuestion = async (isFromBroadcast = false) => {
@@ -253,9 +424,8 @@ export const LivePlayer: React.FC = () => {
     if (currentQuestionIndex + 1 < questions.length) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
+      // The finished_at write now lives in the retrying effect above.
       setIsFinished(true);
-      const supabase = getSupabaseClient('');
-      await supabase.from('live_participants').update({ finished_at: new Date().toISOString() }).eq('id', participantId);
     }
   };
 
@@ -319,7 +489,7 @@ export const LivePlayer: React.FC = () => {
         <div style={{ width: '100%', maxWidth: '600px', margin: '0 auto', marginTop: '40px' }}>
           {isLoadingQuestions ? (
             <div style={{ textAlign: 'center', fontSize: '1.3rem', color: '#64748B', fontWeight: '600' }}>Loading questions...</div>
-          ) : questions.length > 0 ? (
+          ) : questions.length > 0 && questions[currentQuestionIndex] ? (
             <div style={{ background: '#ffffff', padding: '32px', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: `1px solid ${theme.border}` }}>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
