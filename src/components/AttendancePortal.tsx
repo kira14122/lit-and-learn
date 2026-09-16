@@ -32,7 +32,15 @@ const C = {
   red: '#DC2626', redSoft: '#FEF2F2',
 };
 
-const DEFAULTS = { instructor: 'Dr. Chouit Abderraouf', term: 'Summer Term 2026', level: '4' };
+const DEFAULTS = { instructor: 'Dr. Chouit Abderraouf', level: '4' };
+// Printed term: you pick the season and year in Settings, and it stays
+// until you change it. The date is only used before anything is saved.
+const SEASONS = ['Winter', 'Summer', 'Fall'] as const;
+type Season = typeof SEASONS[number];
+const guessSeason = (d: Date = new Date()): Season => {
+  const m = d.getMonth();
+  return m >= 8 ? 'Fall' : m >= 4 ? 'Summer' : 'Winter';
+};
 const remembered = (k: string, f: string) => { try { return localStorage.getItem(`ll_att_${k}`) || f; } catch { return f; } };
 const remember = (k: string, v: string) => { try { localStorage.setItem(`ll_att_${k}`, v); } catch { /* ignore */ } };
 
@@ -253,11 +261,16 @@ export function AttendancePortal() {
   const [makeupMsg, setMakeupMsg] = useState('');
 
   const [instructor, setInstructor] = useState(() => remembered('instructor', DEFAULTS.instructor));
-  const [term, setTerm] = useState(() => remembered('term', DEFAULTS.term));
+  // Chosen in Settings, saved to Supabase, shared by every device.
+  const [termSeason, setTermSeason] = useState<Season>(guessSeason());
+  const [termYear, setTermYear] = useState<number>(new Date().getFullYear());
+  const term = `${termSeason} Term ${termYear}`;
+  const thisYear = new Date().getFullYear();
+  const yearOptions = Array.from(new Set([termYear, thisYear - 1, thisYear, thisYear + 1, thisYear + 2])).sort((a, b) => a - b);
   const [level, setLevel] = useState(() => remembered('level', DEFAULTS.level));
   const [blankTimeOut, setBlankTimeOut] = useState(() => remembered('blankout', '') === '1');
   useEffect(() => { remember('instructor', instructor); }, [instructor]);
-  useEffect(() => { remember('term', term); }, [term]);
+  useEffect(() => { try { localStorage.removeItem('ll_att_term'); } catch { /* ignore */ } }, []);
   useEffect(() => { remember('level', level); }, [level]);
   useEffect(() => { remember('blankout', blankTimeOut ? '1' : ''); }, [blankTimeOut]);
   const [codeOn, setCodeOn] = useState(false);
@@ -324,6 +337,8 @@ export function AttendancePortal() {
     const cal = (calRow?.value as any) || {};
     setTermStart(cal.termStart || '');
     setTermEnd(cal.termEnd || '');
+    if (SEASONS.includes(cal.termSeason)) setTermSeason(cal.termSeason);
+    if (Number.isInteger(cal.termYear)) setTermYear(cal.termYear);
 
     // Absorb the older single-date list, if this project still has one.
     const { data: ncRow } = await sb.from('attendance_settings').select('value').eq('key', 'no_class_days').maybeSingle();
@@ -531,12 +546,14 @@ export function AttendancePortal() {
     load(true);
   };
 
-  const saveCalendar = async (next: { termStart?: string; termEnd?: string; closures?: Closure[] }) => {
+  const saveCalendar = async (next: { termStart?: string; termEnd?: string; closures?: Closure[]; termSeason?: Season; termYear?: number }) => {
     const sb = await authed();
     const value = {
       termStart: next.termStart ?? termStart,
       termEnd: next.termEnd ?? termEnd,
       closures: next.closures ?? closures,
+      termSeason: next.termSeason ?? termSeason,
+      termYear: next.termYear ?? termYear,
     };
     const { error } = await sb.from('attendance_settings')
       .upsert({ key: 'calendar', value, updated_at: new Date().toISOString() });
@@ -544,6 +561,8 @@ export function AttendancePortal() {
     if (next.termStart !== undefined) setTermStart(next.termStart);
     if (next.termEnd !== undefined) setTermEnd(next.termEnd);
     if (next.closures !== undefined) setClosures(next.closures);
+    if (next.termSeason !== undefined) setTermSeason(next.termSeason);
+    if (next.termYear !== undefined) setTermYear(next.termYear);
   };
 
   /** Is this date inside any closure? */
@@ -1619,7 +1638,14 @@ export function AttendancePortal() {
 
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '0 0 10px' }}>Printed sheet header</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input style={{ ...ui.input, width: 170 }} value={term} onChange={e => setTerm(e.target.value)} placeholder="Term" />
+            <select style={{ ...ui.input, width: 120 }} value={termSeason} title="Term"
+              onChange={e => saveCalendar({ termSeason: e.target.value as Season })}>
+              {SEASONS.map(se => <option key={se} value={se}>{se} Term</option>)}
+            </select>
+            <select style={{ ...ui.input, width: 100 }} value={termYear} title="Year"
+              onChange={e => saveCalendar({ termYear: Number(e.target.value) })}>
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
             <input style={{ ...ui.input, width: 80 }} value={level} onChange={e => setLevel(e.target.value)} placeholder="Level" />
             <input style={{ ...ui.input, width: 220 }} value={instructor} onChange={e => setInstructor(e.target.value)} placeholder="Instructor" />
           </div>
@@ -1627,6 +1653,9 @@ export function AttendancePortal() {
             <input type="checkbox" checked={blankTimeOut} onChange={e => setBlankTimeOut(e.target.checked)} />
             Print Time out blank (students write it when signing)
           </label>
+          <div style={{ fontSize: '0.8rem', color: C.faint, marginTop: 6 }}>
+            Sheets print as <b>{term}</b> until you change it here.
+          </div>
 
           <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.7px', color: C.faint, fontWeight: 700, margin: '22px 0 4px' }}>Class times</div>
           <p style={{ margin: '0 0 12px', color: C.sub, fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 620 }}>
