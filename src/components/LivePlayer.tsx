@@ -141,10 +141,19 @@ export const LivePlayer: React.FC = () => {
 
       // FIX 1: Exact title match (==) instead of fuzzy match to prevent
       // similar quiz titles returning wrong questions
-      const query = `*[_type == "practiceBank" && title == "${session.quiz_id}"][0]`;
+      // FIX 11: The title is passed as a query parameter instead of being pasted
+      // into the query text, so quotes or apostrophes in a title can't break it.
+      // Still an exact title match (FIX 1 is unchanged in behaviour).
+      const query = `*[_type == "practiceBank" && title == $title][0]`;
+      const params = { title: session.quiz_id };
 
-      client.fetch(query).then((topic) => {
-          if (topic && topic.bulkData) {
+      // FIX 10: One automatic retry for a dropped request (phones on mobile data),
+      // and the real error is now shown instead of a generic message.
+      const fetchTopic = () => client.fetch(query, params).catch(() =>
+        new Promise(r => setTimeout(r, 1200)).then(() => client.fetch(query, params)));
+
+      fetchTopic().then((topic: any) => {
+          if (topic && typeof topic.bulkData === 'string' && topic.bulkData.trim() !== '') {
             const rows = topic.bulkData.replace(/\r/g, '').split('\n').filter((row: string) => row.trim() !== '');
             const rawQuestions = rows.map((row: string) => {
               const cols = row.split('\t').map((c: string) => c.trim());
@@ -177,7 +186,12 @@ export const LivePlayer: React.FC = () => {
               }
             } else { setError("Found topic, but couldn't read questions."); }
           } else { setError("Quiz data not found."); }
-        }).catch(() => setError("Failed to load quiz."))
+        }).catch((err: any) => {
+          console.error('Live Arena quiz load failed:', err, 'quiz_id:', session.quiz_id);
+          const status = err?.statusCode ? ` (${err.statusCode})` : '';
+          const detail = err?.details?.description || err?.message || String(err);
+          setError(`Failed to load quiz${status}: ${detail}`);
+        })
         .finally(() => setIsLoadingQuestions(false));
     }
   }, [session, team]);
