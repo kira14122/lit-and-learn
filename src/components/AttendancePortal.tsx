@@ -22,6 +22,13 @@ const CLASSES: ClassDef[] = [
 
 interface Student { id: string; name: string; section: number; joined?: string; enrolledFrom?: string; }
 interface Log { id: string; student_id: string; session: string; check_in: string | null; check_out: string | null; na?: boolean; }
+// An exam and the stretch of class days that counts toward it. Stored in
+// attendance_settings under 'exams'. Each exam has its own minimum.
+interface Exam { id: string; classType: 'weekday' | 'weekend'; name: string; from: string; to: string; minDays: number; }
+const newExamId = () => `ex_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const dayAfter = (iso: string): string => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + 1); return d.toLocaleDateString('en-CA'); };
+const fmtDays = (n: number): string => (n % 1 ? n.toFixed(1) : String(n));
+const prettyDay = (iso: string): string => iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
 
 const C = {
   ink: '#0F172A', sub: '#64748B', faint: '#94A3B8',
@@ -31,6 +38,9 @@ const C = {
   amber: '#B45309', amberSoft: '#FFFBEB',
   red: '#DC2626', redSoft: '#FEF2F2',
 };
+
+// Small uppercase label over a form field.
+const LABEL = { display: 'block', fontSize: '0.72rem', color: C.faint, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.6px', marginBottom: 4 };
 
 const DEFAULTS = { instructor: 'Dr. Chouit Abderraouf', level: '4' };
 // Printed term: you pick the season and year in Settings, and it stays
@@ -226,7 +236,7 @@ export function AttendancePortal() {
   const { getToken } = useAuth();
   const [classId, setClassId] = useState('am');
   const cls = CLASSES.find(c => c.id === classId)!;
-  const [view, setView] = useState<'today' | 'manage' | 'records'>('today');
+  const [view, setView] = useState<'today' | 'manage' | 'records' | 'exams'>('today');
   const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA'); };
   const [rStart, setRStart] = useState<string>(monthStart());
   const [rEnd, setREnd] = useState<string>(todayLocal());
@@ -246,6 +256,16 @@ export function AttendancePortal() {
   const [editName, setEditName] = useState('');
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  // ---- exam eligibility ----
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [eLogs, setELogs] = useState<any[]>([]);
+  const [eLoading, setELoading] = useState(false);
+  const [selExamId, setSelExamId] = useState<string | null>(null);
+  const [showAddExam, setShowAddExam] = useState(false);
+  const [newExam, setNewExam] = useState<{ name: string; from: string; to: string; minDays: string }>({ name: '', from: '', to: '', minDays: '' });
+  const [examEdit, setExamEdit] = useState<{ name: string; from: string; to: string; minDays: string } | null>(null);
+  const [examMsg, setExamMsg] = useState('');
+  const [pendingDeleteExam, setPendingDeleteExam] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Student | null>(null);
   const [pendingClear, setPendingClear] = useState<{ log: Log; name: string; at: string } | null>(null);
   const [pendingIn, setPendingIn] = useState<{ studentId: string; name: string; session: string } | null>(null);
@@ -347,6 +367,10 @@ export function AttendancePortal() {
     const merged = [...saved];
     legacy.forEach(l => { if (!merged.some(c => c.from === l.from && c.to === l.to)) merged.push(l); });
     setClosures(merged.sort((a, b) => a.from.localeCompare(b.from)));
+
+    const { data: exRow } = await sb.from('attendance_settings').select('value').eq('key', 'exams').maybeSingle();
+    const exList = (exRow?.value as any)?.list;
+    setExams(Array.isArray(exList) ? exList : []);
 
     const { data: vmRow } = await sb.from('attendance_settings').select('value').eq('key', 'visitor_mode').maybeSingle();
     setVisitorMode(Boolean((vmRow?.value as any)?.enabled));
@@ -712,6 +736,243 @@ export function AttendancePortal() {
 
   useEffect(() => { if (view === 'records') loadRecords(); }, [view, loadRecords]);
 
+  // ---- exam eligibility ----
+  // Each exam counts only the class days inside its own window (from–to),
+  // which you set by hand. P is a full day, L half a day, and every make-up
+  // in the window is a full day — no cap, unlike the Records rate.
+  const classExams = exams
+    .filter(e => e.classType === cls.classType)
+    .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  const todayISO = todayLocal();
+  // Default to the exam whose window is running now or comes next.
+  const selExam = classExams.find(e => e.id === selExamId)
+    || classExams.find(e => e.to >= todayISO)
+    || classExams[classExams.length - 1]
+    || null;
+
+  useEffect(() => {
+    setExamEdit(selExam ? { name: selExam.name, from: selExam.from, to: selExam.to, minDays: String(selExam.minDays) } : null);
+    setPendingDeleteExam(false);
+  }, [selExam?.id, selExam?.name, selExam?.from, selExam?.to, selExam?.minDays]);
+
+  const examSpan = classExams.length
+    ? { from: classExams.reduce((m, e) => (e.from < m ? e.from : m), classExams[0].from),
+        to: classExams.reduce((m, e) => (e.to > m ? e.to : m), classExams[0].to) }
+    : null;
+
+  const loadExamLogs = useCallback(async () => {
+    if (!examSpan) { setELogs([]); return; }
+    setELoading(true);
+    const sb = await authed();
+    const { data } = await sb
+      .from('attendance_logs')
+      .select('id, student_id, session, check_in, check_out, log_date, na')
+      .gte('log_date', examSpan.from)
+      .lte('log_date', examSpan.to)
+      .order('log_date', { ascending: true });
+    setELogs(data || []);
+    setELoading(false);
+  }, [authed, examSpan?.from, examSpan?.to]);
+
+  useEffect(() => { if (view === 'exams') loadExamLogs(); }, [view, loadExamLogs]);
+
+  const saveExams = async (list: Exam[]): Promise<boolean> => {
+    const sb = await authed();
+    const { error } = await sb.from('attendance_settings')
+      .upsert({ key: 'exams', value: { list }, updated_at: new Date().toISOString() });
+    if (error) { setExamMsg(`Could not save: ${error.message}`); return false; }
+    setExams(list);
+    return true;
+  };
+
+  /** Checks an exam form; returns an error message, or null when it is fine. */
+  const examProblem = (f: { name: string; from: string; to: string; minDays: string }): string | null => {
+    if (!f.name.trim()) return 'Give the exam a name.';
+    if (!f.from || !f.to) return 'Pick both the first and the last day that count.';
+    if (f.to < f.from) return 'The last day comes before the first day.';
+    const n = Number(f.minDays);
+    if (!f.minDays || !Number.isFinite(n) || n <= 0) return 'Enter the minimum number of days.';
+    return null;
+  };
+
+  const openAddExam = () => {
+    // Start the new window the day after the latest one ends.
+    const last = classExams.reduce<string>((m, e) => (e.to > m ? e.to : m), '');
+    setNewExam({ name: '', from: last ? dayAfter(last) : (termStart || ''), to: '', minDays: '' });
+    setExamMsg('');
+    setShowAddExam(true);
+  };
+
+  const addExam = async () => {
+    const problem = examProblem(newExam);
+    if (problem) { setExamMsg(problem); return; }
+    const ex: Exam = {
+      id: newExamId(), classType: cls.classType, name: newExam.name.trim(),
+      from: newExam.from, to: newExam.to, minDays: Number(newExam.minDays),
+    };
+    if (await saveExams([...exams, ex])) {
+      setSelExamId(ex.id);
+      setShowAddExam(false);
+      setExamMsg('');
+    }
+  };
+
+  const saveExamEdit = async () => {
+    if (!selExam || !examEdit) return;
+    const problem = examProblem(examEdit);
+    if (problem) { setExamMsg(problem); return; }
+    const updated: Exam = { ...selExam, name: examEdit.name.trim(), from: examEdit.from, to: examEdit.to, minDays: Number(examEdit.minDays) };
+    if (await saveExams(exams.map(e => (e.id === selExam.id ? updated : e)))) {
+      setExamMsg('Saved.');
+      setTimeout(() => setExamMsg(''), 2500);
+    }
+  };
+
+  const deleteExam = async () => {
+    if (!selExam) return;
+    if (await saveExams(exams.filter(e => e.id !== selExam.id))) {
+      setSelExamId(null);
+      setPendingDeleteExam(false);
+    }
+  };
+
+  const examEditDirty = Boolean(selExam && examEdit && (
+    examEdit.name !== selExam.name || examEdit.from !== selExam.from ||
+    examEdit.to !== selExam.to || examEdit.minDays !== String(selExam.minDays)));
+
+  const buildEligibility = (ex: Exam, roster: Student[] = students) => {
+    const today = todayLocal();
+    const ended = ex.to < today;
+    // Only days that have happened are scored; the rest are "days left".
+    const to = ended ? ex.to : today;
+    const meetDays = cls.classType === 'weekday' ? schedule.weekday.days : schedule.weekend.days;
+    const heldDays = ex.from <= to ? meetingDays(ex.from, to, meetDays).filter(d => !isClosed(d)) : [];
+    const leftFrom = ex.from > today ? ex.from : dayAfter(today);
+    const daysLeft = ended ? [] : meetingDays(leftFrom, ex.to, meetDays).filter(d => !isClosed(d));
+    // Holidays and other closures inside the window that fell on a class day —
+    // listed so the page shows why those days are missing from the count.
+    const skipped = closures
+      .map(c => {
+        const from = c.from > ex.from ? c.from : ex.from;
+        const end = (c.to || c.from) < ex.to ? (c.to || c.from) : ex.to;
+        return { label: c.label || 'No class', days: from <= end ? meetingDays(from, end, meetDays) : [] };
+      })
+      .filter(c => c.days.length > 0);
+
+    const byKey = new Map<string, any>();
+    eLogs.forEach((l: any) => byKey.set(`${l.student_id}:${l.log_date}:${l.session}`, l));
+
+    const rows = roster.map(stu => {
+      let P = 0, L = 0, A = 0, held = 0;
+      // Days before a student enrolled are not theirs to answer for.
+      const myDays = stu.enrolledFrom ? heldDays.filter(d => d >= stu.enrolledFrom!) : heldDays;
+      myDays.forEach(day => {
+        let counted = false;
+        sess.forEach(se => {
+          const l = byKey.get(`${stu.id}:${day}:${se}`);
+          if (l?.na) return;                         // excused: not counted
+          counted = true;
+          const m = scoreSession(se, l?.check_in ? toHM24(l.check_in) : null, l?.check_out ? toHM24(l.check_out) : null, schedule);
+          if (m === 'P') P++; else if (m === 'L') L++; else A++;
+        });
+        if (counted) held++;
+      });
+      // Every make-up inside the window counts in full.
+      const makeups = eLogs.filter((l: any) =>
+        l.student_id === stu.id && l.session === 'makeup' && !l.na &&
+        l.log_date >= ex.from && l.log_date <= ex.to).length;
+      // Slots are converted to days (a weekend day would be two slots).
+      const credited = (P + 0.5 * L + makeups) / sess.length;
+      const short = Math.max(0, ex.minDays - credited);
+      return { stu, held, P, L, A, makeups, credited, short, eligible: credited >= ex.minDays };
+    });
+    // With no class days left (e.g. the window ends today), the result is final.
+    return { rows, heldDays, daysLeft, ended: ended || daysLeft.length === 0, skipped };
+  };
+
+  // "Labor Day (Mon, Sep 7)", "Winter break (Mon, Dec 21 – Thu, Dec 31, 6 class days)"
+  const skippedText = (sk: { label: string; days: string[] }[]): string =>
+    sk.map(c => {
+      const span = c.days.length === 1
+        ? prettyDay(c.days[0])
+        : `${prettyDay(c.days[0])} – ${prettyDay(c.days[c.days.length - 1])}, ${c.days.length} class days`;
+      return `${c.label} (${span})`;
+    }).join('; ');
+  const skippedCount = (sk: { days: string[] }[]) => sk.reduce((n, c) => n + c.days.length, 0);
+
+  // Printable eligibility sheet, in the same paper style as the daily sheet.
+  // Always the whole class — the search box never trims a printed record.
+  const printExamSheet = () => {
+    if (!selExam) return;
+    const { rows, heldDays, daysLeft, ended, skipped } = buildEligibility(selExam, allForClass);
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const usDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const okCount = rows.filter(r => r.eligible).length;
+    const statusOf = (r: typeof rows[number]) =>
+      r.eligible ? 'Eligible' : ended ? `Not eligible (short ${fmtDays(r.short)})` : `Needs ${fmtDays(r.short)} more`;
+    const bodyHtml = rows.map((r, i) => '<tr' + (r.eligible ? '' : ' class="no"') + '>'
+      + `<td class="n">${i + 1}</td><td class="nm">${esc(r.stu.name.toUpperCase())}</td><td class="c">S${r.stu.section}</td>`
+      + `<td class="c">${r.held}</td><td class="c">${r.P}</td><td class="c">${r.L}</td><td class="c">${r.A}</td>`
+      + `<td class="c">${r.makeups || ''}</td><td class="c"><b>${fmtDays(r.credited)}</b></td>`
+      + `<td class="st">${statusOf(r)}</td></tr>`).join('');
+
+    const styles = `
+        @page { size: A4; margin: 15mm; }
+        body { font-family: "Times New Roman", Times, serif; color:#000; margin:0; font-size:12pt; }
+        .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+        .hdr div { line-height:1.9; }
+        .term { font-weight:bold; font-size:13pt; }
+        .fld { display:inline-block; min-width:150px; border-bottom:1px solid #000; padding:0 4px; }
+        h1 { font-size:14pt; margin:6px 0 4px; }
+        .sum { font-size:11pt; margin:0 0 10px; }
+        table { width:100%; border-collapse:collapse; }
+        th, td { border:1px solid #000; padding:2px 6px; font-size:11.5pt; }
+        th { background:#EDEDED; text-align:center; height:26px; font-size:10.5pt; }
+        th.l { text-align:left; }
+        td { height:26px; }
+        td.n { width:28px; text-align:center; } td.c { width:52px; text-align:center; } td.st { width:170px; }
+        tr.no td.st { font-weight:bold; }
+        .key { font-size:10pt; margin-top:8px; }
+        .foot { margin-top:70px; font-size:12pt; }
+        .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }`;
+
+    const sheet = `
+      <div class="hdr">
+        <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
+        <div><div>Printed: <span class="fld">${usDate(todayLocal())}</span></div><div>Instructor: <span class="fld">${esc(instructor)}</span></div></div>
+      </div>
+      <h1>Exam Eligibility — ${esc(selExam.name)}</h1>
+      <p class="sum">Attendance counted from ${usDate(selExam.from)} to ${usDate(selExam.to)} · minimum ${fmtDays(selExam.minDays)} days ·
+        ${heldDays.length} class day${heldDays.length === 1 ? '' : 's'} held${daysLeft.length ? ` so far, ${daysLeft.length} left` : ''} ·
+        <b>${okCount} of ${rows.length} eligible</b></p>
+      ${skipped.length ? `<p class="sum">No class, not counted: ${esc(skippedText(skipped))}.</p>` : ''}
+      <table><thead><tr><th></th><th class="l">Student Name</th><th>Section</th><th>Days</th><th>P</th><th>L</th><th>A</th><th>Make-ups</th><th>Credited</th><th class="l">Status</th></tr></thead>
+      <tbody>${bodyHtml}</tbody></table>
+      <div class="key">P = 1 day · L = ½ day · each make-up = 1 day. Days marked N/A and days before a student enrolled are not counted.</div>
+      <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { alert('Please allow pop-ups for this site so the sheet can open.'); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Eligibility — ${esc(selExam.name)}</title>
+      <style>${styles}</style></head><body>${sheet}</body></html>`);
+    w.document.close(); w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
+  const downloadExamCsv = () => {
+    if (!selExam) return;
+    const { rows, ended } = buildEligibility(selExam);
+    const head = ['Student', 'Section', 'Class days', 'Present', 'Late', 'Absent', 'Make-ups', 'Days credited', 'Minimum', 'Status'];
+    const csv = [head, ...rows.map(r => [
+      r.stu.name, `S${r.stu.section}`, r.held, r.P, r.L, r.A, r.makeups, fmtDays(r.credited), selExam.minDays,
+      r.eligible ? 'Eligible' : ended ? `Not eligible (short ${fmtDays(r.short)})` : `Needs ${fmtDays(r.short)} more`,
+    ])].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `exam-eligibility-${selExam.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const buildRecords = () => {
     const ids = new Set(students.map(st => st.id));
     const classLogs = rLogs.filter((l: any) => ids.has(l.student_id));
@@ -990,6 +1251,7 @@ export function AttendancePortal() {
         <button style={ui.tab(view === 'today')} onClick={() => setView('today')}>Today</button>
         <button style={ui.tab(view === 'manage')} onClick={() => setView('manage')}>Manage</button>
         <button style={ui.tab(view === 'records')} onClick={() => setView('records')}>Records</button>
+        <button style={ui.tab(view === 'exams')} onClick={() => setView('exams')}>Exams</button>
       </div>
 
       {/* ================= TODAY ================= */}
@@ -1397,6 +1659,165 @@ export function AttendancePortal() {
               );
             })()}
           </div>
+        </>
+      )}
+
+      {/* ================= EXAMS ================= */}
+      {view === 'exams' && (
+        <>
+          {cls.classType !== 'weekday' ? (
+            <div style={{ ...ui.table, padding: '26px 20px', color: C.faint }}>
+              Exam eligibility is set up for the Morning class for now.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                {classExams.length > 0 && (
+                  <div style={{ ...ui.seg, height: 36, flexWrap: 'wrap' }}>
+                    {classExams.map(e => (
+                      <button key={e.id} style={{ ...ui.segBtn(selExam?.id === e.id), height: 28 }}
+                        onClick={() => { setSelExamId(e.id); setExamMsg(''); }}>{e.name}</button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ flex: 1 }} />
+                {selExam && <button style={{ ...ui.secondary, height: 36 }} onClick={downloadExamCsv}>Download CSV</button>}
+                {selExam && <button style={{ ...ui.secondary, height: 36 }} onClick={printExamSheet}>Export sheet</button>}
+                {!showAddExam && <button style={{ ...ui.primary, height: 36 }} onClick={openAddExam}>+ Add exam</button>}
+              </div>
+
+              {showAddExam && (
+                <div style={ui.addCard}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 180px' }}>
+                      <label style={LABEL}>Exam name</label>
+                      <input style={{ ...ui.input, width: '100%' }} placeholder="e.g. Midterm" value={newExam.name}
+                        onChange={e => setNewExam({ ...newExam, name: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={LABEL}>First day that counts</label>
+                      <input type="date" style={ui.input} value={newExam.from} onChange={e => setNewExam({ ...newExam, from: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={LABEL}>Last day that counts</label>
+                      <input type="date" style={ui.input} value={newExam.to} onChange={e => setNewExam({ ...newExam, to: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={LABEL}>Minimum days</label>
+                      <input type="number" min={0.5} step={0.5} style={{ ...ui.input, width: 110 }} value={newExam.minDays}
+                        onChange={e => setNewExam({ ...newExam, minDays: e.target.value })} />
+                    </div>
+                    <button style={ui.primary} onClick={addExam}>Add</button>
+                    <button style={ui.secondary} onClick={() => { setShowAddExam(false); setExamMsg(''); }}>Cancel</button>
+                  </div>
+                  {examMsg && <div style={{ marginTop: 8, fontSize: '0.85rem', color: C.red }}>{examMsg}</div>}
+                </div>
+              )}
+
+              {!selExam ? (
+                !showAddExam && (
+                  <div style={{ ...ui.table, padding: '26px 20px', color: C.faint }}>
+                    No exams yet. Add one with the days that count toward it and the minimum a student needs.
+                  </div>
+                )
+              ) : (() => {
+                const { rows, heldDays, daysLeft, ended, skipped } = buildEligibility(selExam);
+                const okCount = rows.filter(r => r.eligible).length;
+                const cols = 'minmax(0,1fr) 64px 48px 48px 48px 74px 84px 170px';
+                return (
+                  <>
+                    {examEdit && (
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
+                        <div style={{ flex: '1 1 160px' }}>
+                          <label style={LABEL}>Exam name</label>
+                          <input style={{ ...ui.input, width: '100%', height: 36 }} value={examEdit.name}
+                            onChange={e => setExamEdit({ ...examEdit, name: e.target.value })} />
+                        </div>
+                        <div>
+                          <label style={LABEL}>First day</label>
+                          <input type="date" style={{ ...ui.input, height: 36 }} value={examEdit.from}
+                            onChange={e => setExamEdit({ ...examEdit, from: e.target.value })} />
+                        </div>
+                        <div>
+                          <label style={LABEL}>Last day</label>
+                          <input type="date" style={{ ...ui.input, height: 36 }} value={examEdit.to}
+                            onChange={e => setExamEdit({ ...examEdit, to: e.target.value })} />
+                        </div>
+                        <div>
+                          <label style={LABEL}>Minimum</label>
+                          <input type="number" min={0.5} step={0.5} style={{ ...ui.input, height: 36, width: 96 }} value={examEdit.minDays}
+                            onChange={e => setExamEdit({ ...examEdit, minDays: e.target.value })} />
+                        </div>
+                        {examEditDirty && <button style={{ ...ui.primary, height: 36 }} onClick={saveExamEdit}>Save</button>}
+                        {examEditDirty && selExam && (
+                          <button style={{ ...ui.secondary, height: 36 }}
+                            onClick={() => { setExamEdit({ name: selExam.name, from: selExam.from, to: selExam.to, minDays: String(selExam.minDays) }); setExamMsg(''); }}>Undo</button>
+                        )}
+                        {!pendingDeleteExam ? (
+                          <button style={{ ...ui.tDanger, height: 36, borderRadius: 12 }} onClick={() => setPendingDeleteExam(true)}>Delete</button>
+                        ) : (
+                          <>
+                            <button style={{ ...ui.tDanger, height: 36, borderRadius: 12, background: C.red, color: '#fff', border: 'none' }} onClick={deleteExam}>Delete exam</button>
+                            <button style={{ ...ui.secondary, height: 36 }} onClick={() => setPendingDeleteExam(false)}>Keep</button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {!showAddExam && examMsg && (
+                      <div style={{ margin: '0 0 8px', fontSize: '0.85rem', color: examMsg === 'Saved.' ? C.green : C.red }}>{examMsg}</div>
+                    )}
+
+                    <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: C.sub }}>
+                      <b style={{ color: C.ink }}>{okCount} of {rows.length}</b> eligible · minimum {fmtDays(selExam.minDays)} days ·
+                      counting {prettyDay(selExam.from)} to {prettyDay(selExam.to)} · {heldDays.length} class day{heldDays.length === 1 ? '' : 's'} held
+                      {daysLeft.length > 0 && <> so far, {daysLeft.length} left</>}
+                      {skipped.length > 0 && <> · {skippedCount(skipped)} no-class day{skippedCount(skipped) === 1 ? '' : 's'} not counted: {skippedText(skipped)}</>}.
+                      {' '}P counts a full day, L half a day, and every make-up in the window a full day. Days marked
+                      N/A and days before a student's enrolled-from date are left out.
+                    </p>
+
+                    <div style={ui.table}>
+                      {(eLoading || loading) ? (
+                        <div style={{ padding: 20, color: C.faint }}>Loading…</div>
+                      ) : rows.length === 0 ? (
+                        <div style={{ padding: '26px 20px', color: C.faint }}>No students to show.</div>
+                      ) : (
+                        <>
+                          <div style={{ ...ui.thead, gridTemplateColumns: cols, gap: 10 }}>
+                            <span>Student</span><span>Days</span><span>P</span><span>L</span><span>A</span>
+                            <span>Make-up</span><span>Credited</span><span>Status</span>
+                          </div>
+                          {rows.map(r => (
+                            <div key={r.stu.id} style={{ ...ui.tr, gridTemplateColumns: cols, gap: 10 }}>
+                              <span style={{ fontWeight: 600 }}>
+                                {r.stu.name}
+                                {cls.hasSections && <span style={{ ...ui.sTag, marginLeft: 8 }}>S{r.stu.section}</span>}
+                              </span>
+                              <span style={ui.mono}>{r.held}</span>
+                              <span style={{ color: C.green, fontWeight: 700 }}>{r.P}</span>
+                              <span style={{ color: C.amber, fontWeight: 700 }}>{r.L}</span>
+                              <span style={{ color: C.red, fontWeight: 700 }}>{r.A}</span>
+                              <span style={{ color: r.makeups ? C.indigo : C.faint, fontWeight: r.makeups ? 700 : 400 }}>{r.makeups || '—'}</span>
+                              <span style={{ fontWeight: 700 }}>{fmtDays(r.credited)}<span style={{ color: C.faint, fontWeight: 400 }}> / {fmtDays(selExam.minDays)}</span></span>
+                              <span>
+                                <span style={{
+                                  display: 'inline-block', borderRadius: 8, padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700,
+                                  background: r.eligible ? C.greenSoft : ended ? C.redSoft : C.amberSoft,
+                                  color: r.eligible ? C.green : ended ? C.red : C.amber,
+                                }}>
+                                  {r.eligible ? 'Eligible' : ended ? `Not eligible · short ${fmtDays(r.short)}` : `Needs ${fmtDays(r.short)} more`}
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </>
+          )}
         </>
       )}
 
