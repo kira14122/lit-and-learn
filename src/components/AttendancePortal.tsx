@@ -949,7 +949,7 @@ export function AttendancePortal() {
     const sheet = `
       <div class="hdr">
         <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
-        <div><div>Printed: <span class="fld">${usDate(todayLocal())}</span></div><div>Instructor: <span class="fld">${esc(instructor)}</span></div></div>
+        <div><div>Date: <span class="fld">${usDate(todayLocal())}</span></div><div>Instructor: <span class="fld">${esc(instructor)}</span></div></div>
       </div>
       <h1>Exam Eligibility — ${esc(selExam.name)}</h1>
       <div class="meta">
@@ -974,7 +974,6 @@ export function AttendancePortal() {
       </div>
       <div class="foot">
         <span>Instructor Signature: <span class="sigline">&nbsp;</span></span>
-        <span>Date: <span class="sigline" style="min-width:120px">&nbsp;</span></span>
       </div>`;
 
     const w = window.open('', '_blank');
