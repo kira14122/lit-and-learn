@@ -855,7 +855,7 @@ export function AttendancePortal() {
       .map(c => {
         const from = c.from > ex.from ? c.from : ex.from;
         const end = (c.to || c.from) < ex.to ? (c.to || c.from) : ex.to;
-        return { label: c.label || 'No class', days: from <= end ? meetingDays(from, end, meetDays) : [] };
+        return { label: (c.label || '').trim(), days: from <= end ? meetingDays(from, end, meetDays) : [] };
       })
       .filter(c => c.days.length > 0);
 
@@ -896,7 +896,8 @@ export function AttendancePortal() {
       const span = c.days.length === 1
         ? prettyDay(c.days[0])
         : `${prettyDay(c.days[0])} – ${prettyDay(c.days[c.days.length - 1])}, ${c.days.length} class days`;
-      return `${c.label} (${span})`;
+      // A closure saved without a real name just shows its dates.
+      return c.label && !/^no class$/i.test(c.label) ? `${c.label} (${span})` : span;
     }).join('; ');
   const skippedCount = (sk: { days: string[] }[]) => sk.reduce((n, c) => n + c.days.length, 0);
 
@@ -908,48 +909,73 @@ export function AttendancePortal() {
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const usDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
     const okCount = rows.filter(r => r.eligible).length;
-    const statusOf = (r: typeof rows[number]) =>
-      r.eligible ? 'Eligible' : ended ? `Not eligible (short ${fmtDays(r.short)})` : `Needs ${fmtDays(r.short)} more`;
     const bodyHtml = rows.map((r, i) => '<tr' + (r.eligible ? '' : ' class="no"') + '>'
-      + `<td class="n">${i + 1}</td><td class="nm">${esc(r.stu.name.toUpperCase())}</td><td class="c">S${r.stu.section}</td>`
+      + `<td class="c">${i + 1}</td><td class="nm">${esc(r.stu.name.toUpperCase())}</td><td class="c">S${r.stu.section}</td>`
       + `<td class="c">${r.held}</td><td class="c">${r.P}</td><td class="c">${r.L}</td><td class="c">${r.A}</td>`
-      + `<td class="c">${r.makeups || ''}</td><td class="c"><b>${fmtDays(r.credited)}</b></td>`
-      + `<td class="st">${statusOf(r)}</td></tr>`).join('');
+      + `<td class="c">${r.makeups || ''}</td><td class="c cr">${fmtDays(r.credited)}</td>`
+      + `<td class="c">${r.eligible ? '' : fmtDays(r.short)}</td>`
+      + `<td class="st">${r.eligible ? 'Eligible' : ended ? 'Not eligible' : 'Not yet'}</td></tr>`).join('');
 
     const styles = `
-        @page { size: A4; margin: 15mm; }
-        body { font-family: "Times New Roman", Times, serif; color:#000; margin:0; font-size:12pt; }
-        .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
-        .hdr div { line-height:1.9; }
+        @page { size: A4; margin: 14mm 14mm 16mm; }
+        * { box-sizing: border-box; }
+        body { font-family: "Times New Roman", Times, serif; color:#000; margin:0; font-size:11pt; }
+        .hdr { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+        .hdr div { line-height:1.8; }
         .term { font-weight:bold; font-size:13pt; }
-        .fld { display:inline-block; min-width:150px; border-bottom:1px solid #000; padding:0 4px; }
-        h1 { font-size:14pt; margin:6px 0 4px; }
-        .sum { font-size:11pt; margin:0 0 10px; }
-        table { width:100%; border-collapse:collapse; }
-        th, td { border:1px solid #000; padding:2px 6px; font-size:11.5pt; }
-        th { background:#EDEDED; text-align:center; height:26px; font-size:10.5pt; }
-        th.l { text-align:left; }
-        td { height:26px; }
-        td.n { width:28px; text-align:center; } td.c { width:52px; text-align:center; } td.st { width:170px; }
+        .fld { display:inline-block; min-width:120px; border-bottom:1px solid #000; padding:0 4px; }
+        h1 { font-size:15pt; margin:12px 0 6px; padding-top:8px; border-top:2px solid #000; }
+        .meta { display:flex; flex-wrap:wrap; gap:4px 22px; font-size:10.5pt; margin:0 0 4px; }
+        .meta b { font-weight:bold; }
+        .skip { font-size:10pt; margin:0 0 8px; }
+        table { width:100%; border-collapse:collapse; table-layout:fixed; }
+        thead { display:table-header-group; }
+        tr { page-break-inside:avoid; break-inside:avoid; }
+        th, td { border:1px solid #000; padding:3px 5px; font-size:10.5pt; line-height:1.2; }
+        th { background:#EDEDED; font-size:9.5pt; font-weight:bold; text-align:center; white-space:nowrap; }
+        th.l, td.nm, td.st { text-align:left; }
+        td { height:22px; }
+        td.c { text-align:center; white-space:nowrap; }
+        td.cr { font-weight:bold; }
+        td.st { white-space:nowrap; }
+        tr.no td { background:#F2F2F2; }
         tr.no td.st { font-weight:bold; }
-        .key { font-size:10pt; margin-top:8px; }
-        .foot { margin-top:70px; font-size:12pt; }
-        .sigline { display:inline-block; min-width:250px; border-bottom:1px solid #000; }`;
+        .key { font-size:9.5pt; margin-top:8px; line-height:1.5; }
+        .foot { margin-top:48px; display:flex; justify-content:space-between; font-size:11pt; }
+        .sigline { display:inline-block; min-width:210px; border-bottom:1px solid #000; }
+        @media print { tr.no td { -webkit-print-color-adjust:exact; print-color-adjust:exact; } th { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
 
+    const notOk = rows.length - okCount;
     const sheet = `
       <div class="hdr">
         <div><div class="term">${term}</div><div>Class Level: <span class="fld">${level} &nbsp; (${cls.tag})</span></div></div>
         <div><div>Printed: <span class="fld">${usDate(todayLocal())}</span></div><div>Instructor: <span class="fld">${esc(instructor)}</span></div></div>
       </div>
       <h1>Exam Eligibility — ${esc(selExam.name)}</h1>
-      <p class="sum">Attendance counted from ${usDate(selExam.from)} to ${usDate(selExam.to)} · minimum ${fmtDays(selExam.minDays)} days ·
-        ${heldDays.length} class day${heldDays.length === 1 ? '' : 's'} held${daysLeft.length ? ` so far, ${daysLeft.length} left` : ''} ·
-        <b>${okCount} of ${rows.length} eligible</b></p>
-      ${skipped.length ? `<p class="sum">No class, not counted: ${esc(skippedText(skipped))}.</p>` : ''}
-      <table><thead><tr><th></th><th class="l">Student Name</th><th>Section</th><th>Days</th><th>P</th><th>L</th><th>A</th><th>Make-ups</th><th>Credited</th><th class="l">Status</th></tr></thead>
-      <tbody>${bodyHtml}</tbody></table>
-      <div class="key">P = 1 day · L = ½ day · each make-up = 1 day. Days marked N/A and days before a student enrolled are not counted.</div>
-      <div class="foot">Instructor Signature: <span class="sigline">&nbsp;</span></div>`;
+      <div class="meta">
+        <span>Counting: <b>${usDate(selExam.from)} – ${usDate(selExam.to)}</b></span>
+        <span>Minimum: <b>${fmtDays(selExam.minDays)} days</b></span>
+        <span>Class days held: <b>${heldDays.length}</b>${daysLeft.length ? ` (${daysLeft.length} left)` : ''}</span>
+        <span>Eligible: <b>${okCount} of ${rows.length}</b>${notOk ? ` · Not ${ended ? 'eligible' : 'yet'}: <b>${notOk}</b>` : ''}</span>
+      </div>
+      ${skipped.length ? `<p class="skip">No class, not counted: ${esc(skippedText(skipped))}</p>` : '<div style="height:6px"></div>'}
+      <table>
+        <colgroup>
+          <col style="width:7mm"><col><col style="width:11mm"><col style="width:11mm">
+          <col style="width:9mm"><col style="width:9mm"><col style="width:9mm">
+          <col style="width:18mm"><col style="width:17mm"><col style="width:12mm"><col style="width:25mm">
+        </colgroup>
+        <thead><tr><th></th><th class="l">Student Name</th><th>Sec.</th><th>Days</th><th>P</th><th>L</th><th>A</th><th>Make-ups</th><th>Credited</th><th>Short</th><th class="l">Status</th></tr></thead>
+        <tbody>${bodyHtml}</tbody>
+      </table>
+      <div class="key">
+        <b>Days</b> = class days counted for the student · <b>Credited</b>: P = 1 day, L = ½ day, each make-up = 1 day ·
+        <b>Short</b> = days still missing to reach the minimum. N/A days and days before a student enrolled are not counted.
+      </div>
+      <div class="foot">
+        <span>Instructor Signature: <span class="sigline">&nbsp;</span></span>
+        <span>Date: <span class="sigline" style="min-width:120px">&nbsp;</span></span>
+      </div>`;
 
     const w = window.open('', '_blank');
     if (!w) { alert('Please allow pop-ups for this site so the sheet can open.'); return; }
