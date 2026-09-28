@@ -13,10 +13,16 @@ type ExamQueue = {
   examiner_name: string | null;
   roster: RosterPerson[];
   is_open: boolean;
+  kind?: 'regular' | 'makeup' | null;
+  ends_at?: string | null;
 };
 type Entry = { name: string; status: string };
 
-type Phase = 'loading' | 'notfound' | 'codeentry' | 'closed' | 'session' | 'name' | 'confirm' | 'straggler' | 'done';
+type Phase = 'loading' | 'notfound' | 'codeentry' | 'closed' | 'session' | 'name' | 'confirm' | 'straggler' | 'makeup' | 'done';
+
+const LEVELS = ['1', '2', '3', '4', '5', '6', '7', '8', 'Business English'];
+const PERIODS = ['Morning', 'Evening', 'Weekend'];
+const makeupEnded = (q: ExamQueue | null) => !!(q && q.kind === 'makeup' && q.ends_at && Date.now() > new Date(q.ends_at).getTime());
 
 // ──────────────────────────────────────────────────────────────────────────
 // Icons
@@ -40,6 +46,9 @@ export const ExamCheckIn: React.FC = () => {
   const [chosenName, setChosenName] = useState('');
   const [typedCode, setTypedCode] = useState('');
   const [stragglerName, setStragglerName] = useState('');
+  const [muName, setMuName] = useState('');
+  const [muLevel, setMuLevel] = useState('');
+  const [muPeriod, setMuPeriod] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -58,7 +67,7 @@ export const ExamCheckIn: React.FC = () => {
     (async () => {
       try {
         const db = getSupabaseClient();
-        const { data, error: qErr } = await db.from('exam_queues').select('id,code,title,examiner_name,roster,is_open').eq('code', code).maybeSingle();
+        const { data, error: qErr } = await db.from('exam_queues').select('id,code,title,examiner_name,roster,is_open,kind,ends_at').eq('code', code).maybeSingle();
         if (cancelled) return;
         if (qErr || !data) { setPhase('notfound'); return; }
         const q = data as ExamQueue;
@@ -68,7 +77,8 @@ export const ExamCheckIn: React.FC = () => {
         // Already checked in on this device?
         const prior = localStorage.getItem(storeKey);
         if (prior) { setChosenName(prior); setPhase('done'); return; }
-        if (!q.is_open) { setPhase('closed'); return; }
+        if (!q.is_open || makeupEnded(q)) { setPhase('closed'); return; }
+        if (q.kind === 'makeup') { setPhase('makeup'); return; }
         // Auto-skip the section step when there's only one (or none).
         const uniq: string[] = [];
         (q.roster || []).forEach(p => { if (!uniq.includes(p.session)) uniq.push(p.session); });
@@ -141,10 +151,47 @@ export const ExamCheckIn: React.FC = () => {
     await doCheckIn(name, chosenSession || sessions[0] || 'Section 1', true);
   };
 
+  // ── Make-up exam: name + level + period, no list ────────────────────────────
+  const submitMakeup = async () => {
+    if (!queue) return;
+    const name = muName.trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!name) { setError('Type your full name.'); return; }
+    if (!muLevel) { setError('Choose your level.'); return; }
+    if (!muPeriod) { setError('Choose your period.'); return; }
+    if (makeupEnded(queue)) { setPhase('closed'); return; }
+    setIsSubmitting(true);
+    setError('');
+    try {
+      const db = getSupabaseClient();
+      const { error: insErr } = await db.from('exam_queue_entries').insert([{
+        queue_id: queue.id,
+        name,
+        session_label: null,
+        status: 'waiting',
+        self_added: false,
+        level: muLevel,
+        period: muPeriod,
+      }]);
+      if (insErr) {
+        if (String(insErr.message || '').toLowerCase().includes('duplicate')) {
+          setError('Someone with this exact name has already checked in. If that wasn\'t you, add your middle name.');
+          return;
+        }
+        throw insErr;
+      }
+      localStorage.setItem(storeKey, name);
+      setChosenName(name);
+      setPhase('done');
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally { setIsSubmitting(false); }
+  };
+
   const resetMe = () => {
     localStorage.removeItem(storeKey);
     setChosenName('');
-    if (!queue?.is_open) { setPhase('closed'); return; }
+    if (!queue?.is_open || makeupEnded(queue)) { setPhase('closed'); return; }
+    if (queue?.kind === 'makeup') { setMuName(''); setMuLevel(''); setMuPeriod(''); setPhase('makeup'); return; }
     if (sessions.length <= 1) { setChosenSession(sessions[0] || ''); setPhase('name'); }
     else { setChosenSession(''); setPhase('session'); }
   };
@@ -193,7 +240,46 @@ export const ExamCheckIn: React.FC = () => {
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <h1 style={{ margin: '0 0 8px', fontSize: '1.5rem', color: '#0F172A', fontWeight: 700 }}>Check-in is closed</h1>
             <p style={{ margin: 0, color: '#64748B' }}>{queue?.title}</p>
+            {makeupEnded(queue) && <p style={{ margin: '12px 0 0', color: '#64748B' }}>The make-up exam ended at 4:45 PM.</p>}
             <p style={{ margin: '16px 0 0', color: '#64748B' }}>Please see the examiner.</p>
+          </div>
+        )}
+
+        {phase === 'makeup' && queue && (
+          <div>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{ fontSize: '0.85rem', color: ROSE, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Make-up exam check-in</div>
+              <h1 style={{ margin: '0 0 14px', fontSize: '1.4rem', color: '#0F172A', fontWeight: 700, lineHeight: 1.25 }}>{queue.title}</h1>
+              {phonesAway}
+            </div>
+
+            {error && <div style={{ background: '#FEF2F2', color: '#DC2626', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', fontSize: '0.95rem', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
+
+            <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>Your full name</label>
+            <input value={muName} onChange={e => setMuName(e.target.value)} placeholder="e.g. AMINA KHALED" autoComplete="name" style={{ width: '100%', padding: '16px', borderRadius: '14px', border: '2px solid #E2E8F0', fontSize: '1.1rem', outline: 'none', marginBottom: '20px', color: '#0F172A', textTransform: 'uppercase' }} />
+
+            <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>Your level</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '20px' }}>
+              {LEVELS.map(l => {
+                const on = muLevel === l;
+                const wide = l === 'Business English';
+                return (
+                  <button key={l} type="button" onClick={() => setMuLevel(l)} style={{ gridColumn: wide ? '1 / -1' : undefined, padding: '14px 0', borderRadius: '12px', border: on ? `2px solid ${ROSE}` : '2px solid #E2E8F0', background: on ? '#FFE4E6' : '#fff', color: on ? ROSE : '#0F172A', fontWeight: 700, fontSize: '1.05rem', cursor: 'pointer' }}>{l}</button>
+                );
+              })}
+            </div>
+
+            <label style={{ display: 'block', fontSize: '0.95rem', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>Your period</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '24px' }}>
+              {PERIODS.map(p => {
+                const on = muPeriod === p;
+                return (
+                  <button key={p} type="button" onClick={() => setMuPeriod(p)} style={{ padding: '14px 0', borderRadius: '12px', border: on ? `2px solid ${ROSE}` : '2px solid #E2E8F0', background: on ? '#FFE4E6' : '#fff', color: on ? ROSE : '#0F172A', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>{p}</button>
+                );
+              })}
+            </div>
+
+            <button onClick={submitMakeup} disabled={isSubmitting} style={{ ...bigBtn, background: ROSE, color: '#fff' }}>{isSubmitting ? 'Checking in…' : 'Check in'}</button>
           </div>
         )}
 
@@ -281,7 +367,7 @@ export const ExamCheckIn: React.FC = () => {
             {queue && <div style={{ color: '#94A3B8', marginBottom: '24px' }}>{queue.title}</div>}
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', marginBottom: '16px' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#DC2626', fontWeight: 700, marginBottom: '8px' }}><IconPhoneOff /> Put your phone away</div>
-              <p style={{ margin: 0, color: '#475569', fontSize: '1.05rem', lineHeight: 1.5 }}>Your place is saved by the exact time you scanned. Watch the screen at the front — it will show when it's your turn.</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '1.05rem', lineHeight: 1.5 }}>{queue?.kind === 'makeup' ? 'Wait for the examiner. You\'ll sign the sheet before the exam starts.' : 'Your place is saved by the exact time you scanned. Watch the screen at the front — it will show when it\'s your turn.'}</p>
             </div>
             <button onClick={resetMe} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>This isn't me — check in as someone else</button>
           </div>

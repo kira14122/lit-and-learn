@@ -39,7 +39,10 @@ type ExamQueue = {
   is_open: boolean;
   speaking_total: number;
   created_at: string;
+  kind?: 'regular' | 'makeup' | null;
+  exam_label?: string | null;
 };
+const MAKEUP_EXAMS = ['First Test', 'Midterm', 'Third Test', 'Final'] as const;
 type ExamEntry = {
   id: string;
   queue_id: string;
@@ -56,6 +59,8 @@ type ExamEntry = {
   score_task: number | null;
   score_notes: string | null;
   scored_at: string | null;
+  level?: string | null;
+  period?: string | null;
 };
 type SessionBlock = { id: string; label: string; namesText: string };
 
@@ -73,6 +78,19 @@ const toLocalInput = (d: Date): string => {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
+
+// Make-up exams always run 2:45 PM – 4:45 PM on the chosen date.
+const MAKEUP_START = { h: 14, m: 45 };
+const MAKEUP_END = { h: 16, m: 45 };
+const toDateInput = (d: Date): string => {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+const makeupIso = (dateStr: string, t: { h: number; m: number }): string => {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  return new Date(y, (mo || 1) - 1, d || 1, t.h, t.m, 0, 0).toISOString();
+};
+const isMakeup = (q: { kind?: string | null } | null | undefined) => q?.kind === 'makeup';
 
 const fmtTimeOfDay = (iso: string | null): string => {
   if (!iso) return '—';
@@ -109,6 +127,9 @@ export const ExamMode: React.FC = () => {
   const createPanelRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [speakingTotal, setSpeakingTotal] = useState(10);
+  const [examKind, setExamKind] = useState<'regular' | 'makeup'>('regular');
+  const [makeupDate, setMakeupDate] = useState(() => toDateInput(new Date()));
+  const [makeupExam, setMakeupExam] = useState('');
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -223,9 +244,54 @@ export const ExamMode: React.FC = () => {
       { id: crypto.randomUUID(), label: 'Section 2', namesText: '' },
     ]);
     setSpeakingTotal(10);
+    setExamKind('regular');
+    setMakeupDate(toDateInput(new Date())); setMakeupExam('');
   };
 
   const handleCreate = async () => {
+    // ── Make-up exam: no roster, fixed 2:45–4:45 on the chosen date ──
+    if (examKind === 'makeup') {
+      if (!makeupExam) { showToast('Choose which exam this make-up is for.', 'error'); return; }
+      if (!makeupDate) { showToast('Pick the exam date.', 'error'); return; }
+      setIsCreating(true);
+      try {
+        const db = await getDb();
+        const niceDate = new Date(makeupIso(makeupDate, MAKEUP_START)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const setupFields = {
+          title: title.trim() || `Make-up · ${makeupExam} · ${niceDate}`,
+          examiner_name: examiner.trim() || null,
+          starts_at: makeupIso(makeupDate, MAKEUP_START),
+          ends_at: makeupIso(makeupDate, MAKEUP_END),
+          roster: [] as RosterPerson[],
+          kind: 'makeup',
+          exam_label: makeupExam,
+        };
+        if (editingId) {
+          const { data, error } = await db.from('exam_queues').update(setupFields).eq('id', editingId).select().single();
+          if (error) throw error;
+          showToast('Exam updated.', 'success');
+          setQueues(prev => prev.map(q => q.id === editingId ? (data as ExamQueue) : q));
+          resetForm();
+          return;
+        }
+        const payload = { ...setupFields, display_mode: 'clock', is_open: true, speaking_total: 10 };
+        let created: ExamQueue | null = null;
+        for (let attempt = 0; attempt < 5 && !created; attempt++) {
+          const code = genCode();
+          const { data, error } = await db.from('exam_queues').insert([{ ...payload, code }]).select().single();
+          if (!error && data) { created = data as ExamQueue; break; }
+          if (error && !String(error.message || '').toLowerCase().includes('duplicate')) throw error;
+        }
+        if (!created) throw new Error('Could not generate a unique code. Try again.');
+        showToast('Make-up exam created.', 'success');
+        setQueues(prev => [created as ExamQueue, ...prev]);
+        setQueue(created);
+        resetForm();
+      } catch (e: any) { showToast(e.message || 'Failed to save exam.', 'error'); }
+      finally { setIsCreating(false); }
+      return;
+    }
+
     if (!title.trim()) { showToast('Give the exam a title.', 'error'); return; }
     const roster = buildRoster();
     if (roster.length === 0) { showToast('Paste at least one student name.', 'error'); return; }
@@ -274,6 +340,8 @@ export const ExamMode: React.FC = () => {
   const startEdit = (q: ExamQueue) => {
     setQueue(null);
     setEditingId(q.id);
+    setExamKind(isMakeup(q) ? 'makeup' : 'regular');
+    setMakeupDate(q.starts_at ? toDateInput(new Date(q.starts_at)) : toDateInput(new Date())); setMakeupExam(q.exam_label || '');
     setTitle(q.title || '');
     setExaminer(q.examiner_name || 'Dr. Chouit Abderraouf');
     setStartLocal(q.starts_at ? toLocalInput(new Date(q.starts_at)) : toLocalInput(new Date()));
@@ -296,7 +364,9 @@ export const ExamMode: React.FC = () => {
   const cloneExam = (q: ExamQueue) => {
     setQueue(null); // make sure we're on the setup view where the form lives
     setEditingId(null); // clone always creates a NEW exam, never edits
-    setTitle(`${q.title} (copy)`);
+    setExamKind(isMakeup(q) ? 'makeup' : 'regular');
+    setMakeupDate(toDateInput(new Date())); setMakeupExam(q.exam_label || '');
+    setTitle(isMakeup(q) ? '' : `${q.title} (copy)`);
     setExaminer(q.examiner_name || 'Dr. Chouit Abderraouf');
     // Times reset to a fresh default for the new day (not copied).
     setStartLocal(toLocalInput(new Date()));
@@ -312,7 +382,7 @@ export const ExamMode: React.FC = () => {
     setBlocks(grouped.length > 0
       ? grouped.map(g => ({ id: crypto.randomUUID(), label: g.label, namesText: g.names.join('\n') }))
       : [{ id: crypto.randomUUID(), label: 'Section 1', namesText: '' }]);
-    showToast('Cloned into the form — edit the roster, then Create.', 'success');
+    showToast(isMakeup(q) ? 'Cloned — pick the date, then Create.' : 'Cloned into the form — edit the roster, then Create.', 'success');
     setTimeout(() => createPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
 
@@ -521,6 +591,17 @@ export const ExamMode: React.FC = () => {
   // ── Export ──────────────────────────────────────────────────────────────────
   const exportLog = () => {
     if (!queue) return;
+    if (isMakeup(queue)) {
+      const header = ['#', 'Name', 'Level', 'Period', 'Exam', 'Checked in'];
+      const rows = ordered.map((e, i) => [String(i + 1), e.name.toUpperCase(), e.level || '', e.period || '', queue.exam_label ? `Make-up – ${queue.exam_label}` : 'Make-up', new Date(e.joined_at).toLocaleString()]);
+      const csv = [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `makeup-${queue.code}.csv`; a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
     const header = ['Position', 'Name', 'Section', 'Status', 'Checked in', 'Called at', 'Fluency', 'Grammar', 'Vocabulary', 'Pronunciation', 'Task', `Speaking total (/${queue.speaking_total})`, 'Notes'];
     const rows = ordered.map((e, i) => [
       String(i + 1), e.name, e.session_label || '', e.status,
@@ -595,6 +676,63 @@ export const ExamMode: React.FC = () => {
     <tbody>${rowsHtml}</tbody>
   </table>
   <div class="foot"><strong>Instructor Signature:</strong> ______________________________________</div>
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to open the printable sheet.', 'error'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
+  // ── Make-up exam sheet: Date · Make-up Exam · Examiner / names, level, period, signature ──
+  const printMakeupSheet = () => {
+    if (!queue) return;
+    const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+    const examDate = queue.starts_at ? new Date(queue.starts_at) : new Date();
+    const dateStr = examDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const list = ordered.filter(e => e.status !== 'no_show');
+    let rowsHtml = '';
+    list.forEach((e, i) => {
+      rowsHtml += `<tr><td class="c">${i + 1}</td><td>${esc((e.name || '').toUpperCase())}</td><td class="c lvl">${esc(e.level || '')}</td><td class="c">${esc(e.period || '')}</td><td></td></tr>`;
+    });
+    if (!rowsHtml) rowsHtml = `<tr><td class="c">1</td><td></td><td></td><td></td><td></td></tr>`;
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Make-up Exam${queue.exam_label ? ` – ${esc(queue.exam_label)}` : ''} — ${esc(dateStr)}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #000; margin: 0; }
+  .hdr { position: relative; display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12pt; }
+  .hdr .hc { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-weight: bold; pointer-events: none; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid th, table.grid td { border: 1px solid #000; padding: 5pt 8pt; font-size: 12pt; }
+  table.grid th { text-align: left; font-weight: bold; }
+  table.grid td.c, table.grid th.c { text-align: center; }
+  table.grid .num { width: 6%; } table.grid .name { width: 34%; } table.grid .lvl { width: 19%; white-space: nowrap; } table.grid .per { width: 13%; } table.grid .sig { width: 28%; }
+  table.grid td.lvl { white-space: nowrap; }
+  table.grid thead { display: table-header-group; }
+  table.grid tbody tr { height: 26pt; page-break-inside: avoid; }
+  .foot { margin-top: 28pt; }
+  .noprint { margin: 8pt 0 14pt; text-align: center; }
+  .noprint button { font-family: inherit; font-size: 12pt; padding: 7pt 20pt; cursor: pointer; }
+  @media print { .noprint { display: none; } }
+</style></head>
+<body>
+  <div class="noprint"><button onclick="window.print()">Print this sheet</button></div>
+  <div class="hdr">
+    <span><strong>Date:</strong> ${esc(dateStr)}</span>
+    <span class="hc">Make-up Exam${queue.exam_label ? ` – ${esc(queue.exam_label)}` : ''}</span>
+    <span><strong>Examiner:</strong> ${esc(queue.examiner_name || '')}</span>
+  </div>
+  <table class="grid">
+    <thead><tr>
+      <th class="c num">#</th><th class="name">Student Name</th><th class="c lvl">Level</th><th class="c per">Period</th><th class="sig">Signature</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="foot"><strong>Examiner Signature:</strong> ______________________________________</div>
   <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
 </body></html>`;
 
@@ -790,20 +928,45 @@ export const ExamMode: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
               <div style={{ background: '#FFE4E6', color: ROSE, padding: '12px', borderRadius: '14px', display: 'flex' }}><IconClipboard /></div>
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', fontWeight: 700 }}>{editingId ? 'Edit Exam' : 'New Speaking Exam'}</h2>
-                <p style={{ margin: '2px 0 0', color: '#64748B', fontSize: '0.95rem' }}>{editingId ? 'Editing keeps the same code and QR.' : 'Students scan to claim a fair, timestamped place.'}</p>
+                <h2 style={{ margin: 0, fontSize: '1.6rem', color: '#0F172A', fontWeight: 700 }}>{editingId ? 'Edit Exam' : examKind === 'makeup' ? 'New Make-up Exam' : 'New Speaking Exam'}</h2>
+                <p style={{ margin: '2px 0 0', color: '#64748B', fontSize: '0.95rem' }}>{editingId ? 'Editing keeps the same code and QR.' : examKind === 'makeup' ? 'Open to any student. Starts empty — students add themselves.' : 'Students scan to claim a fair, timestamped place.'}</p>
               </div>
             </div>
 
+            {!editingId && (
+              <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: '6px', borderRadius: '9999px', gap: '6px', marginBottom: '20px' }}>
+                {([['regular', 'Class exam'], ['makeup', 'Make-up exam']] as const).map(([k, lbl]) => (
+                  <button key={k} type="button" onClick={() => setExamKind(k)} style={{ padding: '10px 20px', borderRadius: '9999px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem', background: examKind === k ? ROSE : 'transparent', color: examKind === k ? '#fff' : '#64748B' }}>{lbl}</button>
+                ))}
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
               <div>
-                <label style={label}>Exam title</label>
-                <input style={input} value={title} onChange={e => setTitle(e.target.value)} placeholder="Level 4 — Intermediate · Sections 1 + 2" />
+                <label style={label}>Exam title{examKind === 'makeup' && <span style={{ color: '#94A3B8', fontWeight: 400 }}> (optional)</span>}</label>
+                <input style={input} value={title} onChange={e => setTitle(e.target.value)} placeholder={examKind === 'makeup' ? 'Make-up Exam' : 'Level 4 — Intermediate · Sections 1 + 2'} />
               </div>
               <div>
                 <label style={label}>Examiner name (shown on the screen)</label>
                 <input style={input} value={examiner} onChange={e => setExaminer(e.target.value)} placeholder="Dr. Chouit Abderraouf" />
               </div>
+              {examKind === 'makeup' ? (
+                <>
+                <div>
+                  <label style={label}>Make-up for</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+                    {MAKEUP_EXAMS.map(x => (
+                      <button key={x} type="button" onClick={() => setMakeupExam(x)} style={{ padding: '12px 10px', borderRadius: '12px', border: makeupExam === x ? `2px solid ${ROSE}` : '2px solid #E2E8F0', background: makeupExam === x ? '#FFE4E6' : '#fff', color: makeupExam === x ? ROSE : '#475569', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>{x}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label style={label}>Exam date <span style={{ color: '#94A3B8', fontWeight: 400 }}>(always 2:45 – 4:45 PM)</span></label>
+                  <input type="date" style={input} value={makeupDate} onChange={e => setMakeupDate(e.target.value)} />
+                </div>
+                </>
+              ) : (
+              <>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={label}>Exam starts</label>
@@ -845,6 +1008,8 @@ export const ExamMode: React.FC = () => {
                 </div>
                 <button onClick={addBlock} style={{ marginTop: '10px', background: '#F1F5F9', color: '#475569', border: '1px solid #CBD5E1', padding: '8px 14px', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><IconPlus /> Add section</button>
               </div>
+              </>
+              )}
 
               <button onClick={handleCreate} disabled={isCreating} style={{ width: '100%', background: ROSE, color: '#fff', border: 'none', padding: '16px', borderRadius: '14px', fontWeight: 700, fontSize: '1.1rem', cursor: isCreating ? 'wait' : 'pointer', boxShadow: '0 10px 20px rgba(225,29,72,0.25)' }}>
                 {editingId ? (isCreating ? 'Saving…' : 'Save changes') : (isCreating ? 'Creating…' : 'Create exam & generate QR')}
@@ -870,7 +1035,9 @@ export const ExamMode: React.FC = () => {
                       <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '1.05rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.title}</div>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
                         <span style={{ background: '#FFE4E6', color: ROSE, padding: '2px 10px', borderRadius: '6px', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '1px' }}>{q.code}</span>
-                        <span style={{ color: '#64748B', fontSize: '0.85rem' }}>{q.roster?.length || 0} on roster</span>
+                        {isMakeup(q)
+                          ? <span style={{ background: '#FEF3C7', color: '#B45309', padding: '2px 10px', borderRadius: '6px', fontWeight: 700, fontSize: '0.8rem' }}>Make-up{q.exam_label ? ` · ${q.exam_label}` : ''}</span>
+                          : <span style={{ color: '#64748B', fontSize: '0.85rem' }}>{q.roster?.length || 0} on roster</span>}
                         {!q.is_open && <span style={{ color: '#94A3B8', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><IconLock /> closed</span>}
                       </div>
                     </div>
@@ -896,10 +1063,11 @@ export const ExamMode: React.FC = () => {
               <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#0F172A', fontWeight: 700 }}>{queue.title}</h2>
               <div style={{ color: '#64748B', marginTop: '4px' }}>Code <span style={{ background: '#FFE4E6', color: ROSE, padding: '2px 10px', borderRadius: '6px', fontWeight: 800, letterSpacing: '1px' }}>{queue.code}</span> · {queue.examiner_name || 'No examiner set'}</div>
             </div>
-            <button onClick={() => window.open(`/exam/display/${queue.code}`, '_blank')} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '14px', fontWeight: 700, fontSize: '1.05rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 10px 20px rgba(15,23,42,0.2)' }}><IconExternal /> Open projector screen</button>
+            {!isMakeup(queue) && <button onClick={() => window.open(`/exam/display/${queue.code}`, '_blank')} style={{ background: '#0F172A', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '14px', fontWeight: 700, fontSize: '1.05rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 10px 20px rgba(15,23,42,0.2)' }}><IconExternal /> Open projector screen</button>}
           </div>
 
           {/* Projector mode toggle */}
+          {!isMakeup(queue) && (
           <div style={{ ...card, padding: '20px 24px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#475569', fontWeight: 600 }}>
               <IconExternal /> Projector is showing:
@@ -909,6 +1077,7 @@ export const ExamMode: React.FC = () => {
               <button onClick={() => setDisplayMode('speaking')} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 22px', borderRadius: '9999px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '1rem', background: queue.display_mode === 'speaking' ? ROSE : 'transparent', color: queue.display_mode === 'speaking' ? '#fff' : '#64748B' }}><IconMic /> Speaking view</button>
             </div>
           </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: '24px', alignItems: 'start' }}>
 
@@ -925,12 +1094,18 @@ export const ExamMode: React.FC = () => {
                 <button onClick={toggleOpen} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid', borderColor: queue.is_open ? '#FCA5A5' : '#86EFAC', background: queue.is_open ? '#FEF2F2' : '#F0FDF4', color: queue.is_open ? '#DC2626' : '#16A34A', fontWeight: 700, cursor: 'pointer' }}>
                   {queue.is_open ? <><IconLock /> Close check-in</> : <><IconUnlock /> Re-open check-in</>}
                 </button>
-                <button onClick={exportLog} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#475569', fontWeight: 700, cursor: 'pointer' }}><IconDownload /> Export order</button>
+                <button onClick={exportLog} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#475569', fontWeight: 700, cursor: 'pointer' }}><IconDownload /> {isMakeup(queue) ? 'Export list' : 'Export order'}</button>
               </div>
 
-              <button onClick={() => setPrintOpen(true)} style={{ width: '100%', marginTop: '12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#fff', color: '#0F172A', fontWeight: 700, cursor: 'pointer' }}><IconClipboard /> Print sign-in sheet</button>
+              <button onClick={() => { if (isMakeup(queue)) printMakeupSheet(); else setPrintOpen(true); }} style={{ width: '100%', marginTop: '12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#fff', color: '#0F172A', fontWeight: 700, cursor: 'pointer' }}><IconClipboard /> Print sign-in sheet</button>
 
               {/* Stats */}
+              {isMakeup(queue) ? (
+                <div style={{ background: '#F8FAFC', borderRadius: '14px', padding: '14px', textAlign: 'center', border: '1px solid #E2E8F0', marginTop: '16px' }}>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#4F46E5' }}>{ordered.length}</div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '2px' }}>Checked in</div>
+                </div>
+              ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '16px' }}>
                 {[['On roster', rosterCount, '#475569'], ['Checked in', ordered.filter(e => e.status !== 'no_show').length, '#4F46E5'], ['Done', doneCount, '#16A34A']].map(([lbl, val, col]) => (
                   <div key={lbl as string} style={{ background: '#F8FAFC', borderRadius: '14px', padding: '14px', textAlign: 'center', border: '1px solid #E2E8F0' }}>
@@ -939,9 +1114,37 @@ export const ExamMode: React.FC = () => {
                   </div>
                 ))}
               </div>
+              )}
             </div>
 
             {/* Live order */}
+            {isMakeup(queue) ? (
+            <div style={{ ...card, gridColumn: '1 / -1' }}>
+              <div style={{ marginBottom: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
+                <h3 style={{ margin: 0, color: '#0F172A', fontSize: '1.4rem' }}>Checked in <span style={{ color: '#94A3B8', fontWeight: 600, fontSize: '1rem' }}>(by scan time)</span></h3>
+              </div>
+              {ordered.length === 0 ? (
+                <div style={{ background: '#F8FAFC', padding: '50px', borderRadius: '16px', textAlign: 'center', color: '#94A3B8', border: '2px dashed #E2E8F0', fontSize: '1.1rem' }}>No one yet. Students scan the QR and enter their name, level and period.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {ordered.map((e, i) => (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px 18px', borderRadius: '14px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                      <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flexGrow: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '1.1rem' }}>{e.name.toUpperCase()}</span>
+                          {e.level && <span style={{ background: '#E2E8F0', color: '#475569', padding: '2px 8px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600 }}>{/^\d+$/.test(e.level) ? `Level ${e.level}` : e.level}</span>}
+                          {e.period && <span style={{ background: '#FEF3C7', color: '#B45309', padding: '2px 8px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600 }}>{e.period}</span>}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#94A3B8', marginTop: '2px' }}>Scanned {fmtTimeOfDay(e.joined_at)}</div>
+                      </div>
+                      <button onClick={() => removeEntry(e)} title="Remove" style={{ background: '#FEF2F2', color: '#EF4444', border: 'none', padding: '8px', borderRadius: '9px', cursor: 'pointer', display: 'flex', flexShrink: 0 }}><IconTrash /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            ) : (
             <div style={{ ...card, gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px', borderBottom: '2px solid #F1F5F9', paddingBottom: '16px' }}>
                 <h3 style={{ margin: 0, color: '#0F172A', fontSize: '1.4rem' }}>Speaking order <span style={{ color: '#94A3B8', fontWeight: 600, fontSize: '1rem' }}>(by scan time)</span></h3>
@@ -1014,6 +1217,7 @@ export const ExamMode: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
       )}
