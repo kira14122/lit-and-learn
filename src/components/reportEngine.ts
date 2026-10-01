@@ -40,7 +40,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Pronoun = 'she' | 'he' | 'they';
-export type ReportSkill = 'listening' | 'grammar' | 'reading' | 'writing' | 'speaking';
+// Grammar & Vocab is one exam part, but a report reads better — and is more
+// accurate — when a student strong in vocabulary and weak in grammar is told
+// exactly that. So when the term's records carry the two halves, the caller
+// passes grammar (the grammar half) and vocab separately; otherwise it passes
+// the combined mark as grammar, as before.
+export type ReportSkill = 'listening' | 'grammar' | 'vocab' | 'reading' | 'writing' | 'speaking';
 
 export const PASS_MARK = 70;
 const STRONG = 85;   // "excels at"
@@ -49,6 +54,7 @@ const GOOD   = 70;   // "is good at"
 export const REPORT_SKILLS: { key: ReportSkill; label: string }[] = [
   { key: 'listening', label: 'listening' },
   { key: 'grammar',   label: 'grammar' },
+  { key: 'vocab',     label: 'vocabulary' },
   { key: 'reading',   label: 'reading' },
   { key: 'writing',   label: 'writing' },
   { key: 'speaking',  label: 'speaking' },
@@ -106,10 +112,11 @@ const hash = (seed: string): number => {
 };
 const seeded = <T,>(list: T[], seed: string, salt = 0): T => list[(hash(seed) + salt) % list.length];
 
-const ATTITUDE = [
-  'approaches each task with genuine care, focus, and a desire to improve',
-  'always participates in class and has a genuine desire to learn',
-  'has worked hard to improve throughout the term',
+// [singular, plural] so the verb agrees with the pronoun ("they have worked").
+const ATTITUDE: [string, string][] = [
+  ['approaches each task with genuine care, focus, and a desire to improve', 'approach each task with genuine care, focus, and a desire to improve'],
+  ['always participates in class and has a genuine desire to learn',         'always participate in class and have a genuine desire to learn'],
+  ['has worked hard to improve throughout the term',                          'have worked hard to improve throughout the term'],
 ];
 
 export interface ReportResult {
@@ -144,21 +151,25 @@ export function buildReport(input: ReportInput): ReportResult {
   const t = traits.filter(Boolean);
   const traitPhrase = t.length ? `${article(t[0])} ${list(t)} student` : 'a student';
 
-  const openPlain = `${name} ${isAre(p)} ${traitPhrase}.`;
-  const openWho   = `${name} ${isAre(p)} ${traitPhrase} ${seeded(EFFORT, studentName)}.`;
-  const attitude  = `${subj(p)} ${seeded(ATTITUDE, studentName, 4)}.`;
+  // A name is always singular — "Sam is", never "Sam are" — even when the
+  // pronoun that follows is "they".
+  const openPlain = `${name} is ${traitPhrase}.`;
+  const openWho   = `${name} is ${traitPhrase} ${seeded(EFFORT, studentName)}.`;
+  const attitude  = `${subj(p)} ${seeded(ATTITUDE, studentName, 4)[p === 'they' ? 1 : 0]}.`;
 
   const strongVerb = allStrong
     ? seeded([`${sVerb(p, 'tend')} to excel at`, `${isAre(p)} excellent at`], studentName, 1)
     : `${isAre(p)} good at`;
 
-  const needLead = needs.length === 1
-    ? seeded([`just ${sVerb(p, 'need')} to focus on improving`, `just ${sVerb(p, 'need')} to focus on refining`], studentName, 2)
-    : seeded([`${sVerb(p, 'need')} to work on improving`, `${sVerb(p, 'need')} to focus on improving`], studentName, 2);
+  const leadFor = (q: Pronoun) => needs.length === 1
+    ? seeded([`just ${sVerb(q, 'need')} to focus on improving`, `just ${sVerb(q, 'need')} to focus on refining`], studentName, 2)
+    : seeded([`${sVerb(q, 'need')} to work on improving`, `${sVerb(q, 'need')} to focus on improving`], studentName, 2);
+  const needLead = leadFor(p);
 
   const attendTail = attendanceConcern ? ` as well as ${poss(p)} attendance` : '';
+  // Led by the name, the verb is singular ("Sam needs"); led by the pronoun it agrees with it.
   const needSentence = (leadWith: string) =>
-    `${leadWith} ${needLead} ${poss(p)} ${nLabels} skills${attendTail}.`;
+    `${leadWith} ${leadWith === name ? leadFor('she') : needLead} ${poss(p)} ${nLabels} skills${attendTail}.`;
 
   const idx = ((variant ?? 0) + hash(studentName)) % STRUCTURE_COUNT;
   const parts: string[] = [];
@@ -195,7 +206,8 @@ export function buildReport(input: ReportInput): ReportResult {
     parts.push(openPlain);
     if (effortClause) parts.push(attitude);
     const top = [...strengths].sort((a, b) => b.pct - a.pct)[0];
-    if (top) parts.push(`${top.label.charAt(0).toUpperCase() + top.label.slice(1)} ${isAre(p)} one of ${poss(p)} major ${seeded(['strengths', 'assets'], studentName, 3)}.`);
+    // The skill is the subject here, so it is always "is".
+    if (top) parts.push(`${top.label.charAt(0).toUpperCase() + top.label.slice(1)} is one of ${poss(p)} major ${seeded(['strengths', 'assets'], studentName, 3)}.`);
     if (needs.length) { parts.push(needSentence(subj(p))); needsDone = true; }
 
   } else if (idx === 4) {                   // Donela: "Her X skills are excellent"
@@ -222,7 +234,7 @@ export function buildReport(input: ReportInput): ReportResult {
 
   } else {                                  // Maria: traits split over two sentences
     structure = 'traits split';
-    parts.push(`${name} ${isAre(p)} ${t.length ? article(t[0]) + ' ' + t[0] : 'a'} student.`);
+    parts.push(`${name} is ${t.length ? article(t[0]) + ' ' + t[0] : 'a'} student.`);
     if (t.length > 1) parts.push(`${subj(p)} ${isAre(p)} ${list(t.slice(1))}.`);
     if (strengths.length) parts.push(allStrong
       ? `${subj(p)} ${has(p)} an excellent grasp of language nuances and ${sVerb(p, 'tend')} to excel at ${sLabels} tasks.`

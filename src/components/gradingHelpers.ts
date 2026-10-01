@@ -23,6 +23,22 @@ export const INSIGHT_SKILLS = [
   { key: 'speaking',  label: 'Speaking' },
 ];
 
+// ── Grammar & Vocab halves ──────────────────────────────────────────────────
+// Grammar & Vocab stays ONE skill here — one part of the exam, one trend line,
+// one weight. But records from Fall 2026 carry its two halves (grammarOnly,
+// vocab), and a strong half can hide a weak one: 10/10 vocabulary and 4/10
+// grammar is a comfortable-looking 70%. So the grammar skill also carries:
+//   halves     — { grammar: {latest, avg}, vocab: {latest, avg} } or null
+//   weakHalf   — 'grammar' | 'vocab' | null: one half under 70 on the latest
+//                test while the other is not (this drives focus and status)
+//   effLatest / effAvg — the figure to judge it by (the weak half's, if any)
+//   focusLabel — 'Grammar' / 'Vocabulary' when one half is the problem
+// Every other skill gets effLatest = latest, effAvg = avg, focusLabel = label.
+export const HALF_LINE = 70;
+const halfLabel = (h: 'grammar' | 'vocab') => (h === 'grammar' ? 'Grammar' : 'Vocabulary');
+const weakHalfOf = (g: number, v: number): 'grammar' | 'vocab' | null =>
+  g < HALF_LINE && v >= HALF_LINE ? 'grammar' : v < HALF_LINE && g >= HALF_LINE ? 'vocab' : null;
+
 export const computeInsights = (history: any[]) => {
   const points = (history || []).map((h:any) => {
     let s:any = null;
@@ -33,7 +49,11 @@ export const computeInsights = (history: any[]) => {
     const per = max / 5;
     if (!per) return null;
     const pct = (k:string) => Math.round(((Number(s[k]) || 0) / per) * 100);
+    const split = s.grammarOnly != null || s.vocab != null;
+    const halfPct = (k:string) => Math.round(((Number(s[k]) || 0) / (per / 2)) * 100);
     return {
+      gHalf: split ? halfPct('grammarOnly') : null,
+      vHalf: split ? halfPct('vocab') : null,
       name: h.assessment_name,
       date: h.date_recorded ? new Date(h.date_recorded).getTime() : 0,
       overall: Math.round(((Number(s.totalPoints) || 0) / max) * 100),
@@ -56,10 +76,34 @@ export const computeInsights = (history: any[]) => {
     const first  = series[0];
     const prev   = series.length > 1 ? series[series.length - 2] : latest;
     const avg    = Math.round(series.reduce((a,b) => a + b, 0) / series.length);
-    return { ...sk, series, latest, first, prev, avg, delta: latest - prev, trend: latest - first };
+    const base = { ...sk, series, latest, first, prev, avg, delta: latest - prev, trend: latest - first };
+    const plain = { ...base, halves: null as any, weakHalf: null as ('grammar'|'vocab'|null), weakHalfAvg: null as ('grammar'|'vocab'|null), effLatest: latest, effAvg: avg, focusLabel: sk.label, focusLabelAvg: sk.label };
+    if (sk.key !== 'grammar') return plain;
+    const splitPts = points.filter(p => p.gHalf != null);
+    if (!splitPts.length) return plain;
+    const avgOf = (a:number[]) => Math.round(a.reduce((x,y)=>x+y,0) / a.length);
+    const last = splitPts[splitPts.length - 1];
+    const halves = {
+      grammar: { latest: last.gHalf as number, avg: avgOf(splitPts.map(p => p.gHalf as number)) },
+      vocab:   { latest: last.vHalf as number, avg: avgOf(splitPts.map(p => p.vHalf as number)) },
+    };
+    // Judge by the halves only when the latest test has them.
+    const latestSplit = points[points.length - 1].gHalf != null;
+    const weakHalf    = latestSplit ? weakHalfOf(halves.grammar.latest, halves.vocab.latest) : null;
+    const weakHalfAvg = weakHalfOf(halves.grammar.avg, halves.vocab.avg);
+    return {
+      ...plain, halves, weakHalf, weakHalfAvg,
+      effLatest: weakHalf ? halves[weakHalf].latest : latest,
+      effAvg: weakHalfAvg ? halves[weakHalfAvg].avg : avg,
+      focusLabel: weakHalf ? halfLabel(weakHalf) : sk.label,
+      focusLabelAvg: weakHalfAvg ? halfLabel(weakHalfAvg) : sk.label,
+    };
   });
 
-  const weakest   = skills.reduce((m,s) => (s.avg < m.avg ? s : m), skills[0]);
+  // The recurring soft spot is judged by what is actually weak: a weak half of
+  // Grammar & Vocab counts at its own average, and is named on its own.
+  const weakestRaw = skills.reduce((m,s) => (s.effAvg < m.effAvg ? s : m), skills[0]);
+  const weakest    = { ...weakestRaw, label: weakestRaw.focusLabelAvg, avg: weakestRaw.effAvg };
   const strongest = skills.reduce((m,s) => (s.avg > m.avg ? s : m), skills[0]);
   const multi = points.length > 1;
 
@@ -73,6 +117,8 @@ export const computeInsights = (history: any[]) => {
     else if (s.avg >= 80) { status = 'Strong'; tone = 'green'; }
     else if (s.avg < 60 || (s.key === weakest.key && s.avg < 70)) { status = 'Needs work'; tone = 'amber'; }
     else { status = 'Steady'; tone = 'gray'; }
+    // A weak half is a real problem even when the combined mark looks fine.
+    if (s.weakHalf && tone !== 'amber') { status = 'Needs work'; tone = 'amber'; }
     return { ...s, status, tone };
   });
 
@@ -123,7 +169,7 @@ export const insightsSummaryText = (ins:any): string => {
 // the term instead of pointing the student at a next test that doesn't exist.
 export const insightsForAI = (ins:any, isFinal:boolean = false): string => {
   if (!ins) return '';
-  const lines = ins.skills.map((s:any) => `${s.label} ${s.latest}% (${s.status})`).join('; ');
+  const lines = ins.skills.map((s:any) => `${s.label} ${s.latest}%${s.halves ? ` [grammar ${s.halves.grammar.latest}%, vocabulary ${s.halves.vocab.latest}%]` : ''} (${s.status}${s.weakHalf ? `, the weak half is ${s.weakHalf === 'grammar' ? 'grammar' : 'vocabulary'}` : ''})`).join('; ');
   const finalNote = isFinal
     ? ' IMPORTANT: this was the FINAL test of the term. Write feedback that closes the term — acknowledge the full arc of their results, recognize consistent strengths and real growth, and give advice the student can act on independently going forward. Do not mention the next test, upcoming lessons, or future classwork.'
     : '';
@@ -148,9 +194,16 @@ export const studentSkillWord = (s:any): string => {
 // say something positive instead.
 export const focusSkillForEmail = (ins:any): any | null => {
   if (!ins || !ins.skills || !ins.skills.length) return null;
-  const sorted = [...ins.skills].sort((a:any,b:any) => a.latest - b.latest || a.avg - b.avg);
+  const sorted = [...ins.skills].sort((a:any,b:any) => a.effLatest - b.effLatest || a.effAvg - b.effAvg);
   const cand = sorted[0];
-  return (cand && cand.latest < 90) ? cand : null;
+  return (cand && cand.effLatest < 90) ? narrowed(cand) : null;
+};
+
+// The skill as the email should name it: a weak half of Grammar & Vocab is
+// named on its own ("Grammar"), and its tips come from that half's bank.
+const narrowed = (s:any, byAvg = false) => {
+  const h = byAvg ? s.weakHalfAvg : s.weakHalf;
+  return h ? { ...s, label: h === 'grammar' ? 'Grammar' : 'Vocabulary', tipKey: h, latest: s.halves[h].latest, avg: s.halves[h].avg } : { ...s, tipKey: s.key };
 };
 
 // Resolves the teacher's override against the auto pick. 'auto' (or absent)
@@ -158,7 +211,7 @@ export const focusSkillForEmail = (ins:any): any | null => {
 // a skill key -> that skill.
 const resolveFocus = (ins:any, focusOverride?: string): any | null | undefined => {
   if (focusOverride === 'none') return undefined;
-  if (focusOverride && focusOverride !== 'auto') return ins.skills.find((s:any)=>s.key===focusOverride) || focusSkillForEmail(ins);
+  if (focusOverride && focusOverride !== 'auto') { const f = ins.skills.find((s:any)=>s.key===focusOverride); return f ? narrowed(f) : focusSkillForEmail(ins); }
   return focusSkillForEmail(ins);
 };
 
@@ -171,7 +224,11 @@ export const buildProgressEmailText = (ins:any, focusOverride?: string): string 
     : ins.direction === 'down'
     ? `Overall, your score moved from ${ins.overallPrev}% to ${ins.overallLast}% since your last test. Let's work on bringing that back up — you can do it.`
     : `Overall, your score has held steady at around ${ins.overallLast}% across your tests.`;
-  const skillLines = ins.skills.map((s:any) => `• ${s.label} — ${s.latest}% · ${studentSkillWord(s)}`).join('\n');
+  const skillLines = ins.skills.map((s:any) => {
+    const halves = s.halves && s.weakHalf ? ` (grammar ${s.halves.grammar.latest}%, vocabulary ${s.halves.vocab.latest}%)` : '';
+    const word = s.weakHalf ? `${s.weakHalf === 'grammar' ? 'grammar' : 'vocabulary'} is worth more practice` : studentSkillWord(s);
+    return `• ${s.label} — ${s.latest}%${halves} · ${word}`;
+  }).join('\n');
   const focus = resolveFocus(ins, focusOverride);
   const focusLine = focus === undefined ? ''
     : focus ? `\n\nThe best area to focus on next is ${focus.label}.`
@@ -193,7 +250,7 @@ export const buildProgressEmailText = (ins:any, focusOverride?: string): string 
 export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?: Record<string,string[]>, focusOverride?: string): string => {
   if (!ins) return '';
   const bank = tips || DEFAULT_TIPS;
-  const tipFor = (key:string) => (bank[key] && bank[key][0]) || '';
+  const tipFor = (key:string) => (bank[key] && bank[key][0]) || (DEFAULT_TIPS[key] && DEFAULT_TIPS[key][0]) || '';
   const gradeLine = (termGrade != null && !Number.isNaN(termGrade)) ? ` Your final term grade is **${Math.round(termGrade)}%**.` : '';
 
   // An absent test is a weighted zero that dragged the grade down; name it so the
@@ -214,14 +271,16 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
   // The carry-forward skill: teacher override wins; otherwise the weakest by
   // term average whose latest score is < 90 — never "keep working on" a skill
   // the student just aced. undefined = omit; null = balanced closing line.
-  const carrySkill = focusOverride === 'none' ? undefined
+  const carryRaw = focusOverride === 'none' ? undefined
     : (focusOverride && focusOverride !== 'auto') ? (ins.skills.find((s:any)=>s.key===focusOverride) || null)
-    : ([...ins.skills].sort((a:any,b:any)=>a.avg-b.avg).find((s:any)=>s.latest < 90) || null);
+    : ([...ins.skills].sort((a:any,b:any)=>a.effAvg-b.effAvg).find((s:any)=>s.effLatest < 90) || null);
+  // A weak half of Grammar & Vocab is carried forward on its own.
+  const carrySkill = carryRaw ? narrowed(carryRaw, true) : carryRaw;
 
   // Only the final on record — no arc to tell, keep it clean and honest.
   if (ins.count < 2) {
     const growLine = carrySkill === undefined ? ''
-      : carrySkill ? ` The area with the most room to grow is **${carrySkill.label}** (${carrySkill.latest}%).` + (tipFor(carrySkill.key) ? ` A habit worth keeping: ${tipFor(carrySkill.key)}.` : '')
+      : carrySkill ? ` The area with the most room to grow is **${carrySkill.label}** (${carrySkill.latest}%).` + (tipFor(carrySkill.tipKey) ? ` A habit worth keeping: ${tipFor(carrySkill.tipKey)}.` : '')
       : ` Your skills are strong across the board — keep up the regular practice that got you here.`;
     return `\n\n**Your Term in Review**\nYou finished the term with ${ins.overallLast}% on the final.${gradeLine}${missedNote} Your strongest area was **${ins.strongest.label}** (${ins.strongest.latest}%).${growLine}`;
   }
@@ -247,7 +306,7 @@ export const buildTermReviewEmailText = (ins:any, termGrade?: number|null, tips?
     : '';
 
   const carry = carrySkill === undefined ? ''
-    : carrySkill ? `\n\nIf you continue with one thing going forward, make it **${carrySkill.label}**.` + (tipFor(carrySkill.key) ? ` A habit worth keeping: ${tipFor(carrySkill.key)}.` : '')
+    : carrySkill ? `\n\nIf you continue with one thing going forward, make it **${carrySkill.label}**.` + (tipFor(carrySkill.tipKey) ? ` A habit worth keeping: ${tipFor(carrySkill.tipKey)}.` : '')
     : `\n\nYou're finishing with strong, balanced skills across the board — keep the regular reading, listening and writing habits that got you here.`;
 
   return `\n\n**Your Term in Review**\n${opener}\n\n${strength}${growth}${carry}`;
@@ -270,6 +329,12 @@ export const DEFAULT_TIPS: Record<string,string[]> = {
     'practice the target structures on Perfect English Grammar',
     'learn new words in chunks and collocations, not one by one',
     'review new vocabulary with spaced repetition on Anki',
+  ],
+  // Used when vocabulary alone is the half to work on. Not shown in the Edit
+  // Phrases panel, which lists one bank per exam part.
+  vocab: [
+    'review new vocabulary with spaced repetition on Anki',
+    'learn new words in chunks and collocations, not one by one',
   ],
   reading: [
     'skim for the main idea before reading for detail',
@@ -390,7 +455,8 @@ export const computeFocusFlags = (sig:any, ins:any): Record<string, {t:string, r
     const s = ins?.skills?.find((x:any)=>x.key===sk.key) || null;
     const isWeakest = !!(ins && ins.weakest && ins.weakest.key === sk.key);
     let flag: any = null;
-    if (pct != null && pct < 70) flag = { t:'Focus', reason:'low this test', tone:'amber' };
+    const why = sig?.skills?.find((s:any)=>s.key===sk.key)?.lowReason;
+    if (pct != null && pct < 70) flag = { t:'Focus', reason: why || 'low this test', tone:'amber' };
     else if (s && s.status === 'Slipping') flag = { t:'Focus', reason:'slipping', tone:'amber' };
     else if (s && s.status === 'Needs work') flag = { t:'Focus', reason:'needs work', tone:'amber' };
     else if (s && isWeakest && s.avg < 78) flag = { t:'Focus', reason:'lowest all term', tone:'amber' };

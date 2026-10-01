@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { SKILLS } from './feedbackEngine';
-import type { SkillKey } from './feedbackEngine';
+import type { LessonKey } from './feedbackEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TestLessons — what this test covered, per skill.
@@ -14,14 +13,27 @@ import type { SkillKey } from './feedbackEngine';
 // updates rather than duplicating.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type LessonMap = Partial<Record<SkillKey, string[]>>;
+export type LessonMap = Partial<Record<LessonKey, string[]>>;
+
+// Grammar & Vocab is one part of the exam but is marked in two halves, so its
+// lessons are recorded in two lists. That is what lets the feedback suggest
+// only grammar lessons to a student whose vocabulary was fine. Lessons saved
+// before this split live under 'grammar' and show up in the Grammar list.
+const SECTIONS: { key: LessonKey; label: string }[] = [
+  { key: 'listening', label: 'Listening' },
+  { key: 'grammar',   label: 'Grammar' },
+  { key: 'vocab',     label: 'Vocabulary' },
+  { key: 'reading',   label: 'Reading' },
+  { key: 'writing',   label: 'Writing' },
+  { key: 'speaking',  label: 'Speaking' },
+];
 
 // ─── Suggestions ─────────────────────────────────────────────────────────────
 // Grammar and vocabulary has discrete items you teach. The other four are
 // sub-skills you train, so a blank box is the wrong prompt for them — these are
 // the things that actually go wrong, phrased to drop straight into the sentence
 // "please focus your review on: • ...". Click to add, then edit freely.
-const SUGGESTIONS: Record<SkillKey, string[]> = {
+const SUGGESTIONS: Record<LessonKey, string[]> = {
   listening: [
     'following natural-speed audio',
     'taking notes while listening',
@@ -62,12 +74,20 @@ const SUGGESTIONS: Record<SkillKey, string[]> = {
   grammar: [
     'the passive voice',
     'the second and third conditionals',
-    'phrasal verbs',
-    'compound adjectives',
     'articles',
     'past simple and present perfect',
     'prepositions',
+    'reported speech',
+    'relative clauses',
+  ],
+  vocab: [
+    'phrasal verbs',
+    'compound adjectives',
     'word formation',
+    'collocations',
+    'the unit vocabulary',
+    'synonyms and antonyms',
+    'idioms and fixed expressions',
   ],
 };
 
@@ -120,7 +140,7 @@ export function TestLessons({
         if (error) throw error;
         if (cancelled) return;
         const next: LessonMap = {};
-        (data || []).forEach((r: any) => { next[r.skill as SkillKey] = r.lessons || []; });
+        (data || []).forEach((r: any) => { next[r.skill as LessonKey] = r.lessons || []; });
         setMap(next);
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Could not load the lessons for this test.');
@@ -131,11 +151,11 @@ export function TestLessons({
     return () => { cancelled = true; };
   }, [open, term, courseLevel, assessmentName, teacherEmail, getSupabase]);
 
-  const setLesson = (skill: SkillKey, i: number, v: string) =>
+  const setLesson = (skill: LessonKey, i: number, v: string) =>
     setMap(m => { const list = [...(m[skill] || [])]; list[i] = v; return { ...m, [skill]: list }; });
-  const addLesson = (skill: SkillKey) =>
+  const addLesson = (skill: LessonKey) =>
     setMap(m => ({ ...m, [skill]: [...(m[skill] || []), ''] }));
-  const removeLesson = (skill: SkillKey, i: number) =>
+  const removeLesson = (skill: LessonKey, i: number) =>
     setMap(m => ({ ...m, [skill]: (m[skill] || []).filter((_, x) => x !== i) }));
 
   const save = async () => {
@@ -143,7 +163,7 @@ export function TestLessons({
     try {
       const supabase = await getSupabase();
       // one row per skill; empty lines dropped so a stray blank never becomes a bullet
-      const rows = SKILLS.map(s => ({
+      const rows = SECTIONS.map(s => ({
         teacher_email: teacherEmail, term, course_level: courseLevel,
         assessment_name: assessmentName, skill: s.key,
         lessons: (map[s.key] || []).map(l => l.trim()).filter(Boolean),
@@ -152,12 +172,15 @@ export function TestLessons({
         .upsert(rows, { onConflict: 'teacher_email,term,course_level,assessment_name,skill' });
       if (error) throw error;
       const clean: LessonMap = {};
-      rows.forEach(r => { clean[r.skill as SkillKey] = r.lessons; });
+      rows.forEach(r => { clean[r.skill as LessonKey] = r.lessons; });
       setMap(clean);
       onSaved(clean);
       onClose();
     } catch (e: any) {
-      setError(e?.message || 'Could not save. Your lessons have not been lost — try again.');
+      const msg = String(e?.message || '');
+      setError(/check constraint/i.test(msg)
+        ? 'The database does not accept "vocab" as a skill yet — the check on test_lessons.skill needs updating. Your lessons have not been lost.'
+        : msg || 'Could not save. Your lessons have not been lost — try again.');
     } finally {
       setSaving(false);
     }
@@ -165,7 +188,7 @@ export function TestLessons({
 
   if (!open) return null;
 
-  const total = SKILLS.reduce((n, s) => n + (map[s.key] || []).filter(l => l.trim()).length, 0);
+  const total = SECTIONS.reduce((n, s) => n + (map[s.key] || []).filter(l => l.trim()).length, 0);
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,59,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 60 }}>
@@ -185,7 +208,7 @@ export function TestLessons({
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
           {loading ? (
             <div style={{ color: K.ink3, fontSize: '14px' }}>Loading…</div>
-          ) : SKILLS.map(s => {
+          ) : SECTIONS.map(s => {
             const list = map[s.key] || [];
             return (
               <div key={s.key} style={{ marginBottom: '22px' }}>

@@ -20,12 +20,24 @@
 // Only the single weakest skill is ever named. A student with four weak skills
 // gets one thing to work on, not four — negative feedback that arrives all at
 // once stops being useful.
+//
+// Grammar & Vocab is ONE part of the exam, but from Fall 2026 it is marked in
+// two halves. The engine looks inside it: if one half is below the line and the
+// other is not, only that half is named ("Grammar (4/10)") and only its lessons
+// are suggested. 10/10 vocabulary and 4/10 grammar is 70% combined — which used
+// to pass the line unnoticed — but it is 40% grammar, and that is what the
+// student needs to hear. When both halves are weak, the part is named whole.
+// A half can also be the student's best area ("Your vocabulary was perfect").
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const REVIEW_THRESHOLD = 0.70;   // a skill flags below 70% of its maximum
 export const MAX_BULLETS = 3;
 
 export type SkillKey = 'listening' | 'grammar' | 'reading' | 'writing' | 'speaking';
+// Lessons are recorded per skill, with Grammar & Vocab split into its two
+// halves: 'grammar' holds grammar lessons (and any recorded before the split),
+// 'vocab' holds vocabulary lessons.
+export type LessonKey = SkillKey | 'vocab';
 
 export const SKILLS: { key: SkillKey; label: string; short: string }[] = [
   { key: 'listening', label: 'Listening',               short: 'listening' },
@@ -40,8 +52,11 @@ export interface FeedbackInput {
   assessmentName: string;                  // 'Midterm'
   maxPoints: number;                       // 50 or 100
   earnedWeight: number;                    // 23.4
-  scores: Record<SkillKey, number>;
-  lessonsBySkill: Partial<Record<SkillKey, string[]>>;   // from test_lessons
+  formative?: boolean;                     // First/Third Test from Fall 2026: no weight, so no "% of your term grade"
+  // grammar = the combined Grammar & Vocab mark; grammarOnly / vocab are its two
+  // halves (each out of a tenth of the test), present on records after the split.
+  scores: Record<SkillKey, number> & { grammarOnly?: number; vocab?: number };
+  lessonsBySkill: Partial<Record<LessonKey, string[]>>;  // from test_lessons
   selectedLessons?: string[] | null;       // what the teacher ticked; null = use the auto pick
   absent?: boolean;
   notApplicable?: boolean;
@@ -54,13 +69,20 @@ export interface FeedbackInput {
   } | null;
 }
 
+export interface PlanSkill {
+  key: SkillKey; label: string; short: string; value: number; pct: number;
+  max: number;                             // what `value` is out of (a half is out of perSkill / 2)
+  lessonKeys: LessonKey[];                 // where this area's lessons are recorded
+}
+
 export interface FeedbackPlan {
   total: number;
   perSkill: number;
-  strongest: { key: SkillKey; label: string; short: string; value: number; pct: number };
-  weakest:   { key: SkillKey; label: string; short: string; value: number; pct: number } | null;
+  strongest: PlanSkill;
+  weakest:   PlanSkill | null;
   flaggedCount: number;                    // how many fell below the line, for the UI
   suggestedLessons: string[];              // pre-ticked for the teacher
+  lessonPool: string[];                    // every lesson recorded for the named area(s), for ticking
   text: string;
 }
 
@@ -137,15 +159,37 @@ export function buildFeedback(input: FeedbackInput): FeedbackPlan {
   } = input;
 
   const perSkill = maxPoints / 5;
-  const rows = SKILLS.map(s => ({
+  const half = perSkill / 2;
+  const hasSplit = scores.grammarOnly != null || scores.vocab != null;
+  const ratio = (v: number, m: number) => (m > 0 ? v / m : 0);
+  const gRow: PlanSkill = { key: 'grammar', label: 'Grammar',    short: 'grammar',    value: Number(scores.grammarOnly) || 0, max: half, pct: ratio(Number(scores.grammarOnly) || 0, half), lessonKeys: ['grammar'] };
+  const vRow: PlanSkill = { key: 'grammar', label: 'Vocabulary', short: 'vocabulary', value: Number(scores.vocab) || 0,       max: half, pct: ratio(Number(scores.vocab) || 0, half),       lessonKeys: ['vocab'] };
+
+  // Every part as a whole — the total and the improvement line use these.
+  const parts: PlanSkill[] = SKILLS.map(s => ({
     ...s,
     value: Number(scores[s.key]) || 0,
-    pct: perSkill > 0 ? (Number(scores[s.key]) || 0) / perSkill : 0,
+    max: perSkill,
+    pct: ratio(Number(scores[s.key]) || 0, perSkill),
+    lessonKeys: s.key === 'grammar' ? ['grammar', 'vocab'] as LessonKey[] : [s.key] as LessonKey[],
   }));
-  const total = rows.reduce((a, r) => a + r.value, 0);
+  const total = parts.reduce((a, r) => a + r.value, 0);
 
-  const strongest = [...rows].sort((a, b) => b.pct - a.pct)[0];
-  const flagged = rows.filter(r => r.pct < REVIEW_THRESHOLD).sort((a, b) => a.pct - b.pct);
+  // What is judged. Grammar & Vocab with its halves recorded is judged by what
+  // is actually weak inside it: one weak half stands in for the part; both weak
+  // (or neither) leaves the part whole.
+  const judged: PlanSkill[] = parts.map(r => {
+    if (r.key !== 'grammar' || !hasSplit) return r;
+    const gWeak = gRow.pct < REVIEW_THRESHOLD, vWeak = vRow.pct < REVIEW_THRESHOLD;
+    return gWeak && !vWeak ? gRow : vWeak && !gWeak ? vRow : r;
+  });
+
+  // Best area: a half may be it — "your vocabulary was perfect" is worth saying
+  // even when grammar pulled the part down.
+  const praiseable: PlanSkill[] = parts.map(r =>
+    r.key === 'grammar' && hasSplit ? (gRow.pct >= vRow.pct ? gRow : vRow) : r);
+  const strongest = [...praiseable].sort((a, b) => b.pct - a.pct)[0];
+  const flagged = judged.filter(r => r.pct < REVIEW_THRESHOLD).sort((a, b) => a.pct - b.pct);
   const weakest = flagged[0] ?? null;
 
   // Ties are real: writing and speaking both at 10/20 is not "writing".
@@ -153,34 +197,41 @@ export function buildFeedback(input: FeedbackInput): FeedbackPlan {
   // both, capped at two so the sentence stays a sentence.
   const tied = weakest ? flagged.filter(r => Math.abs(r.pct - weakest.pct) < 1e-9).slice(0, 2) : [];
 
-  // Bullets come from every tied skill, in order, capped at three.
-  const auto = tied.flatMap(t => lessonsBySkill[t.key] ?? []).slice(0, MAX_BULLETS);
+  // Bullets come from every tied skill, in order, capped at three. A named half
+  // offers only its own lessons.
+  const lessonPool = Array.from(new Set(
+    tied.flatMap(t => t.lessonKeys.flatMap(k => lessonsBySkill[k] ?? [])).filter(l => l && l.trim())));
+  const auto = lessonPool.slice(0, MAX_BULLETS);
   const bullets = (selectedLessons ?? auto).filter(l => l && l.trim()).slice(0, MAX_BULLETS);
 
   // ── the exceptional cases first ────────────────────────────────────────────
   if (notApplicable) {
     return plan({
-      total, perSkill, strongest, weakest, flagged, auto,
+      total, perSkill, strongest, weakest, flagged, auto, lessonPool,
       text: `Hi ${studentName},\nThe ${assessmentName} has been recorded as not applicable for you, so it does not count toward your term grade.`,
     });
   }
   if (absent) {
     return plan({
-      total: 0, perSkill, strongest, weakest, flagged, auto,
-      text: `Hi ${studentName},\nYou were absent for the ${assessmentName}, so it is recorded as 0 for this test. Please come and see me so we can talk about making the work up.`,
+      total: 0, perSkill, strongest, weakest, flagged, auto, lessonPool,
+      text: input.formative
+        ? `Hi ${studentName},\nYou were absent for the ${assessmentName}. It doesn't count toward your term grade, but it is useful practice, so please come and see me if you would like to go over it.`
+        : `Hi ${studentName},\nYou were absent for the ${assessmentName}, so it is recorded as 0 for this test. Please come and see me so we can talk about making the work up.`,
     });
   }
 
   // ── the normal email ───────────────────────────────────────────────────────
   const lines: string[] = [`Hi ${studentName},`];
 
-  let opening = `${fmt(total)}/${maxPoints} on the ${testPhrase(assessmentName)} — ${pct1(earnedWeight)}% of your term grade.`;
+  let opening = input.formative
+    ? `${fmt(total)}/${maxPoints} on the ${testPhrase(assessmentName)}.`
+    : `${fmt(total)}/${maxPoints} on the ${testPhrase(assessmentName)} — ${pct1(earnedWeight)}% of your term grade.`;
   if (teacherNote && teacherNote.trim()) opening += ` ${teacherNote.trim()}`;
 
   const adv = adverbFor(strongest.pct);
   opening += adv === 'your best area'
-    ? ` Your ${strongest.short} was your strongest at ${fmt(strongest.value)}/${fmt(perSkill)}.`
-    : ` Your ${strongest.short} was ${adv} at ${fmt(strongest.value)}/${fmt(perSkill)}!`;
+    ? ` Your ${strongest.short} was your strongest at ${fmt(strongest.value)}/${fmt(strongest.max)}.`
+    : ` Your ${strongest.short} was ${adv} at ${fmt(strongest.value)}/${fmt(strongest.max)}!`;
 
   if (!weakest) {
     // Nothing to review, so say the one thing they could not work out alone:
@@ -190,14 +241,17 @@ export function buildFeedback(input: FeedbackInput): FeedbackPlan {
       + (gain ? ` Your ${gain.short} has come up from ${fmt(gain.from)}${gain.sameScale ? '' : '%'} to ${fmt(gain.to)}${gain.sameScale ? '' : '%'} since the ${testPhrase(gain.test)}.` : ''));
     if (movingUpTo) lines.push(`You are moving up to ${movingUpTo} — well earned!`);
     lines.push(pickClosing('high', studentName));
-    return plan({ total, perSkill, strongest, weakest, flagged, auto, text: lines.join('\n') });
+    return plan({ total, perSkill, strongest, weakest, flagged, auto, lessonPool, text: lines.join('\n') });
   }
 
   // Only the weakest is ever named, however many fell below the line — but when
   // several did, say so, or a student fixes one thing and is surprised later.
+  // "(4/10 each)" only when both really are the same mark out of the same number.
   const names = tied.length > 1
-    ? `${tied[0].label} and ${tied[1].short} (${fmt(tied[0].value)}/${fmt(perSkill)} each)`
-    : `${weakest.label} (${fmt(weakest.value)}/${fmt(perSkill)})`;
+    ? (tied[0].max === tied[1].max && tied[0].value === tied[1].value
+        ? `${tied[0].label} and ${tied[1].short} (${fmt(tied[0].value)}/${fmt(tied[0].max)} each)`
+        : `${tied[0].label} (${fmt(tied[0].value)}/${fmt(tied[0].max)}) and ${tied[1].short} (${fmt(tied[1].value)}/${fmt(tied[1].max)})`)
+    : `${weakest.label} (${fmt(weakest.value)}/${fmt(weakest.max)})`;
   const most = flagged.length > 1 ? ' the most' : '';
   opening += ` ${names} brought your score down${most}`;
   opening += bullets.length ? ', so please focus your review on:' : '. That is the place to put your effort next.';
@@ -216,17 +270,18 @@ export function buildFeedback(input: FeedbackInput): FeedbackPlan {
   const band = overall >= 0.85 ? 'high' : overall >= 0.65 ? 'mid' : 'low';
   lines.push(pickClosing(band, studentName));
 
-  return plan({ total, perSkill, strongest, weakest, flagged, auto, text: lines.join('\n') });
+  return plan({ total, perSkill, strongest, weakest, flagged, auto, lessonPool, text: lines.join('\n') });
 }
 
 function plan(a: any): FeedbackPlan {
   return {
     total: a.total,
     perSkill: a.perSkill,
-    strongest: { key: a.strongest.key, label: a.strongest.label, short: a.strongest.short, value: a.strongest.value, pct: a.strongest.pct },
-    weakest: a.weakest ? { key: a.weakest.key, label: a.weakest.label, short: a.weakest.short, value: a.weakest.value, pct: a.weakest.pct } : null,
+    strongest: { ...a.strongest },
+    weakest: a.weakest ? { ...a.weakest } : null,
     flaggedCount: a.flagged.length,
     suggestedLessons: a.auto,
+    lessonPool: a.lessonPool || [],
     text: a.text,
   };
 }

@@ -6,6 +6,8 @@ import { IconChevronDown, IconChevronRight, IconTrendUp, IconTrendDown, IconTren
 // Props: the computed `insights` object (or null), the collapse state, and a toggle.
 //
 // Restyled onto portalTokens. No logic changed.
+// Grammar & Vocab shows its two halves under the label when the record has them;
+// the soft-spot line names the weak half (computeInsights narrows `weakest`).
 //
 // Notable substitutions: the ↗ ↘ → arrows and the ▲ ▼ delta markers were text
 // glyphs that render at a different weight on every platform; they are now
@@ -101,7 +103,18 @@ export function PerformanceInsightsCard({
                     borderTop: `1px solid ${C.lineSoft}`,
                   }}
                 >
-                  <span style={{ ...T.meta, color: C.ink }}>{s.label}</span>
+                  <span style={{ ...T.meta, color: C.ink }}>
+                    {s.label}
+                    {/* Grammar & Vocab is one part; its halves sit underneath so a
+                        weak half is visible even when the combined mark is fine. */}
+                    {s.halves && (
+                      <span style={{ display: 'block', fontSize: '11px', color: C.ink3, marginTop: '2px' }}>
+                        <span style={s.weakHalf === 'grammar' ? { color: C.warn, fontWeight: 500 } : undefined}>G <span style={NUM}>{s.halves.grammar.latest}%</span></span>
+                        {' · '}
+                        <span style={s.weakHalf === 'vocab' ? { color: C.warn, fontWeight: 500 } : undefined}>V <span style={NUM}>{s.halves.vocab.latest}%</span></span>
+                      </span>
+                    )}
+                  </span>
 
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: S.xs, height: '32px' }}>
                     {s.series.map((p: number, i: number) => {

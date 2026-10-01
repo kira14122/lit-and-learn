@@ -28,6 +28,7 @@ import { buildReport, PASS_MARK, STRUCTURE_COUNT } from './reportEngine';
 import { refineReport } from './reportRefine';
 import type { Pronoun } from './reportEngine';
 import { IconChevronLeft, IconSparkle, IconRefresh, IconFile, IconSave, IconTrendUp, IconTrendDown } from './portalIcons';
+import { weightFor, isFormative, earnedFor } from './gradingPolicy';
 
 type Trend = 'up' | 'down' | 'flat';
 type TestStatus = 'graded' | 'absent' | 'na' | 'pending';
@@ -49,7 +50,8 @@ const SKILLS = [
 ] as const;
 
 const CANON = ['First Test', 'Midterm', 'Third Test', 'Final Test'] as const;
-const DEFAULT_WEIGHT: Record<string, number> = { 'First Test': 10, 'Midterm': 30, 'Third Test': 10, 'Final Test': 50 };
+// Weights come from gradingPolicy.ts, keyed on the term each grade record
+// belongs to — never from the number stored inside the record.
 const PASS_THRESHOLD = 70;
 
 // Colour marks the exception. At or above the pass line a mark is simply ink —
@@ -77,22 +79,31 @@ const pick = <T,>(arr: T[], seed: number) => arr[((seed % arr.length) + arr.leng
 
 interface SkillPct { key: string; label: string; raw: number; pct: number }
 interface AnalyzedTest {
-  name: string; weight: number; status: TestStatus;
+  name: string; weight: number; formative: boolean; status: TestStatus;
   maxPoints?: number; per?: number; skills?: SkillPct[];
   totalPoints?: number; mastery?: number; earnedWeight?: number;
+  // Display-only: the two halves of Grammar & Vocab when the record has them.
+  // It stays ONE column (one part of the exam) with its bar split down the
+  // middle. Strengths, focus area and the report use the combined mark.
+  gv?: { grammar: number; vocab: number };
 }
 
 // Parse the four canonical tests from the grade records (mirrors termSummary).
 function analyzeTests(grades: any[]): AnalyzedTest[] {
+  // A test not taken yet has no record to read a term from; use the term of the
+  // student's other records (they are all from the same term).
+  const termOfSet = grades.find((h: any) => h?.term)?.term;
   return CANON.map((name) => {
     const rec = grades.find((h: any) => h.assessment_name === name);
-    if (!rec) return { name, status: 'pending', weight: DEFAULT_WEIGHT[name] };
+    const term = rec?.term || termOfSet;
+    const weight = weightFor(term, name);
+    const formative = isFormative(term, name);
+    if (!rec) return { name, status: 'pending', weight, formative };
     let p: any = {};
     try { p = JSON.parse(rec.score) || {}; } catch { /* old plain-text record */ }
-    const weight = Number(p.weight) || DEFAULT_WEIGHT[name];
-    if (p.notApplicable) return { name, status: 'na', weight };
+    if (p.notApplicable) return { name, status: 'na', weight, formative };
     const maxPoints = Number(p.maxPoints) || 0;
-    if (p.isAbsent) return { name, status: 'absent', weight, maxPoints };
+    if (p.isAbsent) return { name, status: 'absent', weight, formative, maxPoints, earnedWeight: 0 };
     const per = maxPoints / 5;
     const skills: SkillPct[] = SKILLS.map((sk) => {
       const raw = Number(p[sk.key]) || 0;
@@ -100,8 +111,12 @@ function analyzeTests(grades: any[]): AnalyzedTest[] {
     });
     const totalPoints = p.totalPoints != null ? Number(p.totalPoints) : skills.reduce((s, x) => s + x.raw, 0);
     const mastery = maxPoints ? (totalPoints / maxPoints) * 100 : 0;
-    const earnedWeight = p.earnedWeight != null ? Number(p.earnedWeight) : (maxPoints ? (totalPoints / maxPoints) * weight : 0);
-    return { name, status: 'graded', weight, maxPoints, per, skills, totalPoints, mastery, earnedWeight };
+    const earnedWeight = earnedFor(weight, totalPoints, maxPoints);
+    const half = per / 2;
+    const gv = (p.grammarOnly != null || p.vocab != null) && half
+      ? { grammar: Math.round(((Number(p.grammarOnly) || 0) / half) * 100), vocab: Math.round(((Number(p.vocab) || 0) / half) * 100) }
+      : undefined;
+    return { name, status: 'graded', weight, formative, maxPoints, per, skills, gv, totalPoints, mastery, earnedWeight };
   });
 }
 
@@ -193,14 +208,33 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
     });
   }, [graded]);
 
+  // Grammar & Vocab's two halves, averaged over the tests that recorded them.
+  // When present, strengths, the focus area and the written report treat
+  // grammar and vocabulary separately — a student can be strong in one and
+  // weak in the other, and the report should say so.
+  const gvAvg = useMemo(() => {
+    const withGv = graded.filter((t) => t.gv);
+    if (!withGv.length) return null;
+    const avg = (a: number[]) => Math.round(a.reduce((x, y) => x + y, 0) / a.length);
+    const trendOf = (a: number[]): Trend => { const d = a.length >= 2 ? a[a.length - 1] - a[0] : 0; return d >= 8 ? 'up' : d <= -8 ? 'down' : 'flat'; };
+    const g = withGv.map((t) => t.gv!.grammar), v = withGv.map((t) => t.gv!.vocab);
+    return { grammar: avg(g), vocab: avg(v), gTrend: trendOf(g), vTrend: trendOf(v) };
+  }, [graded]);
+
+  // The profile as it is READ: Grammar & Vocab split into its halves when known.
+  const readProfile = useMemo(() => profile.flatMap((s) =>
+    s.key === 'grammar' && gvAvg
+      ? [{ key: 'grammar', label: 'Grammar', avg: gvAvg.grammar, trend: gvAvg.gTrend }, { key: 'vocab', label: 'Vocabulary', avg: gvAvg.vocab, trend: gvAvg.vTrend }]
+      : [s]), [profile, gvAvg]);
+
   const autoStrengths = useMemo(
-    () => [...profile].filter((s) => s.avg >= 80).sort((a, b) => b.avg - a.avg).slice(0, 3).map((s) => s.label),
-    [profile]
+    () => [...readProfile].filter((s) => s.avg >= 80).sort((a, b) => b.avg - a.avg).slice(0, 3).map((s) => s.label),
+    [readProfile]
   );
   const weakSkill = useMemo(() => {
     if (!graded.length) return null;
-    return [...profile].sort((a, b) => a.avg - b.avg)[0];
-  }, [profile, graded.length]);
+    return [...readProfile].sort((a, b) => a.avg - b.avg)[0];
+  }, [readProfile, graded.length]);
 
   const standing = useMemo(() => {
     const taken = tests.filter((t) => t.status === 'graded' || t.status === 'absent');
@@ -242,7 +276,7 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
   // refined paths can never be built from different facts.
   const reportInput = () => {
     const skillPct: any = {};
-    profile.forEach((sk: any) => { skillPct[sk.key] = sk.avg; });
+    readProfile.forEach((sk: any) => { skillPct[sk.key] = sk.avg; });
     return {
       studentName: student.full_name,
       pronoun: pronoun!,
@@ -626,13 +660,13 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
                             <div style={{ display: 'flex', gap: SP.sm, alignItems: 'baseline' }}>
                               <span style={{ fontSize: 15, fontWeight: 500, color: C.ink }}>{t.name}</span>
                               <span style={{ ...NUM, fontSize: 11, color: C.ink3 }}>
-                                {t.weight}%{t.maxPoints ? ` · out of ${t.maxPoints}` : ''}
+                                {t.formative ? 'Formative' : `${t.weight}%`}{t.maxPoints ? ` · out of ${t.maxPoints}` : ''}
                               </span>
                             </div>
                             {m != null ? (
                               <div style={{ display: 'flex', gap: SP.md, alignItems: 'baseline' }}>
                                 <span style={{ ...NUM, fontSize: 18, fontWeight: 600, color: pctColor(m) }}>{m}%</span>
-                                <span style={{ ...NUM, fontSize: 11, color: C.ink3 }}>earns {(t.earnedWeight || 0).toFixed(1)}/{t.weight}</span>
+                                {!t.formative && <span style={{ ...NUM, fontSize: 11, color: C.ink3 }}>earns {(t.earnedWeight || 0).toFixed(1)}/{t.weight}</span>}
                               </div>
                             ) : (
                               <span style={{ fontSize: 11, fontWeight: 500, color: C.ink3, textTransform: 'uppercase', letterSpacing: '0.09em' }}>{statusText}</span>
@@ -641,7 +675,28 @@ export const ProgressReport: React.FC<ProgressReportProps> = ({ student, grades,
 
                           {t.status === 'graded' && (
                             <div style={{ display: 'flex', gap: SP.sm, marginBottom: SP.md }}>
-                              {t.skills!.map((s) => (
+                              {t.skills!.map((s) => (s.key === 'grammar' && t.gv) ? (
+                                // One part of the exam, so one column: the bar is split in
+                                // two halves, grammar left and vocabulary right, with the
+                                // combined figure beside the label and the halves beneath.
+                                <div key={s.key} style={{ flex: 1.4, minWidth: 0 }} title={`Grammar & Vocab: ${s.pct}% (Grammar ${t.gv.grammar}%, Vocabulary ${t.gv.vocab}%)`}>
+                                  <div style={{ display: 'flex', gap: 3 }}>
+                                    {[t.gv.grammar, t.gv.vocab].map((p, k) => (
+                                      <div key={k} style={{ ...PR.barTrack, flex: 1 }}>
+                                        <div style={{ ...PR.barFill, width: `${p}%`, background: barColor(p) }} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div style={PR.barLabel}>
+                                    <span>Grammar &amp; Vocab</span>
+                                    <span style={{ ...NUM, color: pctColor(s.pct), fontWeight: 600 }}>{s.pct}%</span>
+                                  </div>
+                                  <div style={{ ...PR.barLabel, marginTop: 1 }}>
+                                    <span>G <span style={{ ...NUM, color: pctColor(t.gv.grammar), fontWeight: 600 }}>{t.gv.grammar}%</span></span>
+                                    <span>V <span style={{ ...NUM, color: pctColor(t.gv.vocab), fontWeight: 600 }}>{t.gv.vocab}%</span></span>
+                                  </div>
+                                </div>
+                              ) : (
                                 <div key={s.key} style={{ flex: 1, minWidth: 0 }} title={`${s.label}: ${s.pct}%`}>
                                   <div style={PR.barTrack}>
                                     <div style={{ ...PR.barFill, width: `${s.pct}%`, background: barColor(s.pct) }} />

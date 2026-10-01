@@ -23,6 +23,12 @@
 // rules that previously sat on the feedback block and the signature are now
 // neutral hairlines — the same treatment saved feedback gets in the portal's
 // PreviousRecordsCard, so a note reads the same way wherever it appears.
+//
+// ── Formative tests (from Fall 2026) ─────────────────────────────────────────
+// The First and Third Tests are formative: marked for feedback, no weight in
+// the term grade. Their email shows the score and the skill breakdown but no
+// percentage of the grade, and says plainly that the test doesn't count toward
+// it. The Midterm and Final show their share (50% each) as before.
 
 import { C } from './portalTokens';
 
@@ -30,12 +36,16 @@ export interface ResultEmailData {
   studentName: string;
   assessmentName: string;
   weightPct: number;                 // this assessment's % of the final grade
+  formative?: boolean;               // marked for feedback only; defaults to weightPct === 0
   isAbsent: boolean;
   isFinal: boolean;
   rawScore: number;                  // totalPoints
   maxPoints: number;
   earnedWeight: number;              // weighted contribution (kept for the record; not shown to students)
-  scores: { listening: number; grammar: number; reading: number; writing: number; speaking: number };
+  // grammar is the combined Grammar & Vocab mark. grammarOnly and vocab are its
+  // two halves, present on records saved after the split; when they are there
+  // the email shows Grammar and Vocabulary as two separate bars.
+  scores: { listening: number; grammar: number; reading: number; writing: number; speaking: number; grammarOnly?: number; vocab?: number };
   narrative: string;                 // buildTermReviewEmailText / buildProgressEmailText output; '' to omit
   feedback: string;
 }
@@ -73,7 +83,9 @@ export function buildResultEmail(data: ResultEmailData): { html: string; text: s
     studentName, assessmentName, weightPct, isAbsent,
     rawScore, maxPoints, earnedWeight, scores, narrative, feedback,
   } = data;
+  const formative = data.formative ?? !(weightPct > 0);
   const perMax = maxPoints / 5;
+  const hasSplit = scores.grammarOnly != null || scores.vocab != null;
   const earnedStr = (Math.round((earnedWeight || 0) * 10) / 10).toFixed(1);
   const intro = `I've finished grading your ${assessmentName} — here are your results.`;
 
@@ -90,12 +102,22 @@ export function buildResultEmail(data: ResultEmailData): { html: string; text: s
   // ── HERO ────────────────────────────────────────────────────────────────
   // Absence is an exception to flag, not a failure to condemn — it carries the
   // same amber the portal uses for an absent record, rather than red.
+  const eyebrow = formative ? `${assessmentName} · Formative assessment` : assessmentName;
   const heroHtml = isAbsent
     ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
          <td style="background:${C.warnTint}; border:1px solid ${C.warnLine}; border-radius:12px; padding:20px 22px;">
-           <p style="margin:0 0 8px; ${EYEBROW} color:${C.warn};">${esc(assessmentName)}</p>
+           <p style="margin:0 0 8px; ${EYEBROW} color:${C.warn};">${esc(eyebrow)}</p>
            <p style="margin:0; font-family:${SERIF}; font-size:28px; color:${C.ink};">Absent</p>
-           <p style="margin:10px 0 0; ${META}">Recorded as 0 for this assessment, which is ${esc(weightPct)}% of your term grade.</p>
+           <p style="margin:10px 0 0; ${META}">${formative
+             ? `This was a formative assessment, so it doesn't count toward your term grade.`
+             : `Recorded as 0 for this assessment, which is ${esc(weightPct)}% of your term grade.`}</p>
+         </td></tr></table>`
+    : formative
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+         <td style="background:${C.sunken}; border:1px solid ${C.line}; border-radius:12px; padding:22px;">
+           <p style="margin:0 0 8px; ${EYEBROW} color:${C.ink3};">${esc(eyebrow)}</p>
+           <p style="margin:0; font-family:${SERIF}; font-size:28px; color:${C.ink}; letter-spacing:-0.015em;">${esc(rawScore)}<span style="font-size:18px; color:${C.ink3};"> / ${esc(maxPoints)}</span></p>
+           <p style="margin:10px 0 0; ${META}">This test is for practice and feedback. It doesn't count toward your term grade, so use the breakdown below to see where to focus.</p>
          </td></tr></table>`
     : `<table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
          <td style="background:${C.sunken}; border:1px solid ${C.line}; border-radius:12px; padding:22px;">
@@ -105,23 +127,49 @@ export function buildResultEmail(data: ResultEmailData): { html: string; text: s
          </td></tr></table>`;
 
   // ── SKILL BARS ──────────────────────────────────────────────────────────
+  // Column widths are percentages, not pixels, so the rows scale down on a
+  // phone instead of squeezing the bar to nothing (label 30% · bar 54% · score
+  // 16%). On a narrow screen a long label or caption simply wraps.
+  //
+  // Grammar & Vocab is one part of the exam, so it stays ONE row with its
+  // combined score. When the record has the two halves, its bar is split down
+  // the middle — grammar on the left, vocabulary on the right, each filled to
+  // its own mark — with a small caption under each half.
+  const bar = (p: number) => {
+    const w = Math.max(0, Math.min(100, p));
+    return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-radius:999px; overflow:hidden;"><tr>${
+      w > 0 ? `<td width="${w}%" bgcolor="${C.accent}" style="height:6px; line-height:6px; font-size:0;">&nbsp;</td>` : ''}${
+      w < 100 ? `<td bgcolor="${C.line}" style="height:6px; line-height:6px; font-size:0;">&nbsp;</td>` : ''}</tr></table>`;
+  };
+  const LABEL_TD = `width="30%" valign="top" style="font-size:15px; line-height:18px; color:${C.ink2}; padding-right:8px;"`;
+  const SCORE_TD = `width="16%" align="right" valign="top" style="font-size:13px; line-height:18px; font-weight:600; color:${C.ink}; white-space:nowrap;"`;
+  const skillRow = (label: string, barCell: string, score: string) => `
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+            <td ${LABEL_TD}>${esc(label)}</td>
+            <td width="54%" valign="top" style="padding:6px 12px 0 0;">${barCell}</td>
+            <td ${SCORE_TD}>${score}</td>
+          </tr></table>`;
+  const half = (label: string, val: number, max: number) => `
+              <td width="50%" valign="top">
+                ${bar(pct(val, max))}
+                <p style="margin:5px 0 0; font-size:11px; line-height:14px; color:${C.ink3};">${esc(label)} ${esc(val)}/${esc(max)}</p>
+              </td>`;
+
   const skillsHtml = isAbsent ? '' : `
     <p style="margin:30px 0 14px; ${EYEBROW} color:${C.ink3};">Skill breakdown</p>
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
       ${SKILL_ROWS.map((row, i) => {
         const val = (scores as any)[row.key] || 0;
-        const p = pct(val, perMax);
         const pad = i === SKILL_ROWS.length - 1 ? '0' : '12';
-        return `<tr><td style="padding:0 0 ${pad}px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
-            <td width="120" style="font-size:15px; color:${C.ink2};">${esc(row.label)}</td>
-            <td><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-radius:999px; overflow:hidden;"><tr>
-              <td width="${p}%" bgcolor="${C.accent}" style="height:6px; line-height:6px; font-size:0;">&nbsp;</td>
-              <td bgcolor="${C.line}" style="height:6px; line-height:6px; font-size:0;">&nbsp;</td>
-            </tr></table></td>
-            <td width="64" align="right" style="font-size:13px; font-weight:600; color:${C.ink}; white-space:nowrap;">${esc(val)}/${esc(perMax)}</td>
-          </tr></table>
-        </td></tr>`;
+        const score = `${esc(val)}/${esc(perMax)}`;
+        const cell = row.key === 'grammar' && hasSplit
+          ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
+              ${half('Grammar', Number(scores.grammarOnly) || 0, perMax / 2)}
+              <td width="4" style="font-size:0; line-height:0;">&nbsp;</td>
+              ${half('Vocabulary', Number(scores.vocab) || 0, perMax / 2)}
+            </tr></table>`
+          : bar(pct(val, perMax));
+        return `<tr><td style="padding:0 0 ${pad}px;">${skillRow(row.label, cell, score)}</td></tr>`;
       }).join('')}
     </table>`;
 
@@ -191,12 +239,18 @@ ${preheaderHtml}
   const t: string[] = [];
   t.push(`Hello ${studentName},`, '', intro, '');
   if (isAbsent) {
-    t.push(`${assessmentName}: Absent (recorded as 0, ${weightPct}% of your term grade).`, '');
+    t.push(formative
+      ? `${assessmentName} (formative assessment): Absent. This test doesn't count toward your term grade.`
+      : `${assessmentName}: Absent (recorded as 0, ${weightPct}% of your term grade).`, '');
   } else {
-    t.push(`${assessmentName}: ${rawScore}/${maxPoints}  ·  counts as ${earnedStr}% of ${weightPct}% toward your final grade.`, '', 'Skill breakdown:');
+    t.push(formative
+      ? `${assessmentName} (formative assessment): ${rawScore}/${maxPoints}  ·  for practice and feedback, doesn't count toward your term grade.`
+      : `${assessmentName}: ${rawScore}/${maxPoints}  ·  counts as ${earnedStr}% of ${weightPct}% toward your final grade.`, '', 'Skill breakdown:');
     SKILL_ROWS.forEach(row => {
       const val = (scores as any)[row.key] || 0;
-      t.push(`  ${row.label}: ${val}/${perMax}`);
+      const halves = row.key === 'grammar' && hasSplit
+        ? ` (Grammar ${Number(scores.grammarOnly) || 0}/${perMax / 2}, Vocabulary ${Number(scores.vocab) || 0}/${perMax / 2})` : '';
+      t.push(`  ${row.label}: ${val}/${perMax}${halves}`);
     });
     t.push('');
   }

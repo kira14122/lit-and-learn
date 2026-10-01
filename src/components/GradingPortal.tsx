@@ -8,13 +8,14 @@ import { PreviousRecordsCard } from './PreviousRecordsCard';
 import { TestLessons } from './TestLessons';
 import type { LessonMap } from './TestLessons';
 import { buildFeedback } from './feedbackEngine';
-import type { SkillKey } from './feedbackEngine';
+import type { LessonKey } from './feedbackEngine';
 import { getSupabaseClient } from '../supabaseClient';
 import { generateStudentFeedback } from '../aiGenerator';
 import { client } from '../sanityClient'; 
 import { ActivityGenerator } from './ActivityGenerator';
 import { ExamMode } from './ExamMode';
 import { ProgressReport } from './ProgressReport';
+import { weightFor, isFormative, earnedFor } from './gradingPolicy';
 
 const IconMail      = () => (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>);
 const IconTrash     = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
@@ -78,12 +79,27 @@ export const GradingPortal: React.FC<{
   // The three draft handlers called this without it ever being defined.
   const bumpDraft = () => setDraftVersion(v => v + 1);
   const [assessmentName, setAssessmentName]     = useState('First Test');
-  const [assessmentWeight, setAssessmentWeight] = useState('10');
   const [maxPoints, setMaxPoints]               = useState('50');
   const [isAbsent, setIsAbsent]                 = useState(false);
   const [notApplicable, setNotApplicable]       = useState(false);
   const [scoreListening, setScoreListening]     = useState('');
-  const [scoreGrammar, setScoreGrammar]         = useState('');
+  // Grammar and Vocabulary are marked separately (half of the section each) but
+  // still add up to the one Grammar & Vocab skill that the grade, the trend and
+  // the feedback engine work with. `scoreGrammar` is that combined total.
+  // Records saved before the split have only the combined mark; for those,
+  // legacyGV holds it and the form shows a single Grammar & Vocab box.
+  const [scoreGram, setScoreGram]               = useState('');
+  const [scoreVocab, setScoreVocab]             = useState('');
+  const [legacyGV, setLegacyGV]                 = useState<string|null>(null);
+  const scoreGrammar = legacyGV !== null ? legacyGV
+    : (scoreGram === '' && scoreVocab === '') ? ''
+    : String((Number(scoreGram)||0) + (Number(scoreVocab)||0));
+  // Clears (or, for an old record, sets) the whole Grammar & Vocab section.
+  const setScoreGrammar = (v: string) => { setScoreGram(''); setScoreVocab(''); setLegacyGV(v === '' ? null : v); };
+  // The two parts, stored alongside the combined `grammar` in the score JSON.
+  const gvSplit = () => legacyGV !== null ? {} : { grammarOnly: Number(scoreGram)||0, vocab: Number(scoreVocab)||0 };
+  // The same two parts read back from a saved record (null if it predates the split).
+  const splitOf = (p:any) => (p && (p.grammarOnly != null || p.vocab != null)) ? { grammarOnly: Number(p.grammarOnly)||0, vocab: Number(p.vocab)||0 } : {};
   const [scoreReading, setScoreReading]         = useState('');
   const [scoreWriting, setScoreWriting]         = useState('');
   const [scoreSpeaking, setScoreSpeaking]       = useState('');
@@ -116,6 +132,19 @@ export const GradingPortal: React.FC<{
   const [termLabel, setTermLabelState] = useState<string>(() => localStorage.getItem('ll_term') || currentTerm());
   const setTermLabel = (t:string) => { localStorage.setItem('ll_term', t); setTermLabelState(t); };
 
+  // The weight is no longer chosen by hand: the school's policy fixes it by
+  // test and term (see gradingPolicy.ts). From Fall 2026 the First and Third
+  // Tests are formative (0%) and the Midterm and Final are 50% each.
+  const assessmentWeight = String(weightFor(termLabel, assessmentName));
+  const formative = isFormative(termLabel, assessmentName);
+  // What a saved record is worth under the policy for its own term. Records
+  // saved before the policy change still hold the old weight in their JSON;
+  // this is what corrects them wherever they are shown or emailed.
+  const policyOf = (rec:any, p:any) => {
+    const w = weightFor(rec?.term || termLabel, rec?.assessment_name || '');
+    return { weight: w, earned: earnedFor(w, Number(p?.totalPoints)||0, Number(p?.maxPoints)||0, !!p?.isAbsent), formative: isFormative(rec?.term || termLabel, rec?.assessment_name || '') };
+  };
+
   // ── Lesson-based feedback ────────────────────────────────────────────────
   // The lessons this test covered, for this level and term. Fetched once per
   // test rather than per student, since every student sat the same paper.
@@ -135,7 +164,7 @@ export const GradingPortal: React.FC<{
           .eq('course_level', currentLevel).eq('assessment_name', assessmentName);
         if (cancelled) return;
         const next: LessonMap = {};
-        (data || []).forEach((r:any) => { next[r.skill as SkillKey] = r.lessons || []; });
+        (data || []).forEach((r:any) => { next[r.skill as LessonKey] = r.lessons || []; });
         setLessonMap(next);
       } catch { if (!cancelled) setLessonMap({}); }
     })();
@@ -156,13 +185,13 @@ export const GradingPortal: React.FC<{
   // A skill mark cannot be negative or above its share of the total. The `max`
   // attribute alone does nothing here — the browser only enforces it on form
   // submit, and this form is never submitted — so clamp on the way in.
-  const clampScore = (raw: string, setter: (v: string) => void) => {
+  const clampScore = (raw: string, setter: (v: string) => void, max?: number) => {
     if (raw === '') { setter(''); return; }
     if (!/^\d*\.?\d*$/.test(raw)) return;          // reject letters, minus signs, e-notation
-    const per = Number(maxPoints) / 5;
+    const per = max ?? Number(maxPoints) / 5;
     const n = Number(raw);
     if (isNaN(n)) return;
-    if (n > per) { setter(String(per)); showToast(`Each skill is out of ${per}`, 'error'); return; }
+    if (n > per) { setter(String(per)); showToast(`That box is out of ${per}`, 'error'); return; }
     setter(raw);
   };
 
@@ -228,10 +257,10 @@ export const GradingPortal: React.FC<{
   useEffect(() => {
     if (skipAutoDefaults.current) { skipAutoDefaults.current = false; return; }
     switch (assessmentName) {
-      case 'First Test': setAssessmentWeight('10'); setMaxPoints('50'); break;
-      case 'Midterm':    setAssessmentWeight('30'); setMaxPoints('100'); break;
-      case 'Third Test': setAssessmentWeight('10'); setMaxPoints('100'); break;
-      case 'Final Test': setAssessmentWeight('50'); setMaxPoints('100'); break;
+      case 'First Test': setMaxPoints('50'); break;
+      case 'Midterm':    setMaxPoints('100'); break;
+      case 'Third Test': setMaxPoints('100'); break;
+      case 'Final Test': setMaxPoints('100'); break;
     }
   }, [assessmentName]);
 
@@ -270,19 +299,23 @@ export const GradingPortal: React.FC<{
   // Term-at-a-glance: each test's status + the cumulative grade so far.
   // Grade so far = earned weight of tests taken / weight of tests taken (N/A excluded) × 100.
   // Absent counts as 0 earned but fills its slice of the denominator; N/A drops out entirely.
+  // Weights come from the policy for this term, not from the stored record, and
+  // formative tests (0%) are shown but never move the grade. With only formative
+  // tests taken, there is no grade yet (standing is null).
   const termSummary = useMemo(() => {
     const CANON = ['First Test','Midterm','Third Test','Final Test'];
     const tests = CANON.map(name => {
+      const weight = weightFor(termLabel, name);
+      const formativeTest = isFormative(termLabel, name);
       const rec = studentHistory.find((h:any)=>h.assessment_name===name);
-      if (!rec) return { name, status:'pending' as const };
+      if (!rec) return { name, status:'pending' as const, weight, formative: formativeTest };
       let p:any={}; try{p=JSON.parse(rec.score)||{};}catch{}
-      const weight = Number(p.weight)||0;
-      if (p.notApplicable) return { name, status:'na' as const, weight };
+      if (p.notApplicable) return { name, status:'na' as const, weight, formative: formativeTest };
       const maxP = Number(p.maxPoints)||0;
       const totalP = Number(p.totalPoints)||0;
-      const earnedWeight = p.isAbsent ? 0 : (p.earnedWeight!=null ? Number(p.earnedWeight) : (maxP? (totalP/maxP)*weight : 0));
+      const earnedWeight = earnedFor(weight, totalP, maxP, !!p.isAbsent);
       const mastery = p.isAbsent ? 0 : (maxP? (totalP/maxP)*100 : 0);
-      return { name, status: (p.isAbsent?'absent':'graded') as const, weight, mastery, earnedWeight };
+      return { name, status: (p.isAbsent?'absent':'graded') as const, weight, formative: formativeTest, mastery, earnedWeight };
     });
     const taken = tests.filter((t:any)=>t.status==='graded'||t.status==='absent');
     const assessedWeight = taken.reduce((s:number,t:any)=>s+(t.weight||0),0);
@@ -290,7 +323,7 @@ export const GradingPortal: React.FC<{
     const standing = assessedWeight>0 ? (earnedSum/assessedWeight)*100 : null;
     const allDone = tests.filter((t:any)=>t.status!=='na').every((t:any)=>t.status!=='pending') && taken.length>0;
     return { tests, takenCount: taken.length, assessedWeight, earnedSum, standing, allDone };
-  }, [studentHistory]);
+  }, [studentHistory, termLabel]);
 
   // Strength/focus for the Quick feedback builder, based ONLY on the test currently
   // being graded (not the trend) — feedback should reflect how they did this time.
@@ -299,7 +332,17 @@ export const GradingPortal: React.FC<{
     const per = Number(maxPoints) / 5;
     if (!per) return null;
     const raws: any = { listening: scoreListening, grammar: scoreGrammar, reading: scoreReading, writing: scoreWriting, speaking: scoreSpeaking };
-    const skills = INSIGHT_SKILLS.map(sk => ({ ...sk, pct: Math.round(((Number(raws[sk.key])||0) / per) * 100) }));
+    // Grammar & Vocab is judged by its weak half when one half is below 70 and
+    // the other is not — 10/10 vocabulary cannot hide 4/10 grammar.
+    const halfPct = (v:string) => Math.round(((Number(v)||0) / (per/2)) * 100);
+    const gp = halfPct(scoreGram), vp = halfPct(scoreVocab);
+    const weakHalf = legacyGV !== null || (scoreGram === '' && scoreVocab === '') ? null
+      : gp < 70 && vp >= 70 ? 'grammar' : vp < 70 && gp >= 70 ? 'vocabulary' : null;
+    const skills = INSIGHT_SKILLS.map(sk => {
+      const pct = Math.round(((Number(raws[sk.key])||0) / per) * 100);
+      if (sk.key !== 'grammar' || !weakHalf) return { ...sk, pct };
+      return { ...sk, pct: weakHalf === 'grammar' ? gp : vp, lowReason: `${weakHalf} low this test` };
+    });
     if (!skills.some(s => s.pct > 0)) return null; // no scores entered yet
     const strongKeys = new Set(skills.filter(s => s.pct >= 80).map(s => s.key));
     const low = skills.filter(s => s.pct < 70);
@@ -307,7 +350,7 @@ export const GradingPortal: React.FC<{
     if (low.length) low.forEach(s => focusKeys.add(s.key));
     else { const weakest = skills.reduce((m,s)=>s.pct<m.pct?s:m, skills[0]); if (weakest.pct < 80) focusKeys.add(weakest.key); }
     return { skills, strongKeys, focusKeys };
-  }, [selectedStudent, isAbsent, notApplicable, maxPoints, scoreListening, scoreGrammar, scoreReading, scoreWriting, scoreSpeaking]);
+  }, [selectedStudent, isAbsent, notApplicable, maxPoints, scoreListening, scoreGrammar, scoreGram, scoreVocab, legacyGV, scoreReading, scoreWriting, scoreSpeaking]);
 
   // Reasoned Strength/Focus flags for the builder rows — blends the current
   // test with the term trend so the badge can say WHY a skill needs attention.
@@ -348,7 +391,7 @@ export const GradingPortal: React.FC<{
 
   const handleSaveDraft = () => {
     if (!selectedStudent) return;
-    const draft = { isAbsent, scoreListening, scoreGrammar, scoreReading, scoreWriting, scoreSpeaking, teacherNotes, builderNote, savedAt: new Date().toISOString() };
+    const draft = { isAbsent, scoreListening, scoreGrammar, scoreGram, scoreVocab, legacyGV, scoreReading, scoreWriting, scoreSpeaking, teacherNotes, builderNote, savedAt: new Date().toISOString() };
     localStorage.setItem(makeDraftKey(selectedStudent.id, assessmentName), JSON.stringify(draft));
     bumpDraft();
     showToast(`Scores saved for ${selectedStudent.full_name}!`, 'success');
@@ -357,7 +400,10 @@ export const GradingPortal: React.FC<{
   const handleLoadDraft = (draft:any) => {
     setIsAbsent(draft.isAbsent || false);
     setScoreListening(draft.scoreListening || '');
-    setScoreGrammar(draft.scoreGrammar   || '');
+    if (draft.scoreGram != null || draft.scoreVocab != null) {
+      setLegacyGV(draft.legacyGV ?? null);
+      setScoreGram(draft.scoreGram || ''); setScoreVocab(draft.scoreVocab || '');
+    } else setScoreGrammar(draft.scoreGrammar || ''); // draft saved before the split
     setScoreReading(draft.scoreReading   || '');
     setScoreWriting(draft.scoreWriting   || '');
     setScoreSpeaking(draft.scoreSpeaking || '');
@@ -455,12 +501,13 @@ export const GradingPortal: React.FC<{
     let p:any={}; try{p=JSON.parse(rec.score)||{};}catch{}
     if (rec.assessment_name !== assessmentName) skipAutoDefaults.current = true;
     setAssessmentName(rec.assessment_name);
-    setAssessmentWeight(String(p.weight??'10'));
     setMaxPoints(String(p.maxPoints??'50'));
     setIsAbsent(!!p.isAbsent);
     setNotApplicable(!!p.notApplicable);
     setScoreListening(p.notApplicable||p.isAbsent?'':String(p.listening??''));
-    setScoreGrammar(p.notApplicable||p.isAbsent?'':String(p.grammar??''));
+    if (p.notApplicable || p.isAbsent) setScoreGrammar('');
+    else if (p.grammarOnly != null || p.vocab != null) { setLegacyGV(null); setScoreGram(String(p.grammarOnly ?? '')); setScoreVocab(String(p.vocab ?? '')); }
+    else setScoreGrammar(String(p.grammar ?? '')); // saved before the split: edit the combined mark
     setScoreReading(p.notApplicable||p.isAbsent?'':String(p.reading??''));
     setScoreWriting(p.notApplicable||p.isAbsent?'':String(p.writing??''));
     setScoreSpeaking(p.notApplicable||p.isAbsent?'':String(p.speaking??''));
@@ -490,7 +537,7 @@ export const GradingPortal: React.FC<{
           ? { weight: assessmentWeight, maxPoints, notApplicable: true, isAbsent: false, emailed: wasEmailed, listening:0, grammar:0, reading:0, writing:0, speaking:0, totalPoints:0, earnedWeight:0 }
           : isAbsent
           ? { weight: assessmentWeight, maxPoints, isAbsent: true, emailed: wasEmailed, listening:0, grammar:0, reading:0, writing:0, speaking:0, totalPoints:0, earnedWeight:0 }
-          : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: wasEmailed, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
+          : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: wasEmailed, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, ...gvSplit(), reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
       );
       const {data,error} = await supabase.from('student_grades').update({score:scoreJson,feedback}).eq('id',recordId).select().single();
       if (error) throw error;
@@ -519,8 +566,9 @@ export const GradingPortal: React.FC<{
       assessmentName,
       maxPoints: mp,
       earnedWeight: (() => { const t = calculateTotals(); return Number(t?.earnedWeight) || 0; })(),
+      formative,
       scores: {
-        listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0,
+        listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, ...gvSplit(),
         reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0,
         speaking: Number(scoreSpeaking)||0,
       },
@@ -540,7 +588,7 @@ export const GradingPortal: React.FC<{
           assessmentName: earlier.assessment_name,
           maxPoints: Number(p.maxPoints)||0,
           scores: {
-            listening:Number(p.listening)||0, grammar:Number(p.grammar)||0,
+            listening:Number(p.listening)||0, grammar:Number(p.grammar)||0, ...splitOf(p),
             reading:Number(p.reading)||0, writing:Number(p.writing)||0, speaking:Number(p.speaking)||0,
           },
         };
@@ -551,8 +599,8 @@ export const GradingPortal: React.FC<{
       teacherNote: null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStudent, assessmentName, maxPoints, scoreListening, scoreGrammar, scoreReading,
-      scoreWriting, scoreSpeaking, lessonMap, tickedLessons, isAbsent, notApplicable, studentHistory]);
+  }, [selectedStudent, assessmentName, maxPoints, scoreListening, scoreGrammar, scoreGram, scoreVocab, legacyGV, scoreReading,
+      scoreWriting, scoreSpeaking, lessonMap, tickedLessons, isAbsent, notApplicable, studentHistory, formative]);
 
   // Projected term grade including the scores currently on the form — the saved
   // termSummary can't see them until the record is stored. Same policy as
@@ -571,8 +619,12 @@ export const GradingPortal: React.FC<{
   const getFormattedScores = () => {
     const {totalPoints,earnedWeight} = calculateTotals();
     const pps = Number(maxPoints)/5;
+    if (formative) {
+      if (isAbsent) return `Formative assessment (feedback only, does not count toward the term grade)\nMax Points: ${maxPoints}\nStatus: ABSENT`;
+      return `Formative assessment (feedback only, does not count toward the term grade)\nMax Points: ${maxPoints}\nTotal Raw Score: ${totalPoints}/${maxPoints}\n\nSkill Breakdown:\nListening: ${scoreListening||0}/${pps}\nGrammar & Vocab: ${scoreGrammar||0}/${pps}${legacyGV===null?` (Grammar ${scoreGram||0}/${pps/2}, Vocabulary ${scoreVocab||0}/${pps/2})`:''}\nReading: ${scoreReading||0}/${pps}\nWriting: ${scoreWriting||0}/${pps}\nSpeaking: ${scoreSpeaking||0}/${pps}`;
+    }
     if (isAbsent) return `Weight: ${assessmentWeight}%\nMax Points: ${maxPoints}\nStatus: ABSENT (0%)\nEarned Weight Contribution: 0.0% / ${assessmentWeight}%`;
-    return `Weight: ${assessmentWeight}%\nMax Points: ${maxPoints}\nTotal Raw Score: ${totalPoints}/${maxPoints}\nEarned Weight Contribution: ${earnedWeight.toFixed(1)}% / ${assessmentWeight}%\n\nSkill Breakdown:\nListening: ${scoreListening||0}/${pps}\nGrammar & Vocab: ${scoreGrammar||0}/${pps}\nReading: ${scoreReading||0}/${pps}\nWriting: ${scoreWriting||0}/${pps}\nSpeaking: ${scoreSpeaking||0}/${pps}`;
+    return `Weight: ${assessmentWeight}%\nMax Points: ${maxPoints}\nTotal Raw Score: ${totalPoints}/${maxPoints}\nEarned Weight Contribution: ${earnedWeight.toFixed(1)}% / ${assessmentWeight}%\n\nSkill Breakdown:\nListening: ${scoreListening||0}/${pps}\nGrammar & Vocab: ${scoreGrammar||0}/${pps}${legacyGV===null?` (Grammar ${scoreGram||0}/${pps/2}, Vocabulary ${scoreVocab||0}/${pps/2})`:''}\nReading: ${scoreReading||0}/${pps}\nWriting: ${scoreWriting||0}/${pps}\nSpeaking: ${scoreSpeaking||0}/${pps}`;
   };
 
   const handleGenerateFeedback = async () => {
@@ -675,7 +727,7 @@ export const GradingPortal: React.FC<{
     showToast(`${assessmentName} marked not applicable for ${selectedStudent.full_name}.`,'success');
     setIsSubmitting(false);
     clearDraftAfterSubmit();
-    setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
+    setAssessmentName('First Test');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
     setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
   };
 
@@ -689,7 +741,7 @@ export const GradingPortal: React.FC<{
     const scoreJson = JSON.stringify(
       isAbsent
         ? { weight: assessmentWeight, maxPoints, isAbsent: true, emailed: false, listening: 0, grammar: 0, reading: 0, writing: 0, speaking: 0, totalPoints: 0, earnedWeight: 0 }
-        : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: false, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
+        : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: false, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, ...gvSplit(), reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
     );
     const {data:inserted,error} = await supabase.from('student_grades').insert([{user_id:selectedStudent.id,term:termLabel,assessment_name:assessmentName,score:scoreJson,feedback,date_recorded:new Date().toISOString()}]).select().single();
     if (error){setIsSubmitting(false);showToast(`DB Error: ${error.message}`,'error');return;}
@@ -697,7 +749,7 @@ export const GradingPortal: React.FC<{
     showToast(`Grade saved for ${selectedStudent.full_name} — not emailed yet.`,'success');
     setIsSubmitting(false);
     clearDraftAfterSubmit();
-    setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
+    setAssessmentName('First Test');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
     setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
   };
 
@@ -713,7 +765,7 @@ export const GradingPortal: React.FC<{
     const scoreJson = JSON.stringify(
       isAbsent
         ? { weight: assessmentWeight, maxPoints, isAbsent: true, emailed: true, listening: 0, grammar: 0, reading: 0, writing: 0, speaking: 0, totalPoints: 0, earnedWeight: 0 }
-        : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: true, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
+        : { weight: assessmentWeight, maxPoints, isAbsent: false, emailed: true, listening: Number(scoreListening)||0, grammar: Number(scoreGrammar)||0, ...gvSplit(), reading: Number(scoreReading)||0, writing: Number(scoreWriting)||0, speaking: Number(scoreSpeaking)||0, totalPoints, earnedWeight }
     );
 
     const {data:inserted,error} = await supabase.from('student_grades').insert([{user_id:selectedStudent.id,term:termLabel,assessment_name:assessmentName,score:scoreJson,feedback,date_recorded:new Date().toISOString()}]).select().single();
@@ -728,9 +780,9 @@ export const GradingPortal: React.FC<{
       const _t = calculateTotals();
       const { html, text } = buildResultEmail({
         studentName: selectedStudent.full_name, assessmentName, weightPct: Number(assessmentWeight)||0,
-        isAbsent, isFinal: isFinalSend,
+        isAbsent, isFinal: isFinalSend, formative,
         rawScore: _t.totalPoints, maxPoints: Number(maxPoints)||0, earnedWeight: _t.earnedWeight,
-        scores: { listening:Number(scoreListening)||0, grammar:Number(scoreGrammar)||0, reading:Number(scoreReading)||0, writing:Number(scoreWriting)||0, speaking:Number(scoreSpeaking)||0 },
+        scores: { listening:Number(scoreListening)||0, grammar:Number(scoreGrammar)||0, ...gvSplit(), reading:Number(scoreReading)||0, writing:Number(scoreWriting)||0, speaking:Number(scoreSpeaking)||0 },
         narrative, feedback: feedback||'Please review your scores carefully.',
       });
       const { error: emailError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject: isFinalSend ? 'Final Test Results & Your Term in Review' : `Official Assessment Grade: ${assessmentName}`,html,text,replyTo:'dr.chouit@litnlearn.com'}});
@@ -740,7 +792,7 @@ export const GradingPortal: React.FC<{
     finally {
       setIsSubmitting(false);
       clearDraftAfterSubmit();
-      setAssessmentName('First Test');setAssessmentWeight('10');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
+      setAssessmentName('First Test');setMaxPoints('50');setIsAbsent(false);setNotApplicable(false);
       setScoreListening('');setScoreGrammar('');setScoreReading('');setScoreWriting('');setScoreSpeaking('');setTeacherNotes('');setFeedback('');setEmailFocus('auto');
     }
   };
@@ -752,13 +804,14 @@ export const GradingPortal: React.FC<{
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
       let p:any={}; try{p=JSON.parse(rec.score)||{};}catch{}
+      const pol = policyOf(rec, p);
       const isFinalRec = rec.assessment_name === 'Final Test';
       const narrative = p.isAbsent ? '' : (isFinalRec ? buildTermReviewEmailText(insights, termSummary.standing, feedbackTips) : buildProgressEmailText(insights));
       const { html, text } = buildResultEmail({
-        studentName: selectedStudent.full_name, assessmentName: rec.assessment_name, weightPct: Number(p.weight)||0,
-        isAbsent: !!p.isAbsent, isFinal: isFinalRec,
-        rawScore: Number(p.totalPoints)||0, maxPoints: Number(p.maxPoints)||0, earnedWeight: Number(p.earnedWeight)||0,
-        scores: { listening:Number(p.listening)||0, grammar:Number(p.grammar)||0, reading:Number(p.reading)||0, writing:Number(p.writing)||0, speaking:Number(p.speaking)||0 },
+        studentName: selectedStudent.full_name, assessmentName: rec.assessment_name, weightPct: pol.weight,
+        isAbsent: !!p.isAbsent, isFinal: isFinalRec, formative: pol.formative,
+        rawScore: Number(p.totalPoints)||0, maxPoints: Number(p.maxPoints)||0, earnedWeight: pol.earned,
+        scores: { listening:Number(p.listening)||0, grammar:Number(p.grammar)||0, ...splitOf(p), reading:Number(p.reading)||0, writing:Number(p.writing)||0, speaking:Number(p.speaking)||0 },
         narrative, feedback: rec.feedback||'Please review your scores carefully.',
       });
       const { error: resendError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name} (Resend)`,html,text,replyTo:'dr.chouit@litnlearn.com'}});
@@ -775,18 +828,23 @@ export const GradingPortal: React.FC<{
     try {
       const supabase = getSupabaseClient((await getToken({template:'supabase'}))||'');
       let parsed:any={}; try{parsed=JSON.parse(rec.score)||{};}catch{}
+      const pol = policyOf(rec, parsed);
       const isFinalRec = rec.assessment_name === 'Final Test';
       const narrative = parsed.isAbsent ? '' : (isFinalRec ? buildTermReviewEmailText(insights, termSummary.standing, feedbackTips) : buildProgressEmailText(insights));
       const { html, text } = buildResultEmail({
-        studentName: selectedStudent.full_name, assessmentName: rec.assessment_name, weightPct: Number(parsed.weight)||0,
-        isAbsent: !!parsed.isAbsent, isFinal: isFinalRec,
-        rawScore: Number(parsed.totalPoints)||0, maxPoints: Number(parsed.maxPoints)||0, earnedWeight: Number(parsed.earnedWeight)||0,
-        scores: { listening:Number(parsed.listening)||0, grammar:Number(parsed.grammar)||0, reading:Number(parsed.reading)||0, writing:Number(parsed.writing)||0, speaking:Number(parsed.speaking)||0 },
+        studentName: selectedStudent.full_name, assessmentName: rec.assessment_name, weightPct: pol.weight,
+        isAbsent: !!parsed.isAbsent, isFinal: isFinalRec, formative: pol.formative,
+        rawScore: Number(parsed.totalPoints)||0, maxPoints: Number(parsed.maxPoints)||0, earnedWeight: pol.earned,
+        scores: { listening:Number(parsed.listening)||0, grammar:Number(parsed.grammar)||0, ...splitOf(parsed), reading:Number(parsed.reading)||0, writing:Number(parsed.writing)||0, speaking:Number(parsed.speaking)||0 },
         narrative, feedback: rec.feedback||'Please review your scores carefully.',
       });
       const { error: sendError } = await supabase.functions.invoke('send-email',{body:{toEmail:selectedStudent.email,studentName:'',subject:`Official Assessment Grade: ${rec.assessment_name}`,html,text,replyTo:'dr.chouit@litnlearn.com'}});
       if (sendError) throw new Error(sendError.message);
       parsed.emailed = true;
+      // A record saved before the policy change still says 10%; store what it
+      // is actually worth now, so Previous records shows the right figure.
+      parsed.weight = String(pol.weight);
+      parsed.earnedWeight = pol.earned;
       const newScore = JSON.stringify(parsed);
       await supabase.from('student_grades').update({score:newScore}).eq('id', rec.id);
       setStudentHistory(prev=>prev.map(h=>h.id===rec.id?{...h,score:newScore}:h));
@@ -874,22 +932,24 @@ export const GradingPortal: React.FC<{
         const pr = pendingSendRecord;
         let prs:any={}; if(pr){ try{prs=JSON.parse(pr.score)||{};}catch{} }
         const dAssessment = pr ? pr.assessment_name : assessmentName;
-        const dWeight  = pr ? prs.weight : assessmentWeight;
+        const dPol     = pr ? policyOf(pr, prs) : null;
+        const dWeight  = pr ? dPol!.weight : assessmentWeight;
+        const dFormative = pr ? dPol!.formative : formative;
         const dMax     = pr ? prs.maxPoints : maxPoints;
         const dAbsent  = pr ? !!prs.isAbsent : isAbsent;
         const dTotal   = pr ? (prs.totalPoints||0) : calculateTotals().totalPoints;
-        const dEarned  = pr ? Number(prs.earnedWeight||0) : calculateTotals().earnedWeight;
+        const dEarned  = pr ? dPol!.earned : calculateTotals().earnedWeight;
         const dSkill   = (k:string, formVal:any) => pr ? (prs[k]||0) : (formVal||0);
         const dFeedback= pr ? (pr.feedback||'') : feedback;
         const dInsights= pr ? insights : projectedInsights;
         const dIsFinal = dAssessment === 'Final Test';
         const dTermGrade = pr ? termSummary.standing : projectedStanding();
         // Build the preview from the SAME template the send path uses, so preview == sent.
-        const dScores = { listening:Number(dSkill('listening',scoreListening))||0, grammar:Number(dSkill('grammar',scoreGrammar))||0, reading:Number(dSkill('reading',scoreReading))||0, writing:Number(dSkill('writing',scoreWriting))||0, speaking:Number(dSkill('speaking',scoreSpeaking))||0 };
+        const dScores = { listening:Number(dSkill('listening',scoreListening))||0, grammar:Number(dSkill('grammar',scoreGrammar))||0, reading:Number(dSkill('reading',scoreReading))||0, writing:Number(dSkill('writing',scoreWriting))||0, speaking:Number(dSkill('speaking',scoreSpeaking))||0 , ...(pr ? splitOf(prs) : gvSplit()) };
         const dNarrative = dAbsent ? '' : (dInsights ? (dIsFinal ? buildTermReviewEmailText(dInsights, dTermGrade, feedbackTips, pr ? 'auto' : emailFocus) : buildProgressEmailText(dInsights, pr ? 'auto' : emailFocus)) : '');
         const previewHtml = buildResultEmail({
           studentName: selectedStudent.full_name, assessmentName: dAssessment, weightPct: Number(dWeight)||0,
-          isAbsent: dAbsent, isFinal: dIsFinal,
+          isAbsent: dAbsent, isFinal: dIsFinal, formative: dFormative,
           rawScore: Number(dTotal)||0, maxPoints: Number(dMax)||0, earnedWeight: Number(dEarned)||0,
           scores: dScores, narrative: dNarrative, feedback: dFeedback||'',
         }).html;
@@ -956,7 +1016,7 @@ export const GradingPortal: React.FC<{
                   <span style={{fontSize:'0.78rem',color:'#6C7391'}}>{gradingFilteredStudents.length}</span>
                 </div>
 
-                <select value={termLabel} onChange={e=>setTermLabel(e.target.value)} title="Term — filtering activates once the term column is added to student_grades" style={{width:'100%',padding:'9px 12px',border:'1.5px solid #DDE2EE',outline:'none',fontSize:'0.85rem',color:'#1B1F3B',background:'#fff',marginBottom:'8px'}}>
+                <select value={termLabel} onChange={e=>setTermLabel(e.target.value)} title="Term — shows this term's records only" style={{width:'100%',padding:'9px 12px',border:'1.5px solid #DDE2EE',outline:'none',fontSize:'0.85rem',color:'#1B1F3B',background:'#fff',marginBottom:'8px'}}>
                   {TERM_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>
 
@@ -1099,7 +1159,7 @@ export const GradingPortal: React.FC<{
                                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px',gap:'10px',flexWrap:'wrap'}}>
                                               <label style={{fontSize:'0.85rem',fontWeight:'500',color:'#5A6180'}}>Assessment name</label>
                                               {gradedLocked ? (
-                                                <span style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'#EEF0F8',color:'#5A6180',fontSize:'0.76rem',fontWeight:'600',padding:'7px 13px',borderRadius:'9px'}}>{lockedData?.notApplicable?'Not applicable':lockedData?.isAbsent?'Absent · 0%':'Graded'} · locked</span>
+                                                <span style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'#EEF0F8',color:'#5A6180',fontSize:'0.76rem',fontWeight:'600',padding:'7px 13px',borderRadius:'9px'}}>{lockedData?.notApplicable?'Not applicable':lockedData?.isAbsent?(formative?'Absent':'Absent · 0%'):'Graded'} · locked</span>
                                               ) : (
                                               <div style={{display:'flex',gap:'4px',background:'#EEF0F8',padding:'4px',borderRadius:'11px'}}>
                                                 {([['graded','Graded'],['absent','Absent'],['na','Not applicable']] as any).map(([val,lbl]:any)=>{
@@ -1115,13 +1175,8 @@ export const GradingPortal: React.FC<{
                                           </div>
                                           <div style={{flex:1}}>
                                             <label style={{display:'block',fontSize:'0.85rem',fontWeight:'500',color:'#5A6180',marginBottom:'8px'}}>Weight</label>
-                                            {gradedLocked ? (
-                                              <div style={{width:'100%',boxSizing:'border-box',padding:'13px 15px',borderRadius:'12px',background:'#EEF0F8',color:'#5A6180',fontSize:'1rem',fontWeight:'600'}}>{lockedData?.weight}%</div>
-                                            ) : (
-                                            <select value={assessmentWeight} onChange={e=>setAssessmentWeight(e.target.value)} style={{width:'100%',boxSizing:'border-box',padding:'13px 15px',borderRadius:'12px',border:'1.5px solid #DDE2EE',background:'#fff',color:'#1B1F3B',fontSize:'1rem',fontWeight:600,outline:'none',cursor:'pointer',boxShadow:'0 1px 2px rgba(16,24,40,0.12)'}}>
-                                              <option value="10">10%</option><option value="30">30%</option><option value="50">50%</option>
-                                            </select>
-                                            )}
+                                            {/* Fixed by the school's policy for this test and term — not editable. */}
+                                            <div title={formative?'Formative assessment — marked for feedback, no weight in the term grade':`Counts for ${assessmentWeight}% of the term grade`} style={{width:'100%',boxSizing:'border-box',padding:'13px 15px',borderRadius:'12px',background:'#EEF0F8',color:'#5A6180',fontSize:'1rem',fontWeight:'600',whiteSpace:'nowrap'}}>{formative?'Formative':`${assessmentWeight}%`}</div>
                                           </div>
                                           <div style={{flex:1}}>
                                             <label style={{display:'block',fontSize:'0.85rem',fontWeight:'500',color:'#5A6180',marginBottom:'8px'}}>Max points</label>
@@ -1144,12 +1199,17 @@ export const GradingPortal: React.FC<{
                                           {lockedData?.notApplicable ? (
                                             <div style={{background:'#F7F8FD',borderRadius:'12px',padding:'16px',textAlign:'center',fontSize:'0.92rem',fontWeight:'500'}}>Not applicable — excluded from the grade and trend.</div>
                                           ) : lockedData?.isAbsent ? (
-                                            <div style={{background:'#F7F8FD',borderRadius:'12px',padding:'16px',textAlign:'center',fontSize:'0.92rem',fontWeight:'500'}}>Absent — recorded as 0%.</div>
+                                            <div style={{background:'#F7F8FD',borderRadius:'12px',padding:'16px',textAlign:'center',fontSize:'0.92rem',fontWeight:'500'}}>{formative?'Absent — formative test, no effect on the grade.':'Absent — recorded as 0%.'}</div>
                                           ) : (
                                           <div style={{borderTop:'1px solid #DDE2EE'}}>
                                             {([['Listening','listening'],['Grammar & Vocab','grammar'],['Reading','reading'],['Writing','writing'],['Speaking','speaking']] as any).map(([lbl,key]:any,i:number)=>(
                                               <div key={key} style={{borderTop:i===0?'none':'1px solid #DDE2EE',padding:'13px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                                                <span style={{fontSize:'0.85rem',color:'#5A6180'}}>{lbl}</span>
+                                                <span style={{fontSize:'0.85rem',color:'#5A6180'}}>
+                                                  {lbl}
+                                                  {key==='grammar' && (lockedData?.grammarOnly!=null||lockedData?.vocab!=null) && (
+                                                    <span style={{display:'block',fontSize:'0.75rem',color:'#6C7391',marginTop:'2px'}}>Grammar {lockedData?.grammarOnly??0}/{lockedPer/2} · Vocabulary {lockedData?.vocab??0}/{lockedPer/2}</span>
+                                                  )}
+                                                </span>
                                                 <span style={{fontWeight:'700',fontSize:'0.98rem'}}>{lockedData?.[key]??0}<span style={{opacity:0.6,fontWeight:'500'}}> / {lockedPer}</span></span>
                                               </div>
                                             ))}
@@ -1157,21 +1217,24 @@ export const GradingPortal: React.FC<{
                                           )}
                                           <div style={{marginTop:'16px',paddingTop:'14px',borderTop:'1.5px solid #DDE2EE',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                                             <span style={{fontSize:'0.85rem',fontWeight:'500',color:'#5A6180'}}>{lockedData?.notApplicable?'Excluded':`Total: ${lockedData?.totalPoints??0} / ${lockedData?.maxPoints} pts`}</span>
-                                            <span style={{fontSize:'1rem',fontWeight:'700',color:'#0E9F6E'}}>{lockedData?.notApplicable?'No grade effect':`Earns: ${Number(lockedData?.earnedWeight||0).toFixed(1)}% / ${lockedData?.weight}%`}</span>
+                                            <span style={{fontSize:'1rem',fontWeight:'700',color:formative?'#5A6180':'#0E9F6E'}}>{lockedData?.notApplicable?'No grade effect':formative?'Formative · no grade weight':`Earns: ${earnedFor(Number(assessmentWeight), Number(lockedData?.totalPoints)||0, Number(lockedData?.maxPoints)||0, !!lockedData?.isAbsent).toFixed(1)}% / ${assessmentWeight}%`}</span>
                                           </div>
                                         </div>
                                         ) : (
                                         <div style={{background:'#fff',border:'1.5px solid #DDE2EE',borderRadius:'16px',padding:'22px',opacity:(isAbsent||notApplicable)?0.5:1,pointerEvents:(isAbsent||notApplicable)?'none':'auto'}}>
-                                          <div style={{fontSize:'0.9rem',fontWeight:600,marginBottom:'16px',paddingBottom:'12px',borderBottom:'2px solid #DDE2EE'}}>Raw score breakdown <span style={{color:'#6C7391',fontWeight:400}}>&mdash; each skill out of {Number(maxPoints)/5}</span></div>
-                                          <div style={{display:'grid',gridTemplateColumns:'repeat(5, 1fr)',gap:'10px'}}>
-                                            {[['Listening',scoreListening,setScoreListening],['Grammar & Vocab',scoreGrammar,setScoreGrammar],['Reading',scoreReading,setScoreReading],['Writing',scoreWriting,setScoreWriting]].map(([lbl,val,setter]:any)=>(
-                                              <div key={lbl}><label style={{display:'block',fontSize:'0.85rem',fontWeight:600,color:'#1B1F3B',textAlign:'center',marginBottom:'6px'}}>{lbl}</label><input data-score-box onKeyDown={scoreKeyDown} type="number" min="0" max={Number(maxPoints)/5} step="0.25" inputMode="decimal" value={(isAbsent||notApplicable)?0:val} onChange={e=>clampScore(e.target.value, setter)} placeholder="" style={{width:'100%',boxSizing:'border-box',padding:'12px 10px',borderRadius:'12px',border:'1.5px solid #DDE2EE',background:'#fff',color:'#1B1F3B',fontSize:'1.05rem',fontWeight:600,textAlign:'center',outline:'none'}}/></div>
+                                          <div style={{fontSize:'0.9rem',fontWeight:600,marginBottom:'16px',paddingBottom:'12px',borderBottom:'2px solid #DDE2EE'}}>Raw score breakdown <span style={{color:'#6C7391',fontWeight:400}}>&mdash; each skill out of {Number(maxPoints)/5}{legacyGV===null?`; grammar and vocabulary ${Number(maxPoints)/10} each`:''}</span></div>
+                                          <div style={{display:'grid',gridTemplateColumns:`repeat(${legacyGV===null?6:5}, 1fr)`,gap:'10px'}}>
+                                            {(legacyGV===null
+                                              ? [['Listening',scoreListening,setScoreListening,Number(maxPoints)/5],['Grammar',scoreGram,setScoreGram,Number(maxPoints)/10],['Vocabulary',scoreVocab,setScoreVocab,Number(maxPoints)/10],['Reading',scoreReading,setScoreReading,Number(maxPoints)/5],['Writing',scoreWriting,setScoreWriting,Number(maxPoints)/5]]
+                                              : [['Listening',scoreListening,setScoreListening,Number(maxPoints)/5],['Grammar & Vocab',legacyGV,(v:string)=>setLegacyGV(v),Number(maxPoints)/5],['Reading',scoreReading,setScoreReading,Number(maxPoints)/5],['Writing',scoreWriting,setScoreWriting,Number(maxPoints)/5]]
+                                            ).map(([lbl,val,setter,out]:any)=>(
+                                              <div key={lbl}><label style={{display:'block',fontSize:'0.85rem',fontWeight:600,color:'#1B1F3B',textAlign:'center',marginBottom:'6px'}}>{lbl} <span style={{color:'#6C7391',fontWeight:400}}>/{out}</span></label><input data-score-box onKeyDown={scoreKeyDown} type="number" min="0" max={out} step="0.25" inputMode="decimal" value={(isAbsent||notApplicable)?0:val} onChange={e=>clampScore(e.target.value, setter, out)} placeholder="" style={{width:'100%',boxSizing:'border-box',padding:'12px 10px',borderRadius:'12px',border:'1.5px solid #DDE2EE',background:'#fff',color:'#1B1F3B',fontSize:'1.05rem',fontWeight:600,textAlign:'center',outline:'none'}}/></div>
                                             ))}
-                                            <div><label style={{display:'block',fontSize:'0.85rem',fontWeight:600,color:'#1B1F3B',textAlign:'center',marginBottom:'6px'}}>Speaking</label><input data-score-box onKeyDown={scoreKeyDown} type="number" min="0" max={Number(maxPoints)/5} step="0.25" inputMode="decimal" value={(isAbsent||notApplicable)?0:scoreSpeaking} onChange={e=>clampScore(e.target.value, setScoreSpeaking)} placeholder="" style={{width:'100%',boxSizing:'border-box',padding:'12px 10px',borderRadius:'12px',border:'1.5px solid #DDE2EE',background:'#fff',color:'#1B1F3B',fontSize:'1.05rem',fontWeight:600,textAlign:'center',outline:'none'}}/></div>
+                                            <div><label style={{display:'block',fontSize:'0.85rem',fontWeight:600,color:'#1B1F3B',textAlign:'center',marginBottom:'6px'}}>Speaking <span style={{color:'#6C7391',fontWeight:400}}>/{Number(maxPoints)/5}</span></label><input data-score-box onKeyDown={scoreKeyDown} type="number" min="0" max={Number(maxPoints)/5} step="0.25" inputMode="decimal" value={(isAbsent||notApplicable)?0:scoreSpeaking} onChange={e=>clampScore(e.target.value, setScoreSpeaking)} placeholder="" style={{width:'100%',boxSizing:'border-box',padding:'12px 10px',borderRadius:'12px',border:'1.5px solid #DDE2EE',background:'#fff',color:'#1B1F3B',fontSize:'1.05rem',fontWeight:600,textAlign:'center',outline:'none'}}/></div>
                                           </div>
                                           <div style={{marginTop:'18px',background:'#F7F8FD',borderRadius:'13px',padding:'13px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                                             <span style={{fontSize:'0.85rem',fontWeight:'500',color:'#5A6180'}}>Total: {calculateTotals().totalPoints} / {maxPoints} pts</span>
-                                            <span style={{fontSize:'1rem',fontWeight:'700',color:'#0E9F6E'}}>Earns: {calculateTotals().earnedWeight.toFixed(1)}% / {assessmentWeight}%</span>
+                                            <span style={{fontSize:'1rem',fontWeight:'700',color:formative?'#5A6180':'#0E9F6E'}}>{formative?'Formative · no grade weight':`Earns: ${calculateTotals().earnedWeight.toFixed(1)}% / ${assessmentWeight}%`}</span>
                                           </div>
                                         </div>
                                         )}
@@ -1183,7 +1246,9 @@ export const GradingPortal: React.FC<{
                                         )}
                                         {isAbsent && (
                                           <div style={{background:'#fff',borderRadius:'14px',padding:'13px 16px',color:'#92400E',fontSize:'0.85rem',lineHeight:'1.5',border:'1px solid #F59E0B'}}>
-                                            <strong>Absent</strong> — recorded as 0% and counts toward the final grade. The student still gets an email.
+                                            {formative
+                                              ? <><strong>Absent</strong> — noted on the record. This is a formative test, so it has no effect on the grade. The student still gets an email.</>
+                                              : <><strong>Absent</strong> — recorded as 0% and counts toward the final grade. The student still gets an email.</>}
                                           </div>
                                         )}
 
@@ -1337,9 +1402,9 @@ export const GradingPortal: React.FC<{
                                             </div>
 
                                             {feedbackPlan.weakest ? (
-                                              (lessonMap[feedbackPlan.weakest.key]||[]).length ? (
+                                              feedbackPlan.lessonPool.length ? (
                                                 <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}}>
-                                                  {(lessonMap[feedbackPlan.weakest.key]||[]).map((lesson:string)=>{
+                                                  {feedbackPlan.lessonPool.map((lesson:string)=>{
                                                     const list = tickedLessons ?? feedbackPlan.suggestedLessons;
                                                     const on = list.includes(lesson);
                                                     return (

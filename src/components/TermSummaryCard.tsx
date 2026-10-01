@@ -13,6 +13,11 @@ import { C, S, R, T, NUM, card, cardHead, cardBody } from './portalTokens';
 // numbers on a healthy student — colour as decoration. Here a passing mark is
 // simply ink, and tone appears only when a mark is *below* the line. The eye
 // then goes straight to the one test that needs attention.
+//
+// From Fall 2026 the First and Third Tests are formative (no weight). Each test
+// carries a `formative` flag from termSummary; those cards show the mark but say
+// "formative" instead of a weight, and until a weighted test is taken the card
+// says there is no grade yet rather than showing nothing.
 export function TermSummaryCard({ summary }: { summary: any }) {
   return (
     <div style={card}>
@@ -44,8 +49,9 @@ export function TermSummaryCard({ summary }: { summary: any }) {
               : '—';
 
             const sub =
-              graded ? `earns ${(t.earnedWeight || 0).toFixed(1)} / ${t.weight}%`
-              : t.status === 'absent' ? `0 / ${t.weight}%`
+              graded ? (t.formative ? 'formative · no weight' : `earns ${(t.earnedWeight || 0).toFixed(1)} / ${t.weight}%`)
+              : t.status === 'absent' ? (t.formative ? 'formative · no effect' : `0 / ${t.weight}%`)
+              : pending && t.formative ? 'formative · not taken yet'
               : na ? 'excluded'
               : 'not taken yet';
 
@@ -75,6 +81,22 @@ export function TermSummaryCard({ summary }: { summary: any }) {
           })}
         </div>
 
+        {summary.standing == null && summary.takenCount > 0 && (
+          <div
+            style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+              gap: S.md, marginTop: S.xl, paddingTop: S.lg,
+              borderTop: `1px solid ${C.lineSoft}`,
+            }}
+          >
+            <div>
+              <div style={{ ...T.micro, marginBottom: S.xs }}>No grade yet</div>
+              <div style={{ ...T.meta, color: C.ink3 }}>The grade starts with the first weighted test</div>
+            </div>
+            <span style={{ ...T.displayLg, ...NUM, color: C.ink3 }}>—</span>
+          </div>
+        )}
+
         {summary.standing != null && (
           <div
             style={{
@@ -88,7 +110,7 @@ export function TermSummaryCard({ summary }: { summary: any }) {
                 {summary.allDone ? 'Final grade' : 'Grade so far'}
               </div>
               <div style={{ ...T.meta, color: C.ink3 }}>
-                {summary.allDone ? 'All four tests recorded' : 'Of the tests taken to date'}
+                {summary.allDone ? 'All four tests recorded' : 'Of the weighted tests taken to date'}
               </div>
             </div>
             <span style={{ ...T.displayLg, ...NUM, color: C.accent }}>
