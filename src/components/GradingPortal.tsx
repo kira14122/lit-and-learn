@@ -151,6 +151,9 @@ export const GradingPortal: React.FC<{
   const [lessonMap, setLessonMap]   = useState<LessonMap>({});
   const [showLessons, setShowLessons] = useState(false);
   const [tickedLessons, setTickedLessons] = useState<string[] | null>(null);
+  // Which areas the feedback names. null = automatic (the weakest); otherwise
+  // the areas the teacher picked for this student, e.g. grammar and writing.
+  const [focusAreas, setFocusAreas] = useState<string[] | null>(null);
   const currentLevel = selectedStudent?.course_level || '';
 
   useEffect(() => {
@@ -173,7 +176,7 @@ export const GradingPortal: React.FC<{
   }, [teacherEmail, termLabel, currentLevel, assessmentName]);
 
   // fresh student, fresh ticks
-  useEffect(() => { setTickedLessons(null); }, [selectedStudent, assessmentName]);
+  useEffect(() => { setTickedLessons(null); setFocusAreas(null); }, [selectedStudent, assessmentName]);
 
   // Typing from paper: the cursor lands in Listening, Enter walks across the
   // five boxes, and Enter on Speaking moves to the feedback.
@@ -594,13 +597,14 @@ export const GradingPortal: React.FC<{
         };
       })(),
       selectedLessons: tickedLessons,
+      focusAreas,
       absent: isAbsent,
       notApplicable,
       teacherNote: null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStudent, assessmentName, maxPoints, scoreListening, scoreGrammar, scoreGram, scoreVocab, legacyGV, scoreReading,
-      scoreWriting, scoreSpeaking, lessonMap, tickedLessons, isAbsent, notApplicable, studentHistory, formative]);
+      scoreWriting, scoreSpeaking, lessonMap, tickedLessons, focusAreas, isAbsent, notApplicable, studentHistory, formative]);
 
   // Projected term grade including the scores currently on the form — the saved
   // termSummary can't see them until the record is stored. Same policy as
@@ -1386,13 +1390,15 @@ export const GradingPortal: React.FC<{
                                           </div>
                                         )}
                                         {/* ── Feedback from the lessons this test covered ──────────
-                                            Names only the weakest skill, and can only list lessons
+                                            Names the weakest area by default; the chips let you name
+                                            others as well (or instead). It can only list lessons
                                             recorded for this test, so nothing is invented. */}
                                         {(!hasBeenGraded || editingRecordId) && feedbackPlan && !isAbsent && !notApplicable && (
                                           <div style={{border:'1.5px solid #DDE2EE',borderRadius:'14px',padding:'16px',marginBottom:'14px',background:'#fff'}}>
                                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}}>
                                               <span style={{fontSize:'0.86rem',fontWeight:600,color:'#1B1F3B'}}>
-                                                {feedbackPlan.weakest ? `Needs review: ${feedbackPlan.weakest.label}` : 'Nothing below the review line'}
+                                                {feedbackPlan.weakest ? 'Needs review' : 'Nothing below the review line'}
+                                                <span style={{fontWeight:400,color:'#6C7391'}}> — choose what the feedback names</span>
                                               </span>
                                               <button onClick={()=>setShowLessons(true)} disabled={!currentLevel}
                                                 title={currentLevel?`Edit the lessons for the ${assessmentName}`:'Select a student first'}
@@ -1401,32 +1407,62 @@ export const GradingPortal: React.FC<{
                                               </button>
                                             </div>
 
+                                            {/* One chip per area. Filled = named in the feedback. An amber
+                                                outline marks an area below 70% that is not yet named. */}
+                                            <div style={{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'12px',alignItems:'center'}}>
+                                              {feedbackPlan.areas.map((a:any)=>(
+                                                <button key={a.id} type="button" aria-pressed={a.selected}
+                                                  title={a.selected?`Stop naming ${a.label.toLowerCase()}`:`Also name ${a.label.toLowerCase()}`}
+                                                  onClick={()=>{
+                                                    const cur = feedbackPlan.areas.filter((x:any)=>x.selected).map((x:any)=>x.id);
+                                                    const next = a.selected ? cur.filter((id:string)=>id!==a.id) : [...cur, a.id];
+                                                    setFocusAreas(next.length ? next : null);
+                                                    setTickedLessons(null);
+                                                  }}
+                                                  style={{padding:'6px 12px',borderRadius:'999px',fontSize:'0.8rem',fontWeight:a.selected?600:500,cursor:'pointer',
+                                                    background:a.selected?'#4F46E5':'#fff',
+                                                    color:a.selected?'#fff':a.flagged?'#8A5A00':'#5A6180',
+                                                    border:`1.5px solid ${a.selected?'#4F46E5':a.flagged?'#E0A93B':'#DDE2EE'}`}}>
+                                                  {a.label} <span style={{fontWeight:400,opacity:0.85}}>{a.value}/{a.max}</span>
+                                                </button>
+                                              ))}
+                                              {focusAreas && (
+                                                <button type="button" onClick={()=>{ setFocusAreas(null); setTickedLessons(null); }}
+                                                  style={{background:'transparent',border:'none',color:'#4F46E5',fontSize:'0.8rem',cursor:'pointer',padding:'6px 4px',textDecoration:'underline'}}>
+                                                  Reset to automatic
+                                                </button>
+                                              )}
+                                            </div>
+
                                             {feedbackPlan.weakest ? (
-                                              feedbackPlan.lessonPool.length ? (
-                                                <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}}>
-                                                  {feedbackPlan.lessonPool.map((lesson:string)=>{
-                                                    const list = tickedLessons ?? feedbackPlan.suggestedLessons;
-                                                    const on = list.includes(lesson);
-                                                    return (
-                                                      <label key={lesson} style={{display:'flex',alignItems:'flex-start',gap:'8px',fontSize:'0.86rem',color:'#1B1F3B',cursor:'pointer'}}>
-                                                        <input type="checkbox" checked={on} style={{marginTop:'3px',accentColor:'#4F46E5'}}
-                                                          onChange={()=>{
-                                                            const base = tickedLessons ?? feedbackPlan.suggestedLessons;
-                                                            setTickedLessons(on ? base.filter((l:string)=>l!==lesson) : [...base, lesson]);
-                                                          }}/>
-                                                        <span>{lesson}</span>
-                                                      </label>
-                                                    );
-                                                  })}
-                                                </div>
-                                              ) : (
-                                                <div style={{fontSize:'0.82rem',color:'#B7791F',marginBottom:'12px'}}>
-                                                  No lessons recorded for {feedbackPlan.weakest.label.toLowerCase()} on this test — the feedback will name the skill without listing lessons.
-                                                </div>
-                                              )
+                                              <div style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'12px'}}>
+                                                {feedbackPlan.areas.filter((a:any)=>a.selected).map((a:any, _i:number, sel:any[])=>(
+                                                  <div key={a.id} style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                                                    {sel.length > 1 && <div style={{fontSize:'0.76rem',fontWeight:600,color:'#6C7391',textTransform:'uppercase',letterSpacing:'0.06em'}}>{a.label}</div>}
+                                                    {a.lessons.length ? a.lessons.map((lesson:string)=>{
+                                                      const list = tickedLessons ?? feedbackPlan.suggestedLessons;
+                                                      const on = list.includes(lesson);
+                                                      return (
+                                                        <label key={lesson} style={{display:'flex',alignItems:'flex-start',gap:'8px',fontSize:'0.86rem',color:'#1B1F3B',cursor:'pointer'}}>
+                                                          <input type="checkbox" checked={on} style={{marginTop:'3px',accentColor:'#4F46E5'}}
+                                                            onChange={()=>{
+                                                              const base = tickedLessons ?? feedbackPlan.suggestedLessons;
+                                                              setTickedLessons(on ? base.filter((l:string)=>l!==lesson) : [...base, lesson]);
+                                                            }}/>
+                                                          <span>{lesson}</span>
+                                                        </label>
+                                                      );
+                                                    }) : (
+                                                      <div style={{fontSize:'0.82rem',color:'#8A5A00'}}>
+                                                        No lessons recorded for {a.label.toLowerCase()} on this test — the feedback will name it without listing lessons.
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
                                             ) : (
                                               <div style={{fontSize:'0.82rem',color:'#6C7391',marginBottom:'12px'}}>
-                                                Every skill is at or above 70%, so the feedback will say nothing needs reviewing.
+                                                Every skill is at or above 70%, so the feedback will say nothing needs reviewing. Pick a skill above to name one anyway.
                                               </div>
                                             )}
 
